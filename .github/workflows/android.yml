@@ -1,0 +1,103 @@
+name: Android Build
+
+# 单独触发：手动 dispatch（默认追加到 v1.0.0 Release）。
+# 与桌面三平台构建(release.yml)分离，避免重复跑桌面。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '目标 Release tag（APK 会追加到该已存在的 Release）'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-22.04
+    name: Build Android APK
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          cache-on-failure: true
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          add-to-path: true
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Initialize Tauri Android project
+        run: pnpm tauri android init
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Build Tauri Android APK (release)
+        run: pnpm tauri android build --release --apk
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      - name: Sign APK with debug keystore if unsigned
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          echo "Found APK: $APK"
+          if [ -z "$APK" ]; then echo "No APK found"; exit 1; fi
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          echo "build-tools: $BUILD_TOOLS"
+          if echo "$APK" | grep -q "unsigned"; then
+            DK="$HOME/.android/debug.keystore"
+            if [ ! -f "$DK" ]; then
+              keytool -genkey -v -keystore "$DK" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            fi
+            ALIGNED="${APK%.apk}-aligned.apk"
+            ${BUILD_TOOLS}zipalign -v 4 "$APK" "$ALIGNED"
+            ${BUILD_TOOLS}apksigner sign --ks "$DK" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android --out "${APK/unsigned/signed}" "$ALIGNED"
+            rm -f "$ALIGNED"
+            echo "Signed APK: ${APK/unsigned/signed}"
+          else
+            echo "APK already signed"
+          fi
+
+      - name: Upload APK to Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          echo "Uploading $APK to release ${{ inputs.version }}"
+          gh release upload "${{ inputs.version }}" "$APK" --clobber

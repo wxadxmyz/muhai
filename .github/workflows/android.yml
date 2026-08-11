@@ -43,6 +43,11 @@ jobs:
           workspaces: './src-tauri -> target'
           cache-on-failure: true
 
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libpango1.0-dev libatk1.0-dev
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -52,12 +57,19 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept SDK licenses & install base packages
+      - name: Accept licenses & install base packages
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          # setup-android@v3 在某些 runner 上只设 ANDROID_SDK_ROOT 而不设 ANDROID_HOME，
+          # 这会导致后续 sdkmanager 找不到（command not found）、license 无法接受。
+          if [ -z "$ANDROID_HOME" ] && [ -n "$ANDROID_SDK_ROOT" ]; then
+            export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          fi
+          # 显式把 cmdline-tools / platform-tools 加入 PATH，避免依赖不确定的环境注入
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Install NDK
         uses: nttld/setup-ndk@v1
@@ -71,40 +83,25 @@ jobs:
       - name: Initialize Tauri Android project
         run: pnpm tauri android init
         env:
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
-      - name: Build Tauri Android APK (release)
-        run: pnpm tauri android build --release --apk
+      - name: Build Tauri Android APK
+        run: pnpm tauri android build --apk
         env:
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-
-      - name: Sign APK with debug keystore if unsigned
-        run: |
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
-          echo "Found APK: $APK"
-          if [ -z "$APK" ]; then echo "No APK found"; exit 1; fi
-          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
-          echo "build-tools: $BUILD_TOOLS"
-          if echo "$APK" | grep -q "unsigned"; then
-            DK="$HOME/.android/debug.keystore"
-            if [ ! -f "$DK" ]; then
-              keytool -genkey -v -keystore "$DK" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-            fi
-            ALIGNED="${APK%.apk}-aligned.apk"
-            ${BUILD_TOOLS}zipalign -v 4 "$APK" "$ALIGNED"
-            ${BUILD_TOOLS}apksigner sign --ks "$DK" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android --out "${APK/unsigned/signed}" "$ALIGNED"
-            rm -f "$ALIGNED"
-            echo "Signed APK: ${APK/unsigned/signed}"
-          else
-            echo "APK already signed"
-          fi
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Upload APK to Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          echo "Found APK: $APK"
+          if [ -z "$APK" ]; then echo "No APK found"; exit 1; fi
           echo "Uploading $APK to release ${{ inputs.version }}"
           gh release upload "${{ inputs.version }}" "$APK" --clobber

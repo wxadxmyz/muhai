@@ -116,7 +116,7 @@ jobs:
           echo "Uploading $APK to release ${{ inputs.version }}"
           gh release upload "${{ inputs.version }}" "$APK" --clobber
 
-      - name: Debug: dump logs to issue
+      - name: "Debug: dump logs to issue"
         if: always() && (steps.init.outcome != 'success' || steps.build.outcome != 'success')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

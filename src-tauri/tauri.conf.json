@@ -29,7 +29,13 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "nsis",
+      "dmg",
+      "deb",
+      "appimage"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,7 +47,6 @@
     "shortDescription": "可自定义源与云盘的影视播放器",
     "longDescription": "影流 ReelFlow 是一款支持自定义影视 CMS API 源与 alist 云盘（夸克/UC/阿里/115 等）的影视播放器：跨源搜索、多线路切换、跳过片头片尾、倍速、云盘浏览与播放，数据全部本地存储。桌面端(Tauri 打包)已接入系统托盘、真·全局快捷键(窗口失焦可用媒体键控制)、开机自启、下载完成系统通知、自动更新；弹幕/字幕随源提供真实数据后启用；锁屏/后台媒体控制基于系统媒体会话。真实投屏(DLNA/Chromecast)与安卓画中画为后续版本的原生能力。引擎为纯框架，不含任何内置源。",
     "windows": {
-      "wix": false,
       "nsis": {
         "languages": [
           "SimpChinese"

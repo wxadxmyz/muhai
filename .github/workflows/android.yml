@@ -1,10 +1,11 @@
 name: Android Build
 
-# 单独触发：手动 dispatch（默认追加到 v1.0.0 Release）。
+# 单独触发：tag 推送(v*) 或手动 dispatch（默认追加到 v1.0.0 Release）。
 # 与桌面三平台构建(release.yml)分离，避免重复跑桌面。
-# 注意：on 必须加引号写成 "on":，否则 YAML 会把 on 解析成布尔 true，
-# 导致 GitHub 误判为“监听所有事件”，在每次 push 时自动触发且丢失 workflow_dispatch 触发器。
-"on":
+on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -14,6 +15,7 @@ name: Android Build
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   build-android:
@@ -114,7 +116,7 @@ jobs:
           echo "Uploading $APK to release ${{ inputs.version }}"
           gh release upload "${{ inputs.version }}" "$APK" --clobber
 
-      - name: Debug: dump logs to commit comment
+      - name: Debug: dump logs to issue
         if: always() && (steps.init.outcome != 'success' || steps.build.outcome != 'success')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,10 +124,10 @@ jobs:
           {
             echo "## Android build debug (run ${{ github.run_id }})"
             echo
-            echo "### init.log (tail)"
-            tail -150 /tmp/init.log 2>/dev/null
-            echo
-            echo "### build.log (tail)"
-            tail -150 /tmp/build.log 2>/dev/null
+            echo '```'
+            tail -250 /tmp/init.log 2>/dev/null
+            echo '--- build.log ---'
+            tail -250 /tmp/build.log 2>/dev/null
+            echo '```'
           } > /tmp/combined.md
-          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@/tmp/combined.md || true
+          gh issue create --repo ${{ github.repository }} --title "Android build debug run ${{ github.run_id }}" --body-file /tmp/combined.md || true

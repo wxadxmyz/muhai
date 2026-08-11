@@ -52,6 +52,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept SDK licenses & install base packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
       - name: Install NDK
         uses: nttld/setup-ndk@v1
         with:

@@ -81,7 +81,9 @@ jobs:
         run: pnpm install
 
       - name: Initialize Tauri Android project
-        run: pnpm tauri android init
+        id: init
+        continue-on-error: true
+        run: pnpm tauri android init 2>&1 | tee /tmp/init.log
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
@@ -89,6 +91,7 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Build Tauri Android APK
+        if: steps.init.outcome == 'success'
         run: pnpm tauri android build --apk
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
@@ -97,6 +100,7 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Upload APK to Release
+        if: steps.init.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -105,3 +109,10 @@ jobs:
           if [ -z "$APK" ]; then echo "No APK found"; exit 1; fi
           echo "Uploading $APK to release ${{ inputs.version }}"
           gh release upload "${{ inputs.version }}" "$APK" --clobber
+
+      - name: Debug: dump init log to commit comment
+        if: always() && steps.init.outcome != 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@/tmp/init.log || true

@@ -52,6 +52,9 @@
           "SimpChinese"
         ]
       }
+    },
+    "android": {
+      "minSdkVersion": 24
     }
   }
 }

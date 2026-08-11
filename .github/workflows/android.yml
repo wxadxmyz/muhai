@@ -2,7 +2,9 @@ name: Android Build
 
 # 单独触发：手动 dispatch（默认追加到 v1.0.0 Release）。
 # 与桌面三平台构建(release.yml)分离，避免重复跑桌面。
-on:
+# 注意：on 必须加引号写成 "on":，否则 YAML 会把 on 解析成布尔 true，
+# 导致 GitHub 误判为“监听所有事件”，在每次 push 时自动触发且丢失 workflow_dispatch 触发器。
+"on":
   workflow_dispatch:
     inputs:
       version:
@@ -91,8 +93,10 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Build Tauri Android APK
+        id: build
+        continue-on-error: true
         if: steps.init.outcome == 'success'
-        run: pnpm tauri android build --apk
+        run: pnpm tauri android build --apk 2>&1 | tee /tmp/build.log
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
@@ -100,7 +104,7 @@ jobs:
           NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
 
       - name: Upload APK to Release
-        if: steps.init.outcome == 'success'
+        if: steps.init.outcome == 'success' && steps.build.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -110,9 +114,18 @@ jobs:
           echo "Uploading $APK to release ${{ inputs.version }}"
           gh release upload "${{ inputs.version }}" "$APK" --clobber
 
-      - name: Debug: dump init log to commit comment
-        if: always() && steps.init.outcome != 'success'
+      - name: Debug: dump logs to commit comment
+        if: always() && (steps.init.outcome != 'success' || steps.build.outcome != 'success')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@/tmp/init.log || true
+          {
+            echo "## Android build debug (run ${{ github.run_id }})"
+            echo
+            echo "### init.log (tail)"
+            tail -150 /tmp/init.log 2>/dev/null
+            echo
+            echo "### build.log (tail)"
+            tail -150 /tmp/build.log 2>/dev/null
+          } > /tmp/combined.md
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@/tmp/combined.md || true

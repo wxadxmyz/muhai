@@ -13,6 +13,7 @@ use tauri::tray::TrayIconBuilder;
 // 此处只负责初始化插件与托盘菜单。
 // 注意：托盘、全局快捷键、自启、菜单均为桌面端专属能力，安卓/iOS 下用
 // cfg(desktop) 隔离，避免移动端 target 缺少对应 API 导致编译失败。
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

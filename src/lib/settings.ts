@@ -14,6 +14,16 @@ export interface AppSettings {
   playbackRate: number; // 倍速记忆（0.5~2.0）
   skipByItem: Record<string, { intro: number; outro: number }>; // 按影视记忆的跳过片头/片尾（秒）
   subtitleStyle: { size: number; color: string; position: 'bottom' | 'top'; outline: boolean; bg: boolean }; // 字幕样式（影视）
+  // v1.2.1 新增
+  disclaimerAccepted: boolean; // 是否已同意免责声明（首次启动）
+  darkMode: boolean; // 深色模式
+  themeColor?: string; // 主题强调色
+  wallpaper?: string; // 首页壁纸地址
+  defaultPlayer: 'internal' | 'external'; // 默认播放器
+  hardwareDecode: boolean; // 硬解/软解
+  playbackRateMemory: boolean; // 倍速记忆开关
+  autoDetectLine: boolean; // 线路自动探测
+  autoSkipIntroOutro: boolean; // 自动跳过片头片尾（总开关）
 }
 
 const KEY = 'mps_settings';
@@ -32,6 +42,15 @@ const DEFAULTS: AppSettings = {
   playbackRate: 1,
   skipByItem: {},
   subtitleStyle: { size: 24, color: '#ffffff', position: 'bottom', outline: true, bg: false },
+  disclaimerAccepted: false,
+  darkMode: true,
+  themeColor: undefined,
+  wallpaper: undefined,
+  defaultPlayer: 'internal',
+  hardwareDecode: true,
+  playbackRateMemory: true,
+  autoDetectLine: false,
+  autoSkipIntroOutro: false,
 };
 
 export function useSettings() {

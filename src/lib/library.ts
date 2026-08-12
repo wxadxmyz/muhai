@@ -59,6 +59,10 @@ export function useLibrary(appKey: string) {
 
   const clearSearch = useCallback(() => setLib((l) => ({ ...l, searchHistory: [] })), []);
 
+  const removeSearch = useCallback((kw: string) => {
+    setLib((l) => ({ ...l, searchHistory: l.searchHistory.filter((x) => x !== kw) }));
+  }, []);
+
   const toggleFavorite = useCallback((item: MediaItem) => {
     setLib((l) => {
       const k = keyOf(item);
@@ -117,6 +121,7 @@ export function useLibrary(appKey: string) {
     addHistory,
     addSearch,
     clearSearch,
+    removeSearch,
     toggleFavorite,
     isFavorite,
     createPlaylist,

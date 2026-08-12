@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSources } from '../store';
 import { useLibrary } from '../lib/library';
 import { usePlayback } from '../lib/playback';
@@ -7,9 +7,7 @@ import { useSettings } from '../lib/settings';
 import { useGlobalShortcuts } from '../lib/shortcuts';
 import { MediaItem } from '../engine/types';
 import { alistClient } from '../lib/alistClient';
-import { SourceManager } from '../components/SourceManager';
 import { SearchView } from '../components/SearchView';
-import { SettingsModal } from '../components/SettingsModal';
 import { DebugPanel } from '../components/DebugPanel';
 import { VideoPlayer } from './VideoPlayer';
 import { DetailView } from './DetailView';
@@ -17,10 +15,12 @@ import { Home } from './views/Home';
 import { CloudBrowse } from './views/CloudBrowse';
 import { VideoLibrary } from './views/Library';
 import { Live } from './views/Live';
+import { SettingsPage } from './SettingsPage';
+import { Disclaimer } from '../components/Disclaimer';
 import { Icon } from '../components/Icon';
 
-type Tab = 'home' | 'live' | 'history';
-const ORDER: Tab[] = ['home', 'live', 'history'];
+type Tab = 'home' | 'live' | 'history' | 'settings';
+const ORDER: Tab[] = ['home', 'live', 'history', 'settings'];
 
 export default function VideoApp() {
   const store = useSources('video');
@@ -35,12 +35,18 @@ export default function VideoApp() {
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [line, setLine] = useState(0);
   const [startAt, setStartAt] = useState(0);
-  const [showSettings, setShowSettings] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [showSources, setShowSources] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string | undefined>(undefined);
+
+  // 应用主题色 / 壁纸
+  useEffect(() => {
+    if (settings.themeColor) {
+      document.documentElement.style.setProperty('--accent', settings.themeColor);
+      document.documentElement.style.setProperty('--accent2', settings.themeColor);
+    }
+  }, [settings.themeColor]);
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
@@ -111,22 +117,57 @@ export default function VideoApp() {
     setSearchOpen(true);
   };
 
+  const openSources = () => setTab('settings');
+
   const playingVideo = state.current?.mediaType === 'video' && detail;
   const cloudPayload = () =>
     JSON.stringify({ kind: 'video', favorites: library.lib.favorites, history: library.lib.history, watchProgress: library.lib.watchProgress });
 
   return (
-    <div className="app video-theme" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+    <div
+      className="app video-theme"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      style={
+        settings.wallpaper
+          ? {
+              backgroundImage: `linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)), url(${settings.wallpaper})`,
+              backgroundSize: 'cover',
+              backgroundAttachment: 'fixed',
+            }
+          : undefined
+      }
+    >
       <header className="topbar">
-        <div className="brand"><span className="logo"><Icon name="film" size={20} /></span> 影视</div>
+        <div className="brand">
+          <span className="logo">
+            <Icon name="film" size={20} />
+          </span>{' '}
+          影视
+        </div>
         <nav className="nav">
-          <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>主页</button>
-          <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>直播</button>
-          <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>历史</button>
+          <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>
+            主页
+          </button>
+          <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
+            直播
+          </button>
+          <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
+            历史
+          </button>
         </nav>
         <div className="tb-right">
-          <button className="icon" onClick={() => setShowDebug(true)} title="调试"><Icon name="bug" /></button>
-          <button className="icon settings-btn" onClick={() => setShowSettings(true)} title="设置" aria-label="设置"><Icon name="settings" size={20} /></button>
+          <button className="icon" onClick={() => setShowDebug(true)} title="调试">
+            <Icon name="bug" />
+          </button>
+          <button
+            className="icon settings-btn"
+            onClick={() => setTab('settings')}
+            title="设置"
+            aria-label="设置"
+          >
+            <Icon name="settings" size={20} />
+          </button>
         </div>
       </header>
 
@@ -152,18 +193,24 @@ export default function VideoApp() {
             library={library}
             onOpenDetail={openDetail}
             onSearch={goSearch}
-            onOpenSources={() => setShowSources(true)}
+            onOpenSources={openSources}
           />
         )}
 
-        {tab === 'live' && <Live sources={store.sources} onOpenSources={() => setShowSettings(true)} />}
+        {tab === 'live' && <Live sources={store.sources} onOpenSources={openSources} />}
 
-        {tab === 'history' && <VideoLibrary library={library} onOpen={openDetail} onOpenDebug={() => setShowDebug(true)} />}
+        {tab === 'history' && (
+          <VideoLibrary library={library} onOpen={openDetail} onOpenDebug={() => setShowDebug(true)} />
+        )}
+
+        {tab === 'settings' && <SettingsPage />}
 
         {searchOpen && (
           <div className="fullpage">
             <div className="fullpage-head">
-              <button className="icon" onClick={() => setSearchOpen(false)}><Icon name="arrow-left" /></button>
+              <button className="icon" onClick={() => setSearchOpen(false)}>
+                <Icon name="arrow-left" />
+              </button>
               <h3>搜索</h3>
             </div>
             <div className="fullpage-body">
@@ -181,33 +228,48 @@ export default function VideoApp() {
         )}
 
         {detail && !playingVideo && (
-          <DetailView detail={detail} episodeIndex={episodeIndex} onSelectEpisode={(i) => playEpisode(detail, i)} onBack={() => setDetail(null)} />
+          <DetailView
+            detail={detail}
+            episodeIndex={episodeIndex}
+            onSelectEpisode={(i) => playEpisode(detail, i)}
+            onBack={() => setDetail(null)}
+          />
         )}
       </main>
 
       <nav className="bottom-nav">
-        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}><span className="ico"><Icon name="home" /></span><span>主页</span></button>
-        <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}><span className="ico"><Icon name="cast" /></span><span>直播</span></button>
-        <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><span className="ico"><Icon name="library" /></span><span>历史</span></button>
-        <button className={showSettings ? 'active' : ''} onClick={() => setShowSettings(true)}><span className="ico"><Icon name="settings" /></span><span>设置</span></button>
+        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>
+          <span className="ico">
+            <Icon name="home" />
+          </span>
+          <span>主页</span>
+        </button>
+        <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
+          <span className="ico">
+            <Icon name="cast" />
+          </span>
+          <span>直播</span>
+        </button>
+        <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
+          <span className="ico">
+            <Icon name="library" />
+          </span>
+          <span>历史</span>
+        </button>
+        <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
+          <span className="ico">
+            <Icon name="settings" />
+          </span>
+          <span>设置</span>
+        </button>
       </nav>
-
-      {showSources && (
-        <div className="fullpage">
-          <div className="fullpage-head">
-            <button className="icon" onClick={() => setShowSources(false)}><Icon name="arrow-left" /></button>
-            <h3>源管理</h3>
-          </div>
-          <div className="fullpage-body">
-            <SourceManager store={store} onOpenSettings={() => setShowSettings(true)} onOpenDebug={() => setShowDebug(true)} />
-          </div>
-        </div>
-      )}
 
       {showCloud && (
         <div className="fullpage">
           <div className="fullpage-head">
-            <button className="icon" onClick={() => setShowCloud(false)}><Icon name="arrow-left" /></button>
+            <button className="icon" onClick={() => setShowCloud(false)}>
+              <Icon name="arrow-left" />
+            </button>
             <h3>网盘浏览</h3>
           </div>
           <div className="fullpage-body">
@@ -216,16 +278,7 @@ export default function VideoApp() {
         </div>
       )}
 
-      {showSettings && (
-        <SettingsModal
-          appName="影视"
-          store={store}
-          libraryPayload={cloudPayload}
-          onOpenSources={() => { setShowSettings(false); setShowSources(true); }}
-          onOpenCloud={() => { setShowSettings(false); setShowCloud(true); }}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
+      <Disclaimer onAccept={() => {}} />
       {showDebug && <DebugPanel onClose={() => setShowDebug(false)} />}
     </div>
   );

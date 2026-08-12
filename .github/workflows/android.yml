@@ -7,7 +7,7 @@ on:
       version:
         description: 'Release version tag to upload the APK to'
         required: true
-        default: 'v1.0.0'
+        default: 'v1.0.1'
 
 name: Android Build
 
@@ -19,6 +19,7 @@ jobs:
       issues: write
     env:
       NDK_VERSION: r27c
+      RELEASE_TAG: ${{ github.event.inputs.version || github.ref_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -82,6 +83,11 @@ jobs:
           set -o pipefail
           pnpm tauri android init 2>&1 | tee /tmp/init.log
 
+      - name: Sync Android launcher icon
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 scripts/sync-android-icon.py
+
       - name: Build Tauri Android APK
         id: build
         if: steps.init.outcome == 'success'
@@ -135,7 +141,7 @@ jobs:
             ls -R src-tauri/gen/android/app/build/outputs 2>/dev/null || true
             exit 1
           fi
-          gh release upload "${{ inputs.version }}" "$APK" --clobber 2>&1 | tee /tmp/upload.log
+          gh release upload "$RELEASE_TAG" "$APK" --clobber 2>&1 | tee /tmp/upload.log
 
       - name: "Debug: dump logs to issue"
         if: always() && (steps.init.outcome != 'success' || steps.build.outcome != 'success' || steps.upload.outcome != 'success')
@@ -150,6 +156,6 @@ jobs:
             echo "### init.log"; tail -200 /tmp/init.log 2>/dev/null
             echo "### build.log"; tail -200 /tmp/build.log 2>/dev/null
             echo "### upload.log"; tail -200 /tmp/upload.log 2>/dev/null
-            echo "### gh release view"; gh release view "${{ inputs.version }}" 2>&1 || true
+            echo "### gh release view"; gh release view "$RELEASE_TAG" 2>&1 || true
             echo '```'
           } | gh issue create --repo ${{ github.repository }} --title "Android debug ${{ github.run_id }}" --body-file -

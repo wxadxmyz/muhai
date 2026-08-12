@@ -91,6 +91,31 @@ jobs:
           set -o pipefail
           pnpm tauri android build --apk 2>&1 | tee /tmp/build.log
 
+      - name: Sign APK with persisted keystore (if configured)
+        id: sign
+        if: steps.build.outcome == 'success' && secrets.ANDROID_KEYSTORE_BASE64 != ''
+        continue-on-error: true
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
+          export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/keystore.p12
+          SRC=$(find src-tauri/gen/android -name '*unsigned*.apk' | head -1)
+          OUT=src-tauri/gen/android/app/build/outputs/apk/universal/release/${{ github.event.repository.name }}-android.apk
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+            --ks /tmp/keystore.p12 \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass pass:"$ANDROID_KEY_PASSWORD" \
+            --out "$OUT" \
+            "$SRC"
+          $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$OUT"
+          echo "SIGNED_APK=$OUT" >> "$GITHUB_ENV"
+
       - name: Upload APK to Release
         id: upload
         if: steps.build.outcome == 'success'
@@ -98,8 +123,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
-          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
-          echo "Found APK: $APK"
+          APK="${SIGNED_APK:-$(find src-tauri/gen/android -name '*.apk' | head -1)}"
+          echo "Uploading APK: $APK"
           if [ -z "$APK" ]; then
             echo "No APK found under src-tauri/gen/android"
             echo "--- outputs tree ---"
@@ -115,7 +140,7 @@ jobs:
         run: |
           {
             echo "## Android build debug (run ${{ github.run_id }})"
-            echo "init=${{ steps.init.outcome }} build=${{ steps.build.outcome }} upload=${{ steps.upload.outcome }}"
+            echo "init=${{ steps.init.outcome }} build=${{ steps.build.outcome }} sign=${{ steps.sign.outcome }} upload=${{ steps.upload.outcome }}"
             echo '```'
             echo "### find apk:"; find src-tauri/gen/android -name '*.apk' 2>/dev/null || echo none
             echo "### init.log"; tail -200 /tmp/init.log 2>/dev/null

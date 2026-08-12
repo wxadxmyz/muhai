@@ -147,7 +147,13 @@ export default function VideoApp() {
         )}
 
         {tab === 'home' && (
-          <Home sources={store.sources} library={library} onOpenDetail={openDetail} onSearch={goSearch} />
+          <Home
+            sources={store.sources}
+            library={library}
+            onOpenDetail={openDetail}
+            onSearch={goSearch}
+            onOpenSources={() => setShowSources(true)}
+          />
         )}
 
         {tab === 'live' && <Live sources={store.sources} onOpenSources={() => setShowSettings(true)} />}

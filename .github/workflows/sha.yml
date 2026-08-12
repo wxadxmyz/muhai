@@ -1,0 +1,22 @@
+name: Compute signed APK SHA256
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sha:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download signed APK and compute SHA256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -x
+          gh release download v1.0.0 -R ${{ github.repository }} -p "${{ github.event.repository.name }}-android.apk" -D /tmp
+          SHA=$(sha256sum "/tmp/${{ github.event.repository.name }}-android.apk" | awk '{print $1}')
+          echo "SHA256=$SHA"
+          gh issue create --repo ${{ github.repository }} --title "SHA256-${{ github.event.repository.name }}-android.apk" --body "SHA256: $SHA" || true

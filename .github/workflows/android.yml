@@ -93,7 +93,7 @@ jobs:
 
       - name: Sign APK with persisted keystore (if configured)
         id: sign
-        if: steps.build.outcome == 'success' && secrets.ANDROID_KEYSTORE_BASE64 != ''
+        if: steps.build.outcome == 'success'
         continue-on-error: true
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -103,6 +103,10 @@ jobs:
         run: |
           export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
           export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "No keystore secret configured; skipping signing (APK stays unsigned)."
+            exit 0
+          fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/keystore.p12
           SRC=$(find src-tauri/gen/android -name '*unsigned*.apk' | head -1)
           OUT=src-tauri/gen/android/app/build/outputs/apk/universal/release/${{ github.event.repository.name }}-android.apk

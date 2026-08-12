@@ -13,11 +13,13 @@ export function Home({
   library,
   onOpenDetail,
   onSearch,
+  onOpenSources,
 }: {
   sources: SourceConfig[];
   library: ReturnType<typeof useLibrary>;
   onOpenDetail: (it: MediaItem) => void;
   onSearch: (q: string) => void;
+  onOpenSources: () => void;
 }) {
   const [all, setAll] = useState<MediaItem[]>([]);
   const [q, setQ] = useState('');
@@ -46,24 +48,26 @@ export function Home({
     );
   };
 
+  const homeTop = (
+    <div className="home-top">
+      <div className="ht-logo">影<span className="dot">流</span></div>
+      <div className="ht-actions">
+        <button className="ht-ico" onClick={() => onSearch('')} title="搜索"><Icon name="search" size={20} /></button>
+      </div>
+    </div>
+  );
+
   if (sources.length === 0) {
     return (
       <div className="view home">
-        <div className="search-bar big">
-          <span className="search-ico"><Icon name="search" size={18} /></span>
-          <input
-            value={q}
-            placeholder="搜索电影 / 剧集 / 演员…"
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) onSearch(q.trim()); }}
-          />
-          <button className="primary" onClick={() => q.trim() && onSearch(q.trim())}>搜索</button>
-        </div>
+        {homeTop}
         <div className="blank-state">
           <div className="blank-art"><Icon name="film" size={44} /></div>
-          <h2>还没有接入影视源</h2>
+          <h2>导入 JSON 源，开始看片</h2>
           <p className="muted">在「设置 → 源管理」里导入一个 JSON 源，<br />首页就会列出可看的影视与直播。</p>
-          <button className="primary" onClick={() => onSearch('')}>去设置添加源</button>
+          <button className="import-fab" onClick={onOpenSources}>
+            <Icon name="plus" size={18} /> 导入 JSON 源
+          </button>
         </div>
       </div>
     );
@@ -71,6 +75,7 @@ export function Home({
 
   return (
     <div className="view home">
+      {homeTop}
       <div className="search-bar big">
         <span className="search-ico"><Icon name="search" size={18} /></span>
         <input

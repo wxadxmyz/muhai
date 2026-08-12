@@ -29,6 +29,12 @@ export function SearchView({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
+  const suggestions =
+    mediaType === 'video'
+      ? ['电影', '电视剧', '动漫', '综艺', '纪录片']
+      : ['华语流行', '经典老歌', '轻音乐', '电子', '动漫'];
+  const showHints = !searched && kw.trim() === '';
+
   const run = async (q?: string) => {
     const query = (q ?? kw).trim();
     if (!query) return;
@@ -65,18 +71,33 @@ export function SearchView({
         <button className="primary" onClick={() => run()}>搜索</button>
       </div>
 
-      {library.lib.searchHistory.length > 0 && !searched && (
-        <div className="search-history">
-          <div className="sh-head">
-            <span>搜索历史</span>
-            <button className="link" onClick={() => library.clearSearch()}>清空</button>
+      {showHints && (
+        <>
+          {library.lib.searchHistory.length > 0 && (
+            <div className="search-history">
+              <div className="sh-head">
+                <span>搜索历史</span>
+                <button className="link" onClick={() => library.clearSearch()}>清空</button>
+              </div>
+              <div className="bubbles">
+                {library.lib.searchHistory.map((h) => (
+                  <span key={h} className="bub" onClick={() => run(h)}>
+                    {h}
+                    <span className="bub-x" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }}><Icon name="x" size={12} /></span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="search-history">
+            <div className="sh-head"><span>建议</span></div>
+            <div className="bubbles">
+              {suggestions.map((s) => (
+                <span key={s} className="bub" onClick={() => run(s)}>{s}</span>
+              ))}
+            </div>
           </div>
-          <div className="chips">
-            {library.lib.searchHistory.map((h) => (
-              <button key={h} className="chip" onClick={() => run(h)}>{h}</button>
-            ))}
-          </div>
-        </div>
+        </>
       )}
 
       {errors.length > 0 && (

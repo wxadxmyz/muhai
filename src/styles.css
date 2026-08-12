@@ -192,6 +192,53 @@ button.fav, .fav { color: var(--danger) !important; }
 .skin-swatch { width: 100%; height: 38px; border-radius: 8px; }
 .skin-name { font-size: 12px; color: var(--text); }
 
+/* ============ 设置页 · iOS 风分组卡片（两个 App 共用）============ */
+.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: 4px 2px 8px; }
+.settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
+.settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.settings-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.settings-row:last-child { border-bottom: none; }
+.settings-row .ico { width: 22px; height: 22px; color: var(--accent); display: grid; place-items: center; flex-shrink: 0; font-size: 18px; }
+.settings-row .ico svg { width: 20px; height: 20px; }
+.settings-row .label { flex: 1; font-size: 15px; min-width: 0; }
+.settings-row .label small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.settings-row .value { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; }
+.settings-row .chevron { color: var(--muted); opacity: .55; flex-shrink: 0; }
+.settings-row.tap { cursor: pointer; transition: background .12s; }
+.settings-row.tap:active { background: var(--panel2); }
+.settings-row input[type='text'], .settings-row input[type='number'], .settings-row select { margin-left: auto; max-width: 55%; }
+/* 开关 */
+.switch { position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--panel3); border: 1px solid var(--border); cursor: pointer; transition: .2s; flex-shrink: 0; }
+.switch.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.35); transition: .2s; }
+.switch.on::after { transform: translateX(18px); }
+/* 整组说明 */
+.settings-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: -4px 6px 0; }
+
+/* 全屏覆盖页（音源管理 / 网盘浏览 / 我的音乐）*/
+.fullpage { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .15s; }
+.fullpage-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.fullpage-head h3 { margin: 0; font-size: 17px; }
+.fullpage-body { flex: 1; overflow: auto; padding: 16px; }
+
+/* 空白态（未接入源 / 无内容） */
+.blank-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; padding: 14vh 24px; }
+.blank-art { width: 96px; height: 96px; border-radius: 28px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: var(--shadow); }
+.blank-state h2 { margin: 4px 0 0; font-size: 22px; }
+.blank-state p { margin: 0; line-height: 1.8; }
+
+/* 播放 tab 占位（无正在播放） */
+.fs-player.fs-empty { background: var(--bg); display: grid; place-items: center; z-index: 70; position: fixed; inset: 0; }
+.fs-empty-inner { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--muted); }
+.fs-empty-inner svg { color: var(--accent); }
+.fs-empty-inner p { margin: 0; font-size: 16px; }
+
+/* 播放页歌词浮层（移动端点封面翻歌词） */
+.fs-lyrics-full { position: absolute; inset: 0; z-index: 6; background: var(--bg); display: flex; flex-direction: column; gap: 14px; padding: 18% 8% 12%; overflow: auto; animation: fade .15s; }
+.fs-lyrics-full .lyric-line { margin: 0; font-size: 18px; color: var(--muted); transition: .2s; }
+.fs-lyrics-full .lyric-line.active { color: #fff; font-size: 22px; font-weight: 700; }
+@media (min-width: 821px) { .fs-lyrics-full { display: none; } }
+
 /* ============ 调试面板 ============ */
 .modal-debug { width: 620px; }
 .dbg-head { display: flex; align-items: center; justify-content: space-between; }
@@ -278,6 +325,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .fs-disc .ph { width: 70%; height: 70%; border-radius: 50%; display: grid; place-items: center; font-size: 60px; color: #fff; }
 .fs-disc.spinning { animation: spin 18s linear infinite; }
 .fs-needle { position: absolute; top: -20px; left: 50%; width: 12px; height: 90px; background: linear-gradient(var(--accent), var(--accent2)); border-radius: 6px; transform-origin: bottom center; transform: rotate(20deg); }
+.fs-tap-hint { font-size: 12px; color: var(--muted); opacity: .8; }
 .fs-spectrum { width: 300px; height: 64px; }
 .fs-info { flex: 1; min-width: 0; }
 .fs-title { font-size: 34px; margin: 0 0 8px; }
@@ -401,7 +449,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 
   /* 底部 Tab 导航 */
   .bottom-nav {
-    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); position: fixed; left: 0; bottom: 0; z-index: 70;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); position: fixed; left: 0; bottom: 0; z-index: 70;
     width: 100vw; box-sizing: border-box; height: 56px; padding-bottom: env(safe-area-inset-bottom);
     background: var(--panel); border-top: 1px solid var(--border);
     box-shadow: 0 -4px 16px rgba(0,0,0,.25);

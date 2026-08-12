@@ -20,8 +20,10 @@ export function Home({
   onSearch: (q: string) => void;
 }) {
   const [all, setAll] = useState<MediaItem[]>([]);
+  const [q, setQ] = useState('');
 
   useEffect(() => {
+    if (sources.length === 0) return;
     aggregateSearch(sources, '').then((r) => setAll(r.items.filter((i) => i.mediaType === 'video')));
   }, [sources]);
 
@@ -44,14 +46,40 @@ export function Home({
     );
   };
 
+  if (sources.length === 0) {
+    return (
+      <div className="view home">
+        <div className="search-bar big">
+          <span className="search-ico"><Icon name="search" size={18} /></span>
+          <input
+            value={q}
+            placeholder="搜索电影 / 剧集 / 演员…"
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) onSearch(q.trim()); }}
+          />
+          <button className="primary" onClick={() => q.trim() && onSearch(q.trim())}>搜索</button>
+        </div>
+        <div className="blank-state">
+          <div className="blank-art"><Icon name="film" size={44} /></div>
+          <h2>还没有接入影视源</h2>
+          <p className="muted">在「设置 → 源管理」里导入一个 JSON 源，<br />首页就会列出可看的影视与直播。</p>
+          <button className="primary" onClick={() => onSearch('')}>去设置添加源</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="view home">
-      <div className="hero">
-        <div className="hero-text">
-          <h1>看你想看</h1>
-          <p>影视站 + 云盘(alist) 全聚合 · 自定义源，一站追剧</p>
-        </div>
-        <div className="hero-art" style={{ background: gradientFor('video') }}><Icon name="film" size={40} /></div>
+      <div className="search-bar big">
+        <span className="search-ico"><Icon name="search" size={18} /></span>
+        <input
+          value={q}
+          placeholder="搜索电影 / 剧集 / 演员…"
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) onSearch(q.trim()); }}
+        />
+        <button className="primary" onClick={() => q.trim() && onSearch(q.trim())}>搜索</button>
       </div>
 
       <div className="chips">

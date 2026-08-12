@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   sign:
@@ -72,11 +73,24 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ inputs.tag }}" "$signed" --clobber
-          ASSET_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.tag }}" \
-            --jq '.assets[] | select(.name=="app-universal-release-unsigned.apk") | .id')
-          if [ -n "$ASSET_ID" ]; then
-            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$ASSET_ID"
+          set -x
+          echo "signed=[$signed]"
+          test -f "$signed" && echo "FILE EXISTS" || echo "FILE MISSING"
+          LOG=/tmp/sign_step8.log
+          {
+            echo "signed=$signed"
+            gh release upload "${{ inputs.tag }}" "$signed" 2>&1 || echo "UPLOAD_FAILED rc=$?"
+            ASSET_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.tag }}" --jq '.assets[] | select(.name=="app-universal-release-unsigned.apk") | .id' 2>&1)
+            echo "ASSET_ID=$ASSET_ID"
+            if [ -n "$ASSET_ID" ]; then
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$ASSET_ID" 2>&1 || echo "DELETE_FAILED rc=$?"
+            fi
+            echo "DONE"
+          } 2>&1 | tee "$LOG"
+          if ! gh release view "${{ inputs.tag }}" -R ${{ github.repository }} --json assets --jq '.assets[].name' | grep -q "${{ github.event.repository.name }}-android.apk"; then
+            echo "SIGNED APK NOT IN RELEASE - posting diagnostic issue"
+            gh issue create --repo ${{ github.repository }} --title "SIGN-DIAG ${{ github.run_id }}" --body-file "$LOG" || true
+            exit 1
           fi
           echo "Replaced unsigned APK with signed ${{ github.event.repository.name }}-android.apk"
           echo "Final SHA256: $APK_SHA256"

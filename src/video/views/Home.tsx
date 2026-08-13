@@ -22,7 +22,6 @@ export function Home({
   onOpenSources: () => void;
 }) {
   const [all, setAll] = useState<MediaItem[]>([]);
-  const [q, setQ] = useState('');
 
   useEffect(() => {
     if (sources.length === 0) return;
@@ -76,20 +75,10 @@ export function Home({
   return (
     <div className="view home">
       {homeTop}
-      <div className="search-bar big">
-        <span className="search-ico"><Icon name="search" size={18} /></span>
-        <input
-          value={q}
-          placeholder="搜索电影 / 剧集 / 演员…"
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) onSearch(q.trim()); }}
-        />
-        <button className="primary" onClick={() => q.trim() && onSearch(q.trim())}>搜索</button>
-      </div>
 
       <div className="chips">
         {CATEGORIES.map((c) => (
-          <button key={c} className={`chip${c === '推荐' ? ' chip-rec' : ''}`} onClick={() => (c === '推荐' ? setQ('') : onSearch(c))}>{c}</button>
+          <button key={c} className={`chip${c === '推荐' ? ' chip-rec' : ''}`} onClick={() => { if (c !== '推荐') onSearch(c); }}>{c}</button>
         ))}
       </div>
 

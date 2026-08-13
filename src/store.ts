@@ -18,8 +18,8 @@ function load(appKey: string): SourceConfig[] {
   } catch {
     /* ignore */
   }
-  // 种子：一个离线示例源，保证开箱即用（仅为演示数据，不含真实内容）
-  return [{ id: uuid(), name: '示例源(离线演示)', type: 'mock', baseUrl: '', enabled: true, priority: 0 }];
+  // 无默认源：首次运行为干净的空态，由用户自行导入真实源
+  return [];
 }
 
 export function useSources(appKey: string) {

@@ -76,8 +76,30 @@ async function fetchText(url: string): Promise<string> {
   }
 }
 
+// 影视仓 / TVBox 部分「加密接口」（如 http://www.饭太硬.cc/tv 这类）直接返回 base64 密文，
+// 这里先尝试解码；解码后通常是带 sites[] 的 TVBox JSON，再递归交给下面的 JSON/HTML 分支处理。
+function tryDecodeBase64(text: string): string {
+  const t = text.trim();
+  if (t.length < 16) return text;
+  if (t.length % 4 !== 0) return text;
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(t)) return text;
+  try {
+    const b64 = t.replace(/_/g, '/').replace(/-/g, '+');
+    const decoded = atob(b64);
+    // 解码结果须含可打印字符，避免把普通文本误判为 base64
+    if (decoded.length > 0 && decoded.slice(0, 200).match(/[ -~]/)) return decoded;
+  } catch {
+    /* 不是合法 base64，原样返回 */
+  }
+  return text;
+}
+
 function parseFetched(text: string, url: string): FetchResult {
   const trimmed = text.trim();
+
+  // 先尝试 base64 解码（加密接口返回密文的情形）
+  const decoded = tryDecodeBase64(trimmed);
+  if (decoded !== trimmed) return parseFetched(decoded, url);
 
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     try {

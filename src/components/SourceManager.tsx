@@ -68,7 +68,7 @@ export function SourceManager({
   return (
     <div className="view">
       <div className="page-title-row">
-        <h2 className="page-title">音源管理</h2>
+        <h2 className="page-title">仓库管理</h2>
         <div className="toolbar">
           <button className="primary" onClick={() => setShowModal(true)}><Icon name="plus" size={16} /> 添加音源</button>
           <button onClick={doImportJson}>导入JSON</button>

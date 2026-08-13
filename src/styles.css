@@ -4,7 +4,7 @@
   /* 安全区：状态栏/底部导航条高度，由 viewport-fit=cover 下的 env() 提供。
      若部分机型 env() 返回 0，可改由 JS 把真实值注入到 documentElement 覆盖这里。 */
   --sat: env(safe-area-inset-top, 0px);
-  --sab: max(env(safe-area-inset-bottom, 0px), 18px); // 兜底至少18px，避免安卓手势条遮挡底部导航
+  --sab: max(env(safe-area-inset-bottom, 0px), 18px); /* 兜底至少18px，避免安卓手势条遮挡底部导航 */
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
 }

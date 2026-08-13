@@ -9,7 +9,7 @@ import { fetchFromUrl } from '../lib/sourceFetch';
 export function SourceListPage({
   mediaType,
   onClose,
-  title = '源列表',
+  title = '仓库管理',
 }: {
   mediaType: 'video' | 'music';
   onClose: () => void;

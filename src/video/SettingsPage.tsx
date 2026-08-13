@@ -124,7 +124,7 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
             value="手动地址 / 扫码"
             onClick={() => setSub('import')}
           />
-          <NavRow icon="list" label="源列表" value={count} onClick={() => setSub('sources')} />
+          <NavRow icon="list" label="仓库管理" value={count} onClick={() => setSub('sources')} />
           <NavRow icon="sliders" label="切换站点" onClick={() => setSub('switchsite')} />
         </div>
 
@@ -180,7 +180,7 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
         <ImportSourcePage mediaType="video" onClose={() => setSub(null)} />
       )}
       {sub === 'sources' && (
-        <SourceListPage mediaType="video" title="源列表" onClose={() => setSub(null)} />
+        <SourceListPage mediaType="video" title="仓库管理" onClose={() => setSub(null)} />
       )}
       {sub === 'switchsite' && (
         <SourceListPage mediaType="video" title="切换站点" onClose={() => setSub(null)} />

@@ -38,6 +38,33 @@ function normalize(arr: any[]): any[] {
     .filter((r) => r.type && r.baseUrl);
 }
 
+// 兼容常见的 tvbox / 苹果CMS / 聚合源 JSON 结构，统一转成带 type+baseUrl 的源数组：
+//  1) 顶层数组
+//  2) {sources:[...]}
+//  3) {urls:[...]}（tvbox 标准订阅格式，单项含 url/api/name）
+//  4) {sites:[...]}（部分聚合站格式）
+//  5) 单个源对象
+// tvbox 项的 type 若为数字分类（1/2/3/4）则视为影视站(video-cms)；字符串 type 保留原值。
+function toSourceList(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.sources)) return data.sources;
+  if (Array.isArray(data?.urls)) {
+    return data.urls.map((u: any) => ({
+      ...u,
+      baseUrl: u.baseUrl || u.url || u.api,
+      type: u.type && typeof u.type === 'string' ? u.type : 'video-cms',
+    }));
+  }
+  if (Array.isArray(data?.sites)) {
+    return data.sites.map((s: any) => ({
+      ...s,
+      baseUrl: s.baseUrl || s.url || s.api,
+      type: s.type && typeof s.type === 'string' ? s.type : 'video-cms',
+    }));
+  }
+  return [data];
+}
+
 // 优先走 Rust 后端代理抓取；不在 Tauri 环境时回退前端 fetch。
 async function fetchText(url: string): Promise<string> {
   try {
@@ -55,8 +82,7 @@ function parseFetched(text: string, url: string): FetchResult {
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     try {
       const data = JSON.parse(trimmed);
-      const arr = Array.isArray(data) ? data : Array.isArray(data?.sources) ? data.sources : [data];
-      const valid = normalize(arr);
+      const valid = normalize(toSourceList(data));
       if (valid.length) return { kind: 'sources', sources: valid };
     } catch {
       /* 不是 JSON，往下走 HTML 分支 */
@@ -95,8 +121,7 @@ export function parsePasted(text: string): { sources: any[]; error?: string } {
   if (!t) return { sources: [], error: '内容为空' };
   try {
     const data = JSON.parse(t);
-    const arr = Array.isArray(data) ? data : Array.isArray(data?.sources) ? data.sources : [data];
-    const valid = normalize(arr);
+    const valid = normalize(toSourceList(data));
     if (valid.length) return { sources: valid };
     return { sources: [], error: '未找到有效源（需包含 type 与 baseUrl）' };
   } catch (e: any) {

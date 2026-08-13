@@ -70,12 +70,39 @@ const ACCENTS = ['#4f8cff', '#ff5d73', '#23c08b', '#ff9f43', '#a66bff', '#1ec8e8
 
 const APP_VERSION = '1.2.3';
 
+// 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
+const NETDISKS = [
+  { key: 'ali', label: '阿里网盘', icon: 'folder' as const, color: '#6a7cff' },
+  { key: 'quark', label: '夸克网盘', icon: 'folder' as const, color: '#2b6ff2' },
+  { key: 'uc', label: 'UC网盘', icon: 'folder' as const, color: '#ff6a00' },
+];
+
 export function SettingsPage({ onClose }: { onClose?: () => void }) {
   const store = useSources('video');
   const { settings, update } = useSettings();
   const [sub, setSub] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<string>('');
   const [checking, setChecking] = useState(false);
+  const [editingNetdisk, setEditingNetdisk] = useState<string | null>(null);
+  const [ndForm, setNdForm] = useState({ name: '', baseUrl: '', token: '', mountPath: '/' });
+
+  const boundNetdisk = (key: string) => {
+    const label = NETDISKS.find((n) => n.key === key)?.label ?? '';
+    return store.sources.some((s) => s.type === 'alist' && s.name.includes(label));
+  };
+  const saveNetdisk = () => {
+    if (!ndForm.baseUrl.trim()) return;
+    const label = NETDISKS.find((n) => n.key === editingNetdisk)?.label ?? '网盘';
+    store.add({
+      name: ndForm.name.trim() || label,
+      type: 'alist',
+      baseUrl: ndForm.baseUrl.trim(),
+      token: ndForm.token.trim() || undefined,
+      mountPath: ndForm.mountPath.trim() || '/',
+    });
+    setNdForm({ name: '', baseUrl: '', token: '', mountPath: '/' });
+    setEditingNetdisk(null);
+  };
 
   const count = `${store.sources.length} 个`;
 
@@ -162,27 +189,72 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
 
       {sub === 'netdisk' && (
         <SubPage title="网盘登录" onBack={() => setSub(null)}>
-          <div className="settings-card">
-            {['阿里云盘', '夸克网盘', 'WebDAV'].map((p) => (
-              <div className="settings-row" key={p}>
-                <span className="ico">
-                  <Icon name="library" size={20} />
-                </span>
-                <span className="label">{p}</span>
-                <span className="value">未登录</span>
-              </div>
-            ))}
+          <div className="netdisk-grid">
+            {NETDISKS.map((nd) => {
+              const bound = boundNetdisk(nd.key);
+              return (
+                <div
+                  className={'netdisk-item' + (editingNetdisk === nd.key ? ' active' : '')}
+                  key={nd.key}
+                  onClick={() => setEditingNetdisk(nd.key)}
+                >
+                  <div className="nd-icon" style={{ background: nd.color }}>
+                    <Icon name={nd.icon} size={24} />
+                  </div>
+                  <div className="nd-name">{nd.label}</div>
+                  <div className={'nd-state' + (bound ? ' ok' : '')}>{bound ? '已绑定' : '未绑定'}</div>
+                </div>
+              );
+            })}
           </div>
-          <p className="settings-note">在对应网盘网页端登录后，复制 Token 到「源管理 → 添加源（alist 类型）」即可挂载。</p>
+
+          {editingNetdisk && (
+            <div className="netdisk-form">
+              <h4>绑定{NETDISKS.find((n) => n.key === editingNetdisk)?.label}</h4>
+              <p className="muted sm">
+                本机通过 alist 网关注入网盘（阿里 / 夸克 / UC 均支持）。在 alist 后台挂载对应网盘后，
+                填好下面的 alist 地址与 Token 保存，即可浏览 / 搜索 / 播放网盘视频，之后播放无需重复登录。
+              </p>
+              <label>名称</label>
+              <input value={ndForm.name} onChange={(e) => setNdForm({ ...ndForm, name: e.target.value })} placeholder="留空自动命名" />
+              <label>alist 地址</label>
+              <input value={ndForm.baseUrl} onChange={(e) => setNdForm({ ...ndForm, baseUrl: e.target.value })} placeholder="http://192.168.x.x:5244" />
+              <label>Token（alist 管理 Token）</label>
+              <input value={ndForm.token} onChange={(e) => setNdForm({ ...ndForm, token: e.target.value })} placeholder="alist-xxx" />
+              <label>挂载目录（可选）</label>
+              <input value={ndForm.mountPath} onChange={(e) => setNdForm({ ...ndForm, mountPath: e.target.value })} placeholder="/" />
+              <button className="primary block" onClick={saveNetdisk}>保存并绑定</button>
+            </div>
+          )}
+
+          <p className="settings-note">也可到「源列表 → 添加源」，类型选「云盘(alist)」手动添加。</p>
         </SubPage>
       )}
 
       {sub === 'mounts' && (
         <SubPage title="已挂载列表" onBack={() => setSub(null)}>
-          <div className="empty-hint">
-            <Icon name="folder" size={40} />
-            <p>暂无可挂载的网盘</p>
-          </div>
+          {(() => {
+            const list = store.sources.filter((s) => s.type === 'alist');
+            if (!list.length) {
+              return (
+                <div className="empty-hint">
+                  <Icon name="folder" size={40} />
+                  <p>暂无可挂载的网盘</p>
+                </div>
+              );
+            }
+            return (
+              <div className="settings-card">
+                {list.map((s) => (
+                  <div className="settings-row" key={s.id}>
+                    <span className="ico"><Icon name="folder" size={20} /></span>
+                    <span className="label">{s.name || s.baseUrl}</span>
+                    <span className="value muted">{s.baseUrl}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </SubPage>
       )}
 

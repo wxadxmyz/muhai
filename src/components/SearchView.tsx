@@ -31,8 +31,8 @@ export function SearchView({
 
   const suggestions =
     mediaType === 'video'
-      ? ['电影', '电视剧', '动漫', '综艺', '纪录片']
-      : ['华语流行', '经典老歌', '轻音乐', '电子', '动漫'];
+      ? ['科幻电影', '悬疑剧', '庆余年', '周星驰', '高分纪录片']
+      : ['华语流行', '经典老歌', '周杰伦', '轻音乐', '电子'];
   const showHints = !searched && kw.trim() === '';
 
   const run = async (q?: string) => {

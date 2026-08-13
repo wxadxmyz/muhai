@@ -70,7 +70,6 @@ export const SOURCE_TYPES: { value: SourceType; label: string; desc: string }[] 
   { value: 'music-json', label: '音乐 JSON API', desc: '自定义音乐接口，填 URL 即可' },
   { value: 'video-cms', label: '影视站(苹果CMS)', desc: '返回 m3u8 的影视资源站' },
   { value: 'alist', label: '云盘(alist)', desc: '阿里云盘/夸克/UC/115 等统一网关' },
-  { value: 'mock', label: '演示源(离线)', desc: '内置假数据，开箱即用' },
 ];
 
 export function uuid(): string {

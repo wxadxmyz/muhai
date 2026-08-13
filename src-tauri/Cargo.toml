@@ -1,6 +1,6 @@
 [package]
 name = "reelflow"
-version = "1.2.3"
+version = "1.2.4"
 description = "影流 - 可自定义 API 源与云盘的影视播放器"
 authors = ["ReelFlow Contributors"]
 edition = "2021"

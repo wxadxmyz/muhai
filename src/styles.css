@@ -313,7 +313,7 @@ button.fav, .fav { color: var(--danger) !important; }
 .icon { background: var(--panel2); border: 1px solid var(--border); color: var(--text); width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; font-size: 14px; }
 .icon:hover { border-color: var(--accent); }
 .icon.active { border-color: var(--accent); color: var(--accent); }
-.fullpage-head .icon { border-radius: 12px; } /* 返回按钮：圆形 → 卡片样式 */
+.fullpage-head .icon { border-radius: 12px; flex: 0 0 auto; align-self: center; } /* 返回按钮：圆形 → 卡片样式 */
 .icon.play { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; width: 44px; height: 44px; font-size: 16px; }
 .player-progress { display: flex; align-items: center; gap: 10px; flex: 1; }
 .player-progress .t, .vp-progress .t, .fs-progress .t { font-size: 12px; color: var(--muted); min-width: 38px; text-align: center; }
@@ -600,3 +600,16 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .disclaimer-body p { margin: 0 0 12px; }
 .disclaimer-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: 8px 0 16px; }
 .disclaimer-check input { width: 16px; height: 16px; }
+
+/* 网盘登录（影视仓样式：阿里 / 夸克 / UC） */
+.netdisk-grid { display: flex; gap: 14px; padding: 6px 0 16px; }
+.netdisk-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 8px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); cursor: pointer; transition: .15s; }
+.netdisk-item.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.netdisk-item .nd-icon { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; color: #fff; flex: none; }
+.netdisk-item .nd-name { font-size: 14px; font-weight: 600; }
+.netdisk-item .nd-state { font-size: 12px; color: var(--muted); }
+.netdisk-item .nd-state.ok { color: var(--accent); }
+.netdisk-form { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.netdisk-form h4 { margin: 0 0 4px; font-size: 16px; }
+.netdisk-form label { font-size: 12px; color: var(--muted); }
+.netdisk-form .primary { margin-top: 6px; }

@@ -1,7 +1,7 @@
 // 源配置地址自动抓取与解析：支持 JSON 直链，也支持 HTML 订阅页里的链接提取。
 // 用于「导入 json 源 / 导入 json 音源」子页面的「配置地址」自动抓取。
 //
-// 方案C：抓取由 Rust 后端命令 fetch_source 代理完成，彻底绕开 WebView 前端
+// 方案C：抓取由 Rust 后端命令 fetchsource 代理完成，彻底绕开 WebView 前端
 // 的 CORS 与 Android 明文 HTTP 限制（可导入 http://饭太硬.cc/tv 这类地址）。
 // 若不在 Tauri 环境（本地 web 调试）则回退到前端 fetch。
 
@@ -41,7 +41,7 @@ function normalize(arr: any[]): any[] {
 // 优先走 Rust 后端代理抓取；不在 Tauri 环境时回退前端 fetch。
 async function fetchText(url: string): Promise<string> {
   try {
-    return await invoke<string>('fetch-source', { url });
+    return await invoke<string>('fetchsource', { url });
   } catch {
     const res = await fetch(url, { redirect: 'follow' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

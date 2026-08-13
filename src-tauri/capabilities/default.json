@@ -9,7 +9,7 @@
     "core:window:allow-show",
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",
-    "app:allow-fetch-source",
+    "app:allow-fetchsource",
     "dialog:default",
     "fs:default",
     "fs:allow-write-file",

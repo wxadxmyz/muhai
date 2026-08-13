@@ -36,7 +36,7 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![fetch_source])
+        .invoke_handler(tauri::generate_handler![fetchsource])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -44,8 +44,8 @@ pub fn run() {
 // 方案C：由 Rust 后端代前端抓取外网 URL（含明文 http / 跨域源），
 // 彻底绕开 WebView 前端的 CORS 与 Android 明文 HTTP 限制。
 // 仅取文本并返回，解析逻辑仍在前端 sourceFetch 完成。
-#[tauri::command(name = "fetch-source")]
-async fn fetch_source(url: String) -> Result<String, String> {
+#[tauri::command]
+async fn fetchsource(url: String) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()

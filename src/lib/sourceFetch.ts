@@ -97,6 +97,20 @@ function parseFetched(text: string, url: string): FetchResult {
     const href = m[1];
     if (looksLikeSourceLink(href)) links.push(toAbsolute(href, url));
   }
+  // 新增：导航页常用 data-clipboard-text / data-url 等“点击复制”属性存真实源地址，
+  // 宽松收录 http 链接（饭太硬这类 tvbox 仓库入口全靠它）
+  const attrRe = /(?:data-clipboard-text|data-url|data-href|clipboardText|data-source)=["']([^"']+)["']/gi;
+  let a2: RegExpExecArray | null;
+  while ((a2 = attrRe.exec(text))) {
+    const href = a2[1].trim();
+    if (
+      href &&
+      /^https?:\/\//i.test(href) &&
+      !/\.(css|js|png|jpe?g|svg|gif|ico|font)(\?|#|$)/i.test(href)
+    ) {
+      links.push(toAbsolute(href, url));
+    }
+  }
   const uniq = [...new Set(links)];
   if (uniq.length) return { kind: 'links', links: uniq };
   return { kind: 'error', message: '未在该页面识别到可用的源配置，请改用「本地文件」或手动粘贴。' };

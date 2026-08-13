@@ -1,5 +1,11 @@
 // 源配置地址自动抓取与解析：支持 JSON 直链，也支持 HTML 订阅页里的链接提取。
 // 用于「导入 json 源 / 导入 json 音源」子页面的「配置地址」自动抓取。
+//
+// 方案C：抓取由 Rust 后端命令 fetch_source 代理完成，彻底绕开 WebView 前端
+// 的 CORS 与 Android 明文 HTTP 限制（可导入 http://饭太硬.cc/tv 这类地址）。
+// 若不在 Tauri 环境（本地 web 调试）则回退到前端 fetch。
+
+import { invoke } from '@tauri-apps/api/core';
 
 export type FetchResult =
   | { kind: 'sources'; sources: any[] }
@@ -32,42 +38,54 @@ function normalize(arr: any[]): any[] {
     .filter((r) => r.type && r.baseUrl);
 }
 
+// 优先走 Rust 后端代理抓取；不在 Tauri 环境时回退前端 fetch。
+async function fetchText(url: string): Promise<string> {
+  try {
+    return await invoke<string>('fetch_source', { url });
+  } catch {
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  }
+}
+
+function parseFetched(text: string, url: string): FetchResult {
+  const trimmed = text.trim();
+
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const data = JSON.parse(trimmed);
+      const arr = Array.isArray(data) ? data : Array.isArray(data?.sources) ? data.sources : [data];
+      const valid = normalize(arr);
+      if (valid.length) return { kind: 'sources', sources: valid };
+    } catch {
+      /* 不是 JSON，往下走 HTML 分支 */
+    }
+  }
+
+  // HTML：提取页面里的订阅/配置链接
+  const links: string[] = [];
+  const re = /href=["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const href = m[1];
+    if (looksLikeSourceLink(href)) links.push(toAbsolute(href, url));
+  }
+  const uniq = [...new Set(links)];
+  if (uniq.length) return { kind: 'links', links: uniq };
+  return { kind: 'error', message: '未在该页面识别到可用的源配置，请改用「本地文件」或手动粘贴。' };
+}
+
 export async function fetchFromUrl(input: string): Promise<FetchResult> {
   let url = input.trim();
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
   try {
-    const res = await fetch(url, { redirect: 'follow' });
-    if (!res.ok) return { kind: 'error', message: `请求失败：HTTP ${res.status}` };
-    const text = await res.text();
-    const ct = res.headers.get('content-type') || '';
-    const trimmed = text.trim();
-
-    if (ct.includes('json') || trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      try {
-        const data = JSON.parse(trimmed);
-        const arr = Array.isArray(data) ? data : Array.isArray(data?.sources) ? data.sources : [data];
-        const valid = normalize(arr);
-        if (valid.length) return { kind: 'sources', sources: valid };
-      } catch {
-        /* 不是 JSON，往下走 HTML 分支 */
-      }
-    }
-
-    // HTML：提取页面里的订阅/配置链接
-    const links: string[] = [];
-    const re = /href=["']([^"']+)["']/gi;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text))) {
-      const href = m[1];
-      if (looksLikeSourceLink(href)) links.push(toAbsolute(href, url));
-    }
-    const uniq = [...new Set(links)];
-    if (uniq.length) return { kind: 'links', links: uniq };
-    return { kind: 'error', message: '未在该页面识别到可用的源配置，请改用「本地文件」或手动粘贴。' };
+    const text = await fetchText(url);
+    return parseFetched(text, url);
   } catch (e: any) {
     return {
       kind: 'error',
-      message: `抓取失败：${e?.message || e}（可能是跨域限制，请复制原始地址或下载后用本地文件导入）`,
+      message: `抓取失败：${e?.message || e}`,
     };
   }
 }

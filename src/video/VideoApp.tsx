@@ -200,7 +200,7 @@ export default function VideoApp() {
         {tab === 'live' && <Live sources={store.sources} onOpenSources={openSources} />}
 
         {tab === 'history' && (
-          <VideoLibrary library={library} onOpen={openDetail} onOpenDebug={() => setShowDebug(true)} />
+          <VideoLibrary library={library} onOpen={openDetail} onSearch={goSearch} />
         )}
 
         {tab === 'settings' && <SettingsPage />}

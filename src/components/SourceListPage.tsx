@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useSources } from '../store';
 import { SubPage } from './SubPage';
-import { AddSourceModal } from './AddSourceModal';
 import { Icon } from './Icon';
 import { SourceConfig } from '../engine';
+import { fetchFromUrl } from '../lib/sourceFetch';
 
-// 「源列表 / 切换站点」全屏子页：卡片式列表（去掉类型行），支持启用 / 置顶 / 编辑 / 删除。
+// 「源列表 / 切换站点」全屏子页：纵向三行信息卡（名称+开关 / 地址 / 上移·下移·删除·调试）。
 export function SourceListPage({
   mediaType,
   onClose,
@@ -16,10 +16,20 @@ export function SourceListPage({
   title?: string;
 }) {
   const store = useSources(mediaType);
-  const [editTarget, setEditTarget] = useState<SourceConfig | null>(null);
+  const [debugMsg, setDebugMsg] = useState<{ type: 'info' | 'ok' | 'err'; msg: string } | null>(null);
+
+  const runDebug = async (s: SourceConfig) => {
+    setDebugMsg({ type: 'info', msg: `正在检测「${s.name}」连通性…` });
+    const res = await fetchFromUrl(s.baseUrl);
+    if (res.kind === 'sources') setDebugMsg({ type: 'ok', msg: `「${s.name}」连通，识别到 ${res.sources.length} 个源` });
+    else if (res.kind === 'links') setDebugMsg({ type: 'ok', msg: `「${s.name}」连通，识别到 ${res.links.length} 个链接` });
+    else setDebugMsg({ type: 'err', msg: `「${s.name}」检测失败：${res.message}` });
+  };
 
   return (
     <SubPage title={title} onBack={onClose}>
+      {debugMsg && <div className={`import-status ${debugMsg.type}`}>{debugMsg.msg}</div>}
+
       {store.sources.length === 0 ? (
         <div className="empty-hint">
           <Icon name="list" size={40} />
@@ -30,52 +40,53 @@ export function SourceListPage({
         <div className="source-cards">
           {store.sources.map((s, i) => (
             <div key={s.id} className={`source-card ${s.enabled ? '' : 'off'}`}>
-              <div className="sc-main" onClick={() => store.toggle(s.id)}>
+              <div className="sc-row-1">
                 <div className="sc-name">{s.name}</div>
-                <div className="sc-url">{s.baseUrl}</div>
+                <button
+                  className={`switch ${s.enabled ? 'on' : ''}`}
+                  onClick={() => store.toggle(s.id)}
+                  title={s.enabled ? '已启用，点击停用' : '已停用，点击启用'}
+                  aria-label="启用开关"
+                />
               </div>
-              <div className="sc-actions">
+              <div className="sc-row-2">
+                <span className="sc-url">{s.baseUrl}</span>
+              </div>
+              <div className="sc-row-3">
                 <button
                   className="icon sm"
-                  title="置顶"
                   disabled={i === 0}
                   onClick={() => store.move(s.id, -1)}
+                  title="上移"
                 >
                   <Icon name="arrow-up" size={16} />
                 </button>
-                <button className="icon sm" title="编辑" onClick={() => setEditTarget(s)}>
-                  <Icon name="sliders" size={16} />
+                <button
+                  className="icon sm"
+                  disabled={i === store.sources.length - 1}
+                  onClick={() => store.move(s.id, 1)}
+                  title="下移"
+                >
+                  <Icon name="arrow-down" size={16} />
                 </button>
-                <button className="icon sm danger" title="删除" onClick={() => store.remove(s.id)}>
+                <button
+                  className="icon sm danger"
+                  onClick={() => store.remove(s.id)}
+                  title="删除"
+                >
                   <Icon name="trash" size={16} />
+                </button>
+                <button
+                  className="icon sm"
+                  onClick={() => runDebug(s)}
+                  title="调试（检测连通性）"
+                >
+                  <Icon name="bug" size={16} />
                 </button>
               </div>
             </div>
           ))}
         </div>
-      )}
-
-      {editTarget && (
-        <AddSourceModal
-          initial={{
-            name: editTarget.name,
-            type: editTarget.type,
-            baseUrl: editTarget.baseUrl,
-            token: editTarget.token,
-            mountPath: editTarget.extra?.mountPath,
-          }}
-          onClose={() => setEditTarget(null)}
-          onSubmit={(form) => {
-            store.update(editTarget.id, {
-              name: form.name,
-              type: form.type,
-              baseUrl: form.baseUrl,
-              token: form.token,
-              extra: form.mountPath ? { mountPath: form.mountPath } : editTarget.extra,
-            });
-            setEditTarget(null);
-          }}
-        />
       )}
     </SubPage>
   );

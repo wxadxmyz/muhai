@@ -6,7 +6,7 @@ import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
 
-const CATEGORIES = ['电影', '电视剧', '动漫', '综艺', '纪录片', '动画'];
+const CATEGORIES = ['推荐', '电影', '剧集', '动漫', '综艺', '纪录片'];
 
 export function Home({
   sources,
@@ -52,7 +52,7 @@ export function Home({
     <div className="home-top">
       <div className="ht-logo">影<span className="dot">流</span></div>
       <div className="ht-actions">
-        <button className="ht-ico" onClick={() => onSearch('')} title="搜索"><Icon name="search" size={20} /></button>
+        <button className="ht-ico" onClick={() => onSearch('')} title="搜索"><Icon name="search" size={22} /></button>
       </div>
     </div>
   );
@@ -89,21 +89,12 @@ export function Home({
 
       <div className="chips">
         {CATEGORIES.map((c) => (
-          <button key={c} className="chip" onClick={() => onSearch(c)}>{c}</button>
+          <button key={c} className={`chip${c === '推荐' ? ' chip-rec' : ''}`} onClick={() => (c === '推荐' ? setQ('') : onSearch(c))}>{c}</button>
         ))}
       </div>
 
-      {recent.length > 0 && (
-        <section className="row-section">
-          <div className="row-head"><h3>最近在看</h3></div>
-          <div className="poster-grid">
-            {recent.slice(0, 6).map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
-          </div>
-        </section>
-      )}
-
       <section className="row-section">
-        <div className="row-head"><h3>热门影视（跨源聚合）</h3></div>
+        <div className="row-head"><h3>推荐</h3></div>
         <div className="poster-grid">
           {all.length === 0 && <span className="muted sm">加载中…</span>}
           {all.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}

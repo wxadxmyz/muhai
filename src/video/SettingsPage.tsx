@@ -68,7 +68,7 @@ function ToggleRow({
 
 const ACCENTS = ['#4f8cff', '#ff5d73', '#23c08b', '#ff9f43', '#a66bff', '#1ec8e8', '#f4b2c0', '#ff6b9d'];
 
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.2.2';
 
 export function SettingsPage({ onClose }: { onClose?: () => void }) {
   const store = useSources('video');

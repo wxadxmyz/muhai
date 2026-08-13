@@ -207,23 +207,16 @@ export default function VideoApp() {
 
         {searchOpen && (
           <div className="fullpage">
-            <div className="fullpage-head">
-              <button className="icon" onClick={() => setSearchOpen(false)}>
-                <Icon name="arrow-left" />
-              </button>
-              <h3>搜索</h3>
-            </div>
-            <div className="fullpage-body">
-              <SearchView
-                sources={store.sources}
-                onPlay={(it) => openDetail(it)}
-                library={library}
-                mediaType="video"
-                placeholder="搜索电影 / 剧集 / 演员…"
-                enableQueue={false}
-                initialQuery={searchQuery}
-              />
-            </div>
+            <SearchView
+              onClose={() => setSearchOpen(false)}
+              sources={store.sources}
+              onPlay={(it) => openDetail(it)}
+              library={library}
+              mediaType="video"
+              placeholder="搜索电影 / 剧集 / 演员…"
+              enableQueue={false}
+              initialQuery={searchQuery}
+            />
           </div>
         )}
 

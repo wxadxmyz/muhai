@@ -613,3 +613,12 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .netdisk-form h4 { margin: 0 0 4px; font-size: 16px; }
 .netdisk-form label { font-size: 12px; color: var(--muted); }
 .netdisk-form .primary { margin-top: 6px; }
+
+/* 搜索页（设计稿：返回 + 圆角搜索框 + 搜索按钮，无标题） */
+.searchview{flex:1;overflow-y:auto;background:var(--bg);}
+.searchview .searchtop{position:sticky;top:0;z-index:6;background:var(--bg);display:flex;align-items:center;gap:10px;padding:calc(10px + var(--sat)) 14px 8px;border-bottom:1px solid var(--border);}
+.searchview .searchtop .sback{width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--text);background:transparent;border:none;padding:0;flex:none;}
+.searchview .searchtop .sinput{flex:1;height:38px;border-radius:19px;background:var(--panel2);border:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px;}
+.searchview .searchtop .sinput input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;padding:0;height:auto;box-shadow:none;}
+.searchview .searchtop .sinput .search-ico{color:var(--muted);display:flex;}
+.searchview .searchtop .sclear{width:18px;height:18px;border-radius:50%;background:#3a3a42;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none;border:none;cursor:pointer;padding:0;line-height:1;}

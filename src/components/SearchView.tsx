@@ -13,6 +13,7 @@ export function SearchView({
   placeholder = '搜索…',
   enableQueue = true,
   initialQuery,
+  onClose,
 }: {
   sources: SourceConfig[];
   onPlay: (item: MediaItem) => void;
@@ -22,6 +23,7 @@ export function SearchView({
   placeholder?: string;
   enableQueue?: boolean;
   initialQuery?: string;
+  onClose?: () => void;
 }) {
   const [kw, setKw] = useState(initialQuery ?? '');
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -59,15 +61,23 @@ export function SearchView({
   }, []);
 
   return (
-    <div className="view">
-      <div className="search-bar big">
-        <span className="search-ico"><Icon name="search" size={18} /></span>
-        <input
-          value={kw}
-          onChange={(e) => setKw(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && run()}
-          placeholder={placeholder}
-        />
+    <div className="view searchview">
+      <div className="searchtop">
+        {onClose && (
+          <button className="icon sback" onClick={onClose} aria-label="返回">
+            <Icon name="arrow-left" size={22} />
+          </button>
+        )}
+        <div className="sinput">
+          <span className="search-ico"><Icon name="search" size={18} /></span>
+          <input
+            value={kw}
+            onChange={(e) => setKw(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && run()}
+            placeholder={placeholder}
+          />
+          {kw ? <span className="sclear" onClick={() => setKw('')}>×</span> : null}
+        </div>
         <button className="primary" onClick={() => run()}>搜索</button>
       </div>
 

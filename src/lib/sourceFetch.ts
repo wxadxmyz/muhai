@@ -41,7 +41,7 @@ function normalize(arr: any[]): any[] {
 // 优先走 Rust 后端代理抓取；不在 Tauri 环境时回退前端 fetch。
 async function fetchText(url: string): Promise<string> {
   try {
-    return await invoke<string>('fetch_source', { url });
+    return await invoke<string>('fetch-source', { url });
   } catch {
     const res = await fetch(url, { redirect: 'follow' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -68,7 +68,7 @@ function ToggleRow({
 
 const ACCENTS = ['#4f8cff', '#ff5d73', '#23c08b', '#ff9f43', '#a66bff', '#1ec8e8', '#f4b2c0', '#ff6b9d'];
 
-const APP_VERSION = '1.2.4';
+const APP_VERSION = '2.0.0';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [

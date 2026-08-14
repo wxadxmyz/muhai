@@ -1,6 +1,5 @@
 // 引擎入口：工厂 + 跨源搜索聚合 + 源管理器
 import { createMusicJsonSource } from './adapters/musicJson';
-import { createVideoCmsSource } from './adapters/videoCms';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource } from './adapters/tvbox';
@@ -13,8 +12,6 @@ export function createSource(cfg: SourceConfig): MediaSource {
   switch (cfg.type) {
     case 'music-json':
       return createMusicJsonSource(cfg);
-    case 'video-cms':
-      return createVideoCmsSource(cfg);
     case 'alist':
       return createAlistSource(cfg);
     case 'tvbox':

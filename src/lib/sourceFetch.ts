@@ -44,7 +44,7 @@ function normalize(arr: any[]): any[] {
 //  3) {urls:[...]}（tvbox 标准订阅格式，单项含 url/api/name）
 //  4) {sites:[...]}（部分聚合站格式）
 //  5) 单个源对象
-// tvbox 项的 type 若为数字分类（1/2/3/4）则视为影视站(video-cms)；字符串 type 保留原值。
+// tvbox 项的 type 若为数字分类（1/2/3/4）则视为影视站，统一走 tvbox 适配器；字符串 type 保留原值。
 function toSourceList(data: any): any[] {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.sources)) return data.sources;
@@ -52,14 +52,14 @@ function toSourceList(data: any): any[] {
     return data.urls.map((u: any) => ({
       ...u,
       baseUrl: u.baseUrl || u.url || u.api,
-      type: u.type && typeof u.type === 'string' ? u.type : 'video-cms',
+      type: u.type && typeof u.type === 'string' ? u.type : 'tvbox',
     }));
   }
   if (Array.isArray(data?.sites)) {
     return data.sites.map((s: any) => ({
       ...s,
       baseUrl: s.baseUrl || s.url || s.api,
-      type: s.type && typeof s.type === 'string' ? s.type : 'video-cms',
+      type: s.type && typeof s.type === 'string' ? s.type : 'tvbox',
     }));
   }
   return [data];

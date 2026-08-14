@@ -7,7 +7,6 @@ import { Icon } from './Icon';
 
 const TYPE_LABEL: Record<string, string> = {
   'music-json': '音乐 API',
-  'video-cms': '影视站',
   alist: '云盘',
   tvbox: '影视仓',
   mock: '演示',

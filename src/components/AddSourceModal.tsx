@@ -21,6 +21,7 @@ export function AddSourceModal({
     'music-json': 'https://your-music-api.com',
     'video-cms': 'https://your-video-cms.com',
     alist: 'https://your-alist.com',
+    tvbox: 'http://www.饭太硬.cc/tv',
     mock: '',
   };
 

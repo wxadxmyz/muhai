@@ -3,6 +3,7 @@ import { createMusicJsonSource } from './adapters/musicJson';
 import { createVideoCmsSource } from './adapters/videoCms';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
+import { createTvboxSource } from './adapters/tvbox';
 import { withTimeout } from './http';
 import { MediaItem, MediaSource, SourceConfig, MediaType } from './types';
 
@@ -16,6 +17,8 @@ export function createSource(cfg: SourceConfig): MediaSource {
       return createVideoCmsSource(cfg);
     case 'alist':
       return createAlistSource(cfg);
+    case 'tvbox':
+      return createTvboxSource(cfg);
     case 'mock':
       return createMockSource(cfg);
     default:

@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { aggregateSearch, MediaItem } from '../../engine';
+import { MediaItem } from '../../engine';
 import { useLibrary } from '../../lib/library';
 import { usePlayback } from '../../lib/playback';
 import { SourceConfig } from '../../engine/types';
@@ -21,13 +20,6 @@ export function Home({
   onSearch: (q: string) => void;
   onOpenSources: () => void;
 }) {
-  const [all, setAll] = useState<MediaItem[]>([]);
-
-  useEffect(() => {
-    if (sources.length === 0) return;
-    aggregateSearch(sources, '').then((r) => setAll(r.items.filter((i) => i.mediaType === 'video')));
-  }, [sources]);
-
   const recent = library.lib.history.filter((i) => i.mediaType === 'video');
 
   const PosterCard = ({ it }: { it: MediaItem }) => {
@@ -83,11 +75,14 @@ export function Home({
       </div>
 
       <section className="row-section">
-        <div className="row-head"><h3>推荐</h3></div>
-        <div className="poster-grid">
-          {all.length === 0 && <span className="muted sm">加载中…</span>}
-          {all.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
-        </div>
+        <div className="row-head"><h3>最近观看</h3></div>
+        {recent.length === 0 ? (
+          <div className="empty sm">还没有观看记录，点上方分类或直接搜索开始看片～</div>
+        ) : (
+          <div className="poster-grid">
+            {recent.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
+          </div>
+        )}
       </section>
     </div>
   );

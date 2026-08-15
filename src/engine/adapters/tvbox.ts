@@ -50,6 +50,18 @@ async function fetchJson(url: string): Promise<any> {
   }
 }
 
+// 兼容不同影视源返回结构：{list} / {data:{list}} / {data:[...]} / {rss:{list}}
+function normalizeList(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== 'object') return [];
+  if (Array.isArray(data.list)) return data.list;
+  if (Array.isArray(data.data?.list)) return data.data.list;
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.rss?.list)) return data.rss.list;
+  if (Array.isArray(data.rss)) return data.rss;
+  return [];
+}
+
 // 影视仓部分「加密接口」直接返回 base64 密文，先尝试解码
 function tryB64(text: string): string {
   const s = text.trim();
@@ -75,38 +87,44 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
     return JSON.parse(json);
   }
 
-  async function searchSite(site: any, kw: string): Promise<MediaItem[]> {
+  async function searchSite(site: any, kw: string): Promise<{ items: MediaItem[]; error?: string }> {
     const api = apiBase(site.api || site.url || site.baseUrl || '');
-    if (!api) return [];
+    const name = site.name || site.key || api || '未知站点';
+    if (!api) return { items: [], error: `${name}：无 api 地址` };
     const q = encodeURIComponent(kw);
+    let lastErr = '';
     for (const seg of ['?ac=list&wd=', '?ac=videolist&wd=']) {
       try {
         const data = await fetchJson(`${api}${seg}${q}&pg=1`);
-        const list = data?.list ?? data?.data?.list;
-        if (!Array.isArray(list) || !list.length) continue;
-        return list.map((it: any) => {
-          const groups = parsePlayGroups(it.vod_play_url ?? it.play_url ?? '');
-          const eps = groups[0] ?? [];
-          const id = `${site.key || site.name || api}__${it.vod_id ?? it.id}`;
-          playCache.set(id, { api, vodId: String(it.vod_id ?? it.id) });
+        const list = normalizeList(data);
+        if (Array.isArray(list) && list.length) {
           return {
-            id,
-            sourceId: cfg.id,
-            sourceName: cfg.name,
-            title: it.vod_name ?? it.name ?? '未知',
-            cover: it.vod_pic ?? it.pic,
-            year: it.vod_year,
-            mediaType: 'video' as const,
-            playUrl: eps[0]?.url,
-            episodes: eps,
-            raw: { ...it, siteApi: api, vodId: String(it.vod_id ?? it.id) },
-          } as MediaItem;
-        });
-      } catch {
-        /* 该协议不适用，试下一个 */
+            items: list.map((it: any) => {
+              const groups = parsePlayGroups(it.vod_play_url ?? it.play_url ?? '');
+              const eps = groups[0] ?? [];
+              const id = `${site.key || site.name || api}__${it.vod_id ?? it.id}`;
+              playCache.set(id, { api, vodId: String(it.vod_id ?? it.id) });
+              return {
+                id,
+                sourceId: cfg.id,
+                sourceName: cfg.name,
+                title: it.vod_name ?? it.name ?? '未知',
+                cover: it.vod_pic ?? it.pic,
+                year: it.vod_year,
+                mediaType: 'video' as const,
+                playUrl: eps[0]?.url,
+                episodes: eps,
+                raw: { ...it, siteApi: api, vodId: String(it.vod_id ?? it.id) },
+              } as MediaItem;
+            }),
+          };
+        }
+        lastErr = `${name}：返回空列表`;
+      } catch (e: any) {
+        lastErr = `${name}：${(e?.message || String(e)).slice(0, 120)}`;
       }
     }
-    return [];
+    return { items: [], error: lastErr || `${name}：未知错误` };
   }
 
   return {
@@ -119,17 +137,19 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
           : [];
       if (!sites.length) throw new Error('配置中未识别到可用站点');
       const out: MediaItem[] = [];
+      const failures: string[] = [];
       const limited = sites.slice(0, 12);
       await Promise.all(
         limited.map(async (site: any) => {
-          try {
-            out.push(...(await searchSite(site, keyword)));
-          } catch {
-            /* 忽略单个站点失败 */
-          }
+          const r = await searchSite(site, keyword);
+          if (r.items.length) out.push(...r.items);
+          else if (r.error) failures.push(r.error);
         }),
       );
-      if (!out.length) throw new Error('所有站点均无搜索结果（可能需影视仓专用爬虫）');
+      if (!out.length) {
+        const detail = failures.length ? failures.join('；') : '所有站点均无结果';
+        throw new Error(`搜索失败：${detail}`);
+      }
       return out;
     },
 
@@ -138,7 +158,7 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
       if (!c) return { url: '' };
       try {
         const data = await fetchJson(`${c.api}?ac=detail&ids=${encodeURIComponent(c.vodId)}`);
-        const it = data?.list?.[0] ?? data?.data?.list?.[0];
+        const it = normalizeList(data)[0];
         const eps = parsePlayGroups(it?.vod_play_url ?? it?.play_url ?? '');
         return { url: eps[0]?.[0]?.url ?? '' };
       } catch {

@@ -27,7 +27,7 @@ export function SearchView({
 }) {
   const [kw, setKw] = useState(initialQuery ?? '');
   const [items, setItems] = useState<MediaItem[]>([]);
-  const [errors, setErrors] = useState<{ sourceId: string; message: string }[]>([]);
+  const [errors, setErrors] = useState<{ sourceId: string; sourceName: string; message: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
@@ -111,7 +111,15 @@ export function SearchView({
       )}
 
       {errors.length > 0 && (
-        <div className="err">部分源失败：{errors.map((e) => e.sourceId).join('、')}（可在调试面板查看详情）</div>
+        <div className="err">
+          部分源失败：
+          {errors.map((e, i) => (
+            <span key={i}>
+              {i > 0 ? '；' : ''}
+              {e.sourceName}（{e.message}）
+            </span>
+          ))}
+        </div>
       )}
 
       {loading && <div className="loading">跨源搜索中…</div>}

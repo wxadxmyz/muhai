@@ -54,34 +54,30 @@ export function SourceListPage({
               </div>
               <div className="sc-row-3">
                 <button
-                  className="icon sm"
+                  className="action-chip"
                   disabled={i === 0}
                   onClick={() => store.move(s.id, -1)}
-                  title="上移"
                 >
-                  <Icon name="arrow-up" size={16} />
+                  上移
                 </button>
                 <button
-                  className="icon sm"
+                  className="action-chip"
                   disabled={i === store.sources.length - 1}
                   onClick={() => store.move(s.id, 1)}
-                  title="下移"
                 >
-                  <Icon name="arrow-down" size={16} />
+                  下移
                 </button>
                 <button
-                  className="icon sm danger"
+                  className="action-chip danger"
                   onClick={() => store.remove(s.id)}
-                  title="删除"
                 >
-                  <Icon name="trash" size={16} />
+                  删除
                 </button>
                 <button
-                  className="icon sm"
+                  className="action-chip"
                   onClick={() => runDebug(s)}
-                  title="调试（检测连通性）"
                 >
-                  <Icon name="bug" size={16} />
+                  调试
                 </button>
               </div>
             </div>

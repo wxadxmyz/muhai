@@ -582,7 +582,25 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .sc-row-2 { font-size: 12px; color: var(--muted); }
 .sc-url { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sc-row-3 { display: flex; gap: 8px; }
-.sc-row-3 .icon { flex: 1; justify-content: center; }
+.sc-row-3 .action-chip {
+  flex: 1;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: background .15s;
+}
+.sc-row-3 .action-chip:hover { background: var(--surface3); }
+.sc-row-3 .action-chip.danger { color: var(--danger); border-color: rgba(220,38,38,.35); }
+.sc-row-3 .action-chip.danger:hover { background: rgba(220,38,38,.08); }
+.sc-row-3 .action-chip:disabled { opacity: .35; pointer-events: none; }
 .icon.sm { width: 34px; height: 34px; }
 
 .empty-hint { text-align: center; color: var(--muted); padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }

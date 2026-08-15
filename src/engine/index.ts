@@ -4,7 +4,7 @@ import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource } from './adapters/tvbox';
 import { withTimeout } from './http';
-import { MediaItem, MediaSource, SourceConfig, MediaType } from './types';
+import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
 
 export * from './types';
 
@@ -61,6 +61,60 @@ export async function aggregateSearch(
     if (!map.has(key)) map.set(key, it);
   }
   return { items: Array.from(map.values()), errors };
+}
+
+// 首页聚合：并发拉取所有启用源的首页推荐，合并去重
+export async function aggregateHome(
+  sources: SourceConfig[],
+  opts: { timeout?: number } = {}
+): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
+  const active = sources.filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
+  const results = await Promise.all(
+    active.map(async (s) => {
+      try {
+        const src = createSource(s);
+        if (!src.home) return { ok: false as const, sourceId: s.id, sourceName: s.name, message: '该源不支持首页' };
+        const items = await withTimeout(src.home(), opts.timeout ?? 8000);
+        return { ok: true as const, sourceId: s.id, sourceName: s.name, items };
+      } catch (e: any) {
+        return { ok: false as const, sourceId: s.id, sourceName: s.name, message: e?.message ?? '首页加载失败' };
+      }
+    })
+  );
+  const items = results.flatMap((r) => (r.ok ? r.items : []));
+  const errors = results.filter((r) => !r.ok).map((r) => ({
+    sourceId: (r as any).sourceId,
+    sourceName: (r as any).sourceName ?? (r as any).sourceId,
+    message: (r as any).message,
+  }));
+  const map = new Map<string, MediaItem>();
+  for (const it of items) {
+    const key = `${it.title}|${it.artist ?? ''}`;
+    if (!map.has(key)) map.set(key, it);
+  }
+  return { items: Array.from(map.values()), errors };
+}
+
+// 直播源聚合：收集所有启用 tvbox 源的 lives[]
+export async function aggregateLives(
+  sources: SourceConfig[]
+): Promise<{ groups: { sourceId: string; sourceName: string; channels: LiveChannelSource[] }[]; errors: string[] }> {
+  const active = sources.filter((s) => s.enabled && s.type === 'tvbox').sort((a, b) => a.priority - b.priority);
+  const groups: { sourceId: string; sourceName: string; channels: LiveChannelSource[] }[] = [];
+  const errors: string[] = [];
+  await Promise.all(
+    active.map(async (s) => {
+      try {
+        const src = createSource(s);
+        if (!src.lives) return;
+        const channels = await src.lives();
+        if (channels.length) groups.push({ sourceId: s.id, sourceName: s.name, channels });
+      } catch (e: any) {
+        errors.push(`${s.name}：${e?.message ?? '直播源加载失败'}`);
+      }
+    })
+  );
+  return { groups, errors };
 }
 
 // 源管理器：内存态，持久化由上层（localStorage / 文件）负责

@@ -64,6 +64,20 @@ export interface MediaSource {
   getPlayUrl(itemId: string): Promise<PlayUrl>;
   getDetail?(itemId: string): Promise<MediaItem>;
   test(): Promise<boolean>;
+  // 首页/推荐：返回各站点最新内容（有源主页"站点推荐"用）
+  home?(): Promise<MediaItem[]>;
+  // 直播源：返回 m3u/txt 直播线路（直播 Tab 用）
+  lives?(): Promise<LiveChannelSource[]>;
+}
+
+// 直播线路（来自 tvbox 配置的 lives[]）
+export interface LiveChannelSource {
+  name: string;
+  url: string;
+  type?: number;
+  playerType?: number | string;
+  epg?: string;
+  logo?: string;
 }
 
 export const SOURCE_TYPES: { value: SourceType; label: string; desc: string }[] = [

@@ -68,7 +68,19 @@ function ToggleRow({
 
 const ACCENTS = ['#4f8cff', '#ff5d73', '#23c08b', '#ff9f43', '#a66bff', '#1ec8e8', '#f4b2c0', '#ff6b9d'];
 
-const APP_VERSION = '2.1.0';
+// 主题色 hex → 中文名映射，设置页展示中文而非原始色值
+const ACCENT_NAMES: Record<string, string> = {
+  '#4f8cff': '蓝',
+  '#ff5d73': '粉红',
+  '#23c08b': '翠绿',
+  '#ff9f43': '橙',
+  '#a66bff': '紫',
+  '#1ec8e8': '青',
+  '#f4b2c0': '浅粉',
+  '#ff6b9d': '玫红',
+};
+
+const APP_VERSION = '2.2.0';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -163,8 +175,7 @@ export function SettingsPage({
         {/* 外观 */}
         <div className="settings-group-title">外观</div>
         <div className="settings-card">
-          <NavRow icon="palette" label="主题色" value={settings.themeColor || '蓝'} onClick={() => setSub('theme')} />
-          <ToggleRow icon="sliders" label="深色模式" on={settings.darkMode} onChange={(v) => update({ darkMode: v })} />
+          <NavRow icon="palette" label="主题色" value={ACCENT_NAMES[settings.themeColor || ''] || settings.themeColor || '蓝'} onClick={() => setSub('theme')} />
           <NavRow icon="camera" label="首页壁纸" onClick={() => setSub('wallpaper')} />
         </div>
 

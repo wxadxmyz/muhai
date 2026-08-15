@@ -7,7 +7,7 @@
 //
 // 抓取统一走 Rust 后端 fetchsource 代理，绕开 Android WebView 的 CORS 与明文 HTTP 限制。
 import { invoke } from '@tauri-apps/api/core';
-import { Episode, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
+import { Episode, LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 
 function apiBase(u: string): string {
   return (u || '').split('?')[0].replace(/\/+$/, '');
@@ -87,6 +87,34 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
     return JSON.parse(json);
   }
 
+  function resolveSites(data: any): any[] {
+    if (Array.isArray(data?.sites)) return data.sites;
+    if (Array.isArray(data?.urls)) return data.urls;
+    return [];
+  }
+
+  function siteToItems(site: any, list: any[]): MediaItem[] {
+    const api = apiBase(site.api || site.url || site.baseUrl || '');
+    return list.map((it: any) => {
+      const groups = parsePlayGroups(it.vod_play_url ?? it.play_url ?? '');
+      const eps = groups[0] ?? [];
+      const id = `${site.key || site.name || api}__${it.vod_id ?? it.id}`;
+      if (api) playCache.set(id, { api, vodId: String(it.vod_id ?? it.id) });
+      return {
+        id,
+        sourceId: cfg.id,
+        sourceName: cfg.name,
+        title: it.vod_name ?? it.name ?? '未知',
+        cover: it.vod_pic ?? it.pic,
+        year: it.vod_year,
+        mediaType: 'video' as const,
+        playUrl: eps[0]?.url,
+        episodes: eps,
+        raw: { ...it, siteApi: api, vodId: String(it.vod_id ?? it.id) },
+      } as MediaItem;
+    });
+  }
+
   async function searchSite(site: any, kw: string): Promise<{ items: MediaItem[]; error?: string }> {
     const api = apiBase(site.api || site.url || site.baseUrl || '');
     const name = site.name || site.key || api || '未知站点';
@@ -98,26 +126,7 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
         const data = await fetchJson(`${api}${seg}${q}&pg=1`);
         const list = normalizeList(data);
         if (Array.isArray(list) && list.length) {
-          return {
-            items: list.map((it: any) => {
-              const groups = parsePlayGroups(it.vod_play_url ?? it.play_url ?? '');
-              const eps = groups[0] ?? [];
-              const id = `${site.key || site.name || api}__${it.vod_id ?? it.id}`;
-              playCache.set(id, { api, vodId: String(it.vod_id ?? it.id) });
-              return {
-                id,
-                sourceId: cfg.id,
-                sourceName: cfg.name,
-                title: it.vod_name ?? it.name ?? '未知',
-                cover: it.vod_pic ?? it.pic,
-                year: it.vod_year,
-                mediaType: 'video' as const,
-                playUrl: eps[0]?.url,
-                episodes: eps,
-                raw: { ...it, siteApi: api, vodId: String(it.vod_id ?? it.id) },
-              } as MediaItem;
-            }),
-          };
+          return { items: siteToItems(site, list) };
         }
         lastErr = `${name}：返回空列表`;
       } catch (e: any) {
@@ -172,6 +181,42 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
         return Array.isArray(data?.sites) || Array.isArray(data?.urls);
       } catch {
         return false;
+      }
+    },
+
+    // 首页推荐：各站点最新列表合并（有源主页"站点推荐"用）
+    async home(): Promise<MediaItem[]> {
+      try {
+        const data = await loadConfig();
+        const sites = resolveSites(data);
+        const out: MediaItem[] = [];
+        const limited = sites.slice(0, 6);
+        await Promise.all(
+          limited.map(async (site: any) => {
+            const api = apiBase(site.api || site.url || site.baseUrl || '');
+            if (!api) return;
+            try {
+              const d = await fetchJson(`${api}?ac=list&pg=1`);
+              const list = normalizeList(d).slice(0, 8);
+              if (Array.isArray(list) && list.length) out.push(...siteToItems(site, list));
+            } catch {
+              /* 忽略单个站点失败 */
+            }
+          })
+        );
+        return out;
+      } catch {
+        return [];
+      }
+    },
+
+    // 直播源：返回配置中的 lives[]
+    async lives(): Promise<LiveChannelSource[]> {
+      try {
+        const data = await loadConfig();
+        return Array.isArray(data?.lives) ? data.lives : [];
+      } catch {
+        return [];
       }
     },
   };

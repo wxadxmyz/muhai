@@ -18,6 +18,7 @@ import { Live } from './views/Live';
 import { SettingsPage } from './SettingsPage';
 import { Disclaimer } from '../components/Disclaimer';
 import { Icon } from '../components/Icon';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 type Tab = 'home' | 'live' | 'history' | 'settings';
 const ORDER: Tab[] = ['home', 'live', 'history', 'settings'];
@@ -48,6 +49,55 @@ export default function VideoApp() {
       document.documentElement.style.setProperty('--accent2', settings.themeColor);
     }
   }, [settings.themeColor]);
+
+  // 手势返回：Android 返回键 / 侧滑逐级返回，而非直接退出到桌面
+  const navRef = useRef({
+    tab: 'home' as Tab,
+    detail: null as MediaItem | null,
+    playingVideo: false,
+    searchOpen: false,
+    settingsSub: null as string | null,
+    showCloud: false,
+    showDebug: false,
+  });
+  navRef.current = { tab, detail, playingVideo, searchOpen, settingsSub, showCloud, showDebug };
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const un = await getCurrentWindow().onBackButton((event) => {
+          const s = navRef.current;
+          if (s.playingVideo) {
+            event.preventDefault();
+            closeVideo();
+          } else if (s.showDebug) {
+            event.preventDefault();
+            setShowDebug(false);
+          } else if (s.showCloud) {
+            event.preventDefault();
+            setShowCloud(false);
+          } else if (s.searchOpen) {
+            event.preventDefault();
+            setSearchOpen(false);
+          } else if (s.detail) {
+            event.preventDefault();
+            setDetail(null);
+          } else if (s.settingsSub) {
+            event.preventDefault();
+            setSettingsSub(null);
+          } else if (s.tab !== 'home') {
+            event.preventDefault();
+            setTab('home');
+          }
+          // 否则不拦截，交给系统退出 App
+        });
+        unlisten = un;
+      } catch {
+        /* 不支持 onBackButton 的环境忽略 */
+      }
+    })();
+    return () => unlisten?.();
+  }, []);
 
   // touchStart ref for swipe navigation
   const onTouchStart = (e: React.TouchEvent) => {

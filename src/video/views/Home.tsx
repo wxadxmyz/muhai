@@ -1,9 +1,10 @@
 import { MediaItem } from '../../engine';
+import { aggregateHome } from '../../engine';
 import { useLibrary } from '../../lib/library';
-import { usePlayback } from '../../lib/playback';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
+import { useEffect, useState } from 'react';
 
 const CATEGORIES = ['推荐', '电影', '剧集', '动漫', '综艺', '纪录片'];
 
@@ -20,18 +21,44 @@ export function Home({
   onSearch: (q: string) => void;
   onOpenSources: () => void;
 }) {
-  const recent = library.lib.history.filter((i) => i.mediaType === 'video');
+  // 有源时自动拉取各源首页推荐（添加源后无需手动刷新）
+  const [homeItems, setHomeItems] = useState<MediaItem[]>([]);
+  const [homeLoading, setHomeLoading] = useState(false);
+  const [homeError, setHomeError] = useState('');
+
+  useEffect(() => {
+    if (sources.length === 0) {
+      setHomeItems([]);
+      return;
+    }
+    let cancelled = false;
+    setHomeLoading(true);
+    setHomeError('');
+    aggregateHome(sources, { timeout: 8000 })
+      .then((r) => {
+        if (cancelled) return;
+        setHomeItems(r.items);
+        if (!r.items.length && r.errors.length) {
+          setHomeError(r.errors[0]?.message ?? '源暂未返回内容');
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setHomeError(e?.message ?? '加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) setHomeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sources]);
 
   const PosterCard = ({ it }: { it: MediaItem }) => {
-    const prog = library.lib.watchProgress[`${it.sourceId}:${it.id}`] ?? 0;
-    const dur = it.duration || 0;
-    const pct = dur ? Math.min(100, Math.round((prog / dur) * 100)) : 0;
     return (
       <div className="pcard" onClick={() => onOpenDetail(it)}>
         <div className="pcover" style={{ background: it.cover ? undefined : gradientFor(it.title) }}>
           {it.cover ? <img src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
           {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
-          {pct > 0 && <div className="pbar"><div className="pbar-in" style={{ width: pct + '%' }} /></div>}
         </div>
         <div className="ptitle">{it.title}</div>
         <div className="psub">{it.year ?? ''} {it.genre ? '· ' + it.genre : ''}</div>
@@ -75,12 +102,14 @@ export function Home({
       </div>
 
       <section className="row-section">
-        <div className="row-head"><h3>最近观看</h3></div>
-        {recent.length === 0 ? (
-          <div className="empty sm">还没有观看记录，点上方分类或直接搜索开始看片～</div>
+        <div className="row-head"><h3>站点推荐</h3><span className="row-more" onClick={() => onSearch('')}>更多 ›</span></div>
+        {homeLoading ? (
+          <div className="empty sm">正在从已添加的来源加载推荐…</div>
+        ) : homeItems.length === 0 ? (
+          <div className="empty sm">{homeError || '已添加来源，但暂未返回可展示的内容。点上方分类或搜索开始看片～'}</div>
         ) : (
           <div className="poster-grid">
-            {recent.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
+            {homeItems.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
           </div>
         )}
       </section>

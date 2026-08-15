@@ -68,7 +68,7 @@ function ToggleRow({
 
 const ACCENTS = ['#4f8cff', '#ff5d73', '#23c08b', '#ff9f43', '#a66bff', '#1ec8e8', '#f4b2c0', '#ff6b9d'];
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -77,10 +77,17 @@ const NETDISKS = [
   { key: 'uc', label: 'UC网盘', icon: 'folder' as const, color: '#ff6a00' },
 ];
 
-export function SettingsPage({ onClose }: { onClose?: () => void }) {
+export function SettingsPage({
+  onClose,
+  sub,
+  setSub,
+}: {
+  onClose?: () => void;
+  sub: string | null;
+  setSub: (v: string | null) => void;
+}) {
   const store = useSources('video');
   const { settings, update } = useSettings();
-  const [sub, setSub] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<string>('');
   const [checking, setChecking] = useState(false);
   const [editingNetdisk, setEditingNetdisk] = useState<string | null>(null);
@@ -125,7 +132,6 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
             onClick={() => setSub('import')}
           />
           <NavRow icon="list" label="仓库管理" value={count} onClick={() => setSub('sources')} />
-          <NavRow icon="sliders" label="切换站点" onClick={() => setSub('switchsite')} />
         </div>
 
         {/* 网盘 */}
@@ -181,9 +187,6 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
       )}
       {sub === 'sources' && (
         <SourceListPage mediaType="video" title="仓库管理" onClose={() => setSub(null)} />
-      )}
-      {sub === 'switchsite' && (
-        <SourceListPage mediaType="video" title="切换站点" onClose={() => setSub(null)} />
       )}
       {sub === 'player' && <PlayerSettingsPage onBack={() => setSub(null)} />}
 

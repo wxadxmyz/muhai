@@ -28,7 +28,7 @@ export async function aggregateSearch(
   sources: SourceConfig[],
   keyword: string,
   opts: { timeout?: number; mediaType?: MediaType } = {}
-): Promise<{ items: MediaItem[]; errors: { sourceId: string; message: string }[] }> {
+): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
   const active = sources
     .filter((s) => s.enabled)
     .sort((a, b) => a.priority - b.priority);
@@ -39,7 +39,7 @@ export async function aggregateSearch(
         const items = await withTimeout(createSource(s).search(keyword, 1), opts.timeout ?? 8000);
         return { ok: true as const, sourceId: s.id, items };
       } catch (e: any) {
-        return { ok: false as const, sourceId: s.id, message: e?.message ?? '搜索失败' };
+        return { ok: false as const, sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' };
       }
     })
   );
@@ -48,7 +48,11 @@ export async function aggregateSearch(
   if (opts.mediaType) items = items.filter((it) => it.mediaType === opts.mediaType);
   const errors = results
     .filter((r) => !r.ok)
-    .map((r) => ({ sourceId: (r as any).sourceId, message: (r as any).message }));
+    .map((r) => ({
+      sourceId: (r as any).sourceId,
+      sourceName: (r as any).sourceName ?? (r as any).sourceId,
+      message: (r as any).message,
+    }));
 
   // 同名同艺术家去重，保留多源备选
   const map = new Map<string, MediaItem>();

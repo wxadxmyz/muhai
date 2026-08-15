@@ -144,11 +144,6 @@ button.fav, .fav { color: var(--danger) !important; }
 .pcard:hover .pc-actions { opacity: 1; }
 .pc-actions .mini { background: rgba(0,0,0,.55); border: none; color: #fff; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
 
-/* 影视仓风格：搜索历史记录入口 */
-.search-history-block { margin-bottom: 18px; }
-.search-history-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.search-history-chips .chip { cursor: pointer; }
-
 /* ============ 列表（音乐库/历史）============ */
 .track-list { display: flex; flex-direction: column; gap: 2px; }
 .track-list.video { gap: 4px; }

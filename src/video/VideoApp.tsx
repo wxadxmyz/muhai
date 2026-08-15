@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useSources } from '../store';
 import { useLibrary } from '../lib/library';
 import { usePlayback } from '../lib/playback';
@@ -39,6 +40,7 @@ export default function VideoApp() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string | undefined>(undefined);
+  const [settingsSub, setSettingsSub] = useState<string | null>(null);
 
   // 应用主题色 / 壁纸
   useEffect(() => {
@@ -47,6 +49,55 @@ export default function VideoApp() {
       document.documentElement.style.setProperty('--accent2', settings.themeColor);
     }
   }, [settings.themeColor]);
+
+  // 系统返回手势 / 返回键：逐级关闭最上层，到根 Tab 才放行退出（Android）
+  const navRef = useRef({ showDebug, showCloud, searchOpen, detail, tab, settingsSub });
+  navRef.current = { showDebug, showCloud, searchOpen, detail, tab, settingsSub };
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onBackButton((event) => {
+        const n = navRef.current;
+        if (n.showDebug) {
+          setShowDebug(false);
+          event.preventDefault();
+          return;
+        }
+        if (n.showCloud) {
+          setShowCloud(false);
+          event.preventDefault();
+          return;
+        }
+        if (n.searchOpen) {
+          setSearchOpen(false);
+          event.preventDefault();
+          return;
+        }
+        if (n.detail) {
+          setDetail(null);
+          event.preventDefault();
+          return;
+        }
+        if (n.tab === 'settings' && n.settingsSub) {
+          setSettingsSub(null);
+          event.preventDefault();
+          return;
+        }
+        if (n.tab === 'settings') {
+          setTab('home');
+          event.preventDefault();
+          return;
+        }
+        // 已在根 Tab（主页/直播/历史），不拦截，交给系统退出
+      })
+      .then((u) => {
+        unlisten = u;
+      })
+      .catch(() => {});
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
@@ -200,10 +251,10 @@ export default function VideoApp() {
         {tab === 'live' && <Live sources={store.sources} onOpenSources={openSources} />}
 
         {tab === 'history' && (
-          <VideoLibrary library={library} onOpen={openDetail} onSearch={goSearch} />
+          <VideoLibrary library={library} onOpen={openDetail} />
         )}
 
-        {tab === 'settings' && <SettingsPage />}
+        {tab === 'settings' && <SettingsPage sub={settingsSub} setSub={setSettingsSub} />}
 
         {searchOpen && (
           <div className="fullpage">

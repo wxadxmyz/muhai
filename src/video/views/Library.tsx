@@ -8,17 +8,14 @@ import { Icon } from '../../components/Icon';
 export function VideoLibrary({
   library,
   onOpen,
-  onSearch,
 }: {
   library: ReturnType<typeof useLibrary>;
   onOpen: (it: MediaItem) => void;
-  onSearch?: (kw: string) => void;
 }) {
   const [tab, setTab] = useState<'history' | 'fav'>('history');
 
   const historyItems = library.lib.history.filter((i) => i.mediaType === 'video');
   const favItems = library.lib.favorites.filter((i) => i.mediaType === 'video');
-  const searches = library.lib.searchHistory;
 
   const list = tab === 'history' ? historyItems : favItems;
 
@@ -32,29 +29,6 @@ export function VideoLibrary({
           影视收藏
         </button>
       </div>
-
-      {/* 搜索历史记录入口（影视仓风格，置于观看历史上方） */}
-      {tab === 'history' && searches.length > 0 && (
-        <div className="search-history-block">
-          <div className="sh-head">
-            <span>搜索历史记录</span>
-            <button className="link sm" onClick={() => library.clearSearch()}>清空</button>
-          </div>
-          <div className="search-history-chips">
-            {searches.map((kw) => (
-              <button
-                key={kw}
-                className="chip ghost"
-                onClick={() => onSearch?.(kw)}
-                onDoubleClick={() => library.removeSearch(kw)}
-                title="单击重新搜索，双击删除"
-              >
-                {kw}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {list.length === 0 ? (
         <div className="empty">

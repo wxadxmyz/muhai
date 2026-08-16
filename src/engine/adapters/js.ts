@@ -34,7 +34,7 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
   async function call(func: string, args: string[]): Promise<any> {
     const code = await loadCode();
     const raw = await invoke<string>('run_spider', {
-      payload: { code, func, args },
+      payload: { code, func, args, api: jsCfg.api, ext: jsCfg.ext },
     });
     try {
       return JSON.parse(raw);

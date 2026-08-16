@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSkin, SKINS } from '../lib/theme';
-import { useSettings } from '../lib/settings';
+import { useSettings, DEFAULT_DECRYPT_ENDPOINT } from '../lib/settings';
 import { useSources } from '../store';
 import { alistClient } from '../lib/alistClient';
 import { isTauri, getAutostart, setAutostart, checkForUpdate } from '../lib/tauriBridge';
@@ -197,6 +197,23 @@ export function SettingsModal({
           <Group title={isMusic ? '音源' : '源管理'}>
             <Row icon="plug" label="音源管理" sub={isMusic ? '导入 / 切换 / 编辑 JSON 音源' : '影视源 · 直播源 · 网盘源'} onClick={onOpenSources} />
             <Row icon="file-text" label="导入音源(JSON)" onClick={importSource} />
+          </Group>
+
+          <Group title="加密源解密">
+            <Row label="启用服务端解密" sub="加密接口(XC.json 等)经第三方端点还原">
+              <Switch checked={!!settings.decryptEnabled} onChange={(v) => update({ decryptEnabled: v })} />
+            </Row>
+            <Row label="解密端点地址">
+              <input
+                type="text"
+                value={settings.decryptEndpoint}
+                onChange={(e) => update({ decryptEndpoint: e.target.value })}
+                placeholder={DEFAULT_DECRYPT_ENDPOINT}
+              />
+            </Row>
+            <div className="settings-note">
+              默认使用饭太硬 jiemi.php（服务端解密，无需私有 key）。关闭或留空则加密源无法自动解密；该地址会在解密加密源时被访问。
+            </div>
           </Group>
 
           {!isMusic && (

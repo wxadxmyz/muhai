@@ -11,6 +11,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { createJsSource } from './js';
+import { getDecryptConfig } from '../../lib/settings';
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -22,51 +23,97 @@ async function fetchText(url: string): Promise<string> {
   }
 }
 
-// E5 加密源解密：把整体密文配置还原为 spider 代码。
-// 当前为占位实现，返回原文本；XC.json 的 hex→解码→AES/RC4 解密在 E5 补齐。
-function tryDecodeConfig(text: string): string {
-  const s = text.trim();
-  // TODO(E5)：检测纯 hex 密文 → hex 解码 → AES/RC4 解密（对齐 TVBox 算法与 key）→ 返回 spider 代码
-  return s;
+// E5 加密源解密（v2.3.0 实现）：把"整体加密接口"还原为可读 JSON 配置。
+// 采用饭太硬 jiemi.php 服务端解密（App 把加密接口 URL 发给该端点，服务端用私钥解出）。
+// 仅当 JSON.parse 失败时触发（即配置是密文），正常 JSON 配置不触发，最小化第三方调用。
+// 端点可在「设置」里改/关（getDecryptConfig）。
+async function tryDecodeConfig(cfg: SourceConfig): Promise<string> {
+  const { enabled, endpoint } = getDecryptConfig();
+  if (!enabled || !endpoint) return '';
+  try {
+    const u = `${endpoint}?url=${encodeURIComponent(cfg.baseUrl)}`;
+    const dec = await fetchText(u);
+    if (dec && dec.trim().startsWith('{')) return dec; // 解密成功，返回 JSON 文本
+  } catch {
+    /* 解密失败，返回空，交由上层按无源处理 */
+  }
+  return '';
 }
 
-// 从 tvbox 配置收集所有可执行的 spider 源
+// 去掉 TVBox spider 地址常见的 ";md5;<hash>" 校验后缀
+function stripMd5(u: string): string {
+  return String(u).split(';md5;')[0];
+}
+
+// 把 spider 字段归一为 {spider 内联代码 | spiderUrl 远程地址}
+function spiderField(v: any): { spider?: string; spiderUrl?: string } {
+  if (typeof v !== 'string') return { spider: JSON.stringify(v) };
+  if (/^https?:\/\//i.test(v)) return { spiderUrl: stripMd5(v) };
+  return { spider: v };
+}
+
+// 从 tvbox 配置收集所有可执行的 spider 源（支持 TVBox csp 模型）
 async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   const text = await fetchText(cfg.baseUrl);
   let data: any;
   try {
     data = JSON.parse(text);
   } catch {
-    // 整体密文（XC.json 风格）：解密后作为单个 js 源
-    const decoded = tryDecodeConfig(text);
-    return [
-      { ...cfg, type: 'js', name: cfg.name, spider: decoded } as SourceConfig,
-    ];
+    // 整体密文（XC.json 风格）：尝试服务端解密
+    const dec = await tryDecodeConfig(cfg);
+    if (!dec) return [];
+    try {
+      data = JSON.parse(dec);
+    } catch {
+      return [];
+    }
   }
-  const out: SourceConfig[] = [];
-  // 顶层 spider（XC.json 风格单线路）
+
+  // 单线路（无 sites 数组）：顶层 spider 即唯一源
+  if (!Array.isArray(data.sites)) {
+    if (data.spider) {
+      const sf = spiderField(data.spider);
+      return [{ ...cfg, type: 'js', name: cfg.name, ...sf } as SourceConfig];
+    }
+    return [];
+  }
+
+  // 多站点：顶层 spider 为共享蜘蛛（通常是一个远程 JS 脚本地址，需剥离 ;md5;），
+  // 各站点通过 api(类名) + ext(站点配置) 选路；无自有 spider 的站点继承顶层 spider。
+  let sharedCode: string | null = null;
   if (data.spider) {
+    const sf = spiderField(data.spider);
+    if (sf.spider) {
+      sharedCode = sf.spider;
+    } else if (sf.spiderUrl) {
+      try {
+        sharedCode = await fetchText(sf.spiderUrl); // 预先取回共享蜘蛛，避免每站点重复拉取
+      } catch {
+        sharedCode = null;
+      }
+    }
+  }
+
+  const out: SourceConfig[] = [];
+  for (const s of data.sites) {
+    const sf = s.spider
+      ? spiderField(s.spider)
+      : s.spiderUrl
+        ? { spiderUrl: stripMd5(s.spiderUrl) }
+        : null;
+    let spider = sf?.spider ?? null;
+    const spiderUrl = sf?.spiderUrl ?? null;
+    if (!spider && !spiderUrl && sharedCode) spider = sharedCode; // 继承共享蜘蛛
+    if (!spider && !spiderUrl) continue; // 既无自有也无共享蜘蛛，跳过
     out.push({
       ...cfg,
       type: 'js',
-      name: cfg.name,
-      spider: typeof data.spider === 'string' ? data.spider : JSON.stringify(data.spider),
+      name: s.name || s.key || cfg.name,
+      spider: spider ?? undefined,
+      spiderUrl: spiderUrl ?? undefined,
+      api: s.api,
+      ext: s.ext ? JSON.stringify(s.ext) : undefined,
     } as SourceConfig);
-  }
-  // 各站点含 spider / 远程脚本 api
-  if (Array.isArray(data.sites)) {
-    for (const s of data.sites) {
-      if (s.spider || (typeof s.api === 'string' && /^https?:\/\//.test(s.api))) {
-        out.push({
-          ...cfg,
-          type: 'js',
-          name: s.name || s.key || cfg.name,
-          spider: s.spider,
-          spiderUrl: s.spiderUrl,
-          api: s.api,
-        } as SourceConfig);
-      }
-    }
   }
   return out;
 }

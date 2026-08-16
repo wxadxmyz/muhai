@@ -14,12 +14,18 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct SpiderCall {
-    /// spider 脚本全文（定义 home/search/detail/play 等函数）
+    /// spider 脚本全文（定义 home/search/detail/play 等函数，或定义 `spider` 类）
     pub code: String,
     /// 要调用的函数名，如 "search" / "home" / "detail" / "play"
     pub func: String,
     /// 函数参数（字符串数组，引擎内部 JSON.parse 后展开传入）
     pub args: Vec<String>,
+    /// TVBox csp 模型：站点代号（如 "csp_DoubanGuard"），传给 spider 构造器选路
+    #[serde(default)]
+    pub api: Option<String>,
+    /// TVBox csp 模型：站点 ext 配置（JSON 字符串），传给 spider 构造器
+    #[serde(default)]
+    pub ext: Option<String>,
 }
 
 /// 执行一段 spider 脚本并调用指定函数，返回 JSON 字符串。
@@ -90,15 +96,47 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
         globals.set("print", print_fn).map_err(|e| e.to_string())?;
 
-        // 执行 spider 代码（定义各函数）
+        // 执行 spider 代码（定义各函数，或定义 `spider` 类/对象）
         ctx.eval::<(), _>(payload.code.as_str())
             .map_err(|e| format!("脚本执行失败: {e}"))?;
 
-        // 调用目标函数并 JSON 序列化结果
-        let args_json = serde_json::to_string(&payload.args).map_err(|e| e.to_string())?;
+        // 调用目标函数并 JSON 序列化结果。
+        // 兼容两种 spider 形态：
+        //  1) 全局函数 home/search/detail/play（drpy 风格单文件脚本）
+        //  2) `spider` 类/对象（TVBox csp 模型）：new spider(api, ext) 后用实例方法选路
+        let func_lit = serde_json::to_string(&payload.func).unwrap_or_else(|_| "\"\"".to_string());
+        let args_lit = serde_json::to_string(&payload.args).unwrap_or_else(|_| "[]".to_string());
+        let api_lit = payload
+            .api
+            .as_ref()
+            .map(|s| serde_json::to_string(s).unwrap())
+            .unwrap_or_else(|| "null".to_string());
+        let ext_lit = payload
+            .ext
+            .as_ref()
+            .map(|s| serde_json::to_string(s).unwrap())
+            .unwrap_or_else(|| "null".to_string());
+
         let expr = format!(
-            "JSON.stringify((typeof {} === 'function' ? {} : (globalThis['{}'] || function(){{return '[]'}}))(...JSON.parse({})))",
-            payload.func, payload.func, payload.func, args_json
+            r#"
+const __api = {api};
+const __ext = {ext} ? JSON.parse({ext}) : null;
+let __t;
+if (typeof spider !== 'undefined' && spider !== null) {{
+  __t = (typeof spider === 'function') ? new spider(__api, __ext) : spider;
+}} else if (typeof {func} === 'function') {{
+  __t = globalThis;
+}} else {{
+  throw new Error('spider 未定义且全局无函数 ' + {func});
+}}
+const __args = {args};
+const __r = (__t === globalThis) ? globalThis[{func}](...__args) : __t[{func}](...__args);
+JSON.stringify(__r === undefined ? null : __r);
+"#,
+            api = api_lit,
+            ext = ext_lit,
+            func = func_lit,
+            args = args_lit,
         );
         let out: String = ctx
             .eval(expr.as_str())

@@ -24,9 +24,15 @@ export interface AppSettings {
   playbackRateMemory: boolean; // 倍速记忆开关
   autoDetectLine: boolean; // 线路自动探测
   autoSkipIntroOutro: boolean; // 自动跳过片头片尾（总开关）
+  // v2.3.0 加密源解密（E5）：调用第三方解密端点还原加密接口（如饭太硬 jiemi.php）
+  decryptEnabled: boolean; // 是否启用服务端解密
+  decryptEndpoint: string; // 解密端点地址（可在设置里改/关）
 }
 
 const KEY = 'mps_settings';
+
+// 加密源解密默认端点（饭太硬 jiemi.php，服务端解密，无需私有 key）
+export const DEFAULT_DECRYPT_ENDPOINT = 'http://www.xn--sss604efuw.cc/jm/jiemi.php';
 
 const DEFAULTS: AppSettings = {
   downloadDir: '~/Downloads',
@@ -51,7 +57,27 @@ const DEFAULTS: AppSettings = {
   playbackRateMemory: true,
   autoDetectLine: false,
   autoSkipIntroOutro: false,
+  decryptEnabled: true,
+  decryptEndpoint: DEFAULT_DECRYPT_ENDPOINT,
 };
+
+// 非 hook 读取解密配置（供引擎模块如 tvbox.ts 在非组件上下文中使用）。
+// 从 localStorage 读取，缺省回退到默认值。
+export function getDecryptConfig(): { enabled: boolean; endpoint: string } {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      return {
+        enabled: s.decryptEnabled !== false,
+        endpoint: s.decryptEndpoint || DEFAULT_DECRYPT_ENDPOINT,
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { enabled: true, endpoint: DEFAULT_DECRYPT_ENDPOINT };
+}
 
 export function useSettings() {
   const [settings, setSettings] = useState<AppSettings>(() => {

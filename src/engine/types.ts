@@ -24,6 +24,8 @@ export interface JsSourceConfig extends SourceConfig {
   api?: string;
   spider?: string;
   spiderUrl?: string;
+  // TVBox csp 模型：站点代号与 ext 配置（JSON 字符串），传给 spider 构造器选路
+  ext?: string;
 }
 
 export interface Episode {

@@ -80,7 +80,7 @@ const ACCENT_NAMES: Record<string, string> = {
   '#ff6b9d': '玫红',
 };
 
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.1';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [

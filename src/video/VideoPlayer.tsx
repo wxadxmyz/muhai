@@ -84,8 +84,12 @@ export function VideoPlayer({
   const [localCues, setLocalCues] = useState<{ time: number; text: string }[]>([]);
   const [showSubStyle, setShowSubStyle] = useState(false);
   const [showSkip, setShowSkip] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const introDone = useRef(false);
   const appliedStartAt = useRef(false);
+  const loadTimer = useRef<number | undefined>(undefined);
 
   const groups = (detail.raw?.lineGroups as any[] | undefined) ?? [];
   const lines = groups.length || (detail.raw?.lines as number) || 1;
@@ -102,26 +106,60 @@ export function VideoPlayer({
   // 切换剧集 / 线路 / 当前曲目：解析并加载（m3u8 走 hls.js），按需恢复进度
   useEffect(() => {
     if (!state.current) return;
-    appliedStartAt.current = false;
+    const v = videoRef.current;
+    if (!v) return;
     let alive = true;
+    appliedStartAt.current = false;
     introDone.current = false;
+    setResolving(true);
+    setErr(null);
     const wantResume = startAt;
     ensureResolved(state.current).then((it) => {
-      const v = videoRef.current;
       if (!alive || !v) return;
-      attachHls(v, it.playUrl || '', { headers: it.raw?.headers as Record<string, string> | undefined });
+      if (!it.playUrl) {
+        setResolving(false);
+        setErr('该音源未返回可播放地址，换条线路或换个音源试试。');
+        return;
+      }
+      attachHls(v, it.playUrl, {
+        headers: it.raw?.headers as Record<string, string> | undefined,
+        onError: () => {
+          if (!alive) return;
+          detachHls(v);
+          setResolving(false);
+          setErr('视频加载失败，可能是网络或防盗链限制，换个线路试试。');
+        },
+      });
       const onMeta = () => {
         v.removeEventListener('loadedmetadata', onMeta);
         if (wantResume > 0 && wantResume < (v.duration || 1e9) - 3) v.currentTime = wantResume;
         appliedStartAt.current = true;
+        if (alive) setResolving(false);
       };
       v.addEventListener('loadedmetadata', onMeta);
+      // 兜底：8 秒内仍无元数据则判定加载失败
+      loadTimer.current = window.setTimeout(() => {
+        if (alive && v.readyState < 1) {
+          detachHls(v);
+          setResolving(false);
+          setErr('视频加载超时，请检查网络或换源。');
+        }
+      }, 8000);
       v.playbackRate = speed;
       if (state.isPlaying) v.play().catch(() => {});
+    }).catch(() => {
+      if (alive) {
+        setResolving(false);
+        setErr('解析播放地址失败，请换个音源。');
+      }
     });
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+      if (loadTimer.current) window.clearTimeout(loadTimer.current);
+      detachHls(v);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.current?.id, state.current?.playUrl, episodeIndex]);
+  }, [state.current?.id, state.current?.playUrl, episodeIndex, retryNonce]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -200,6 +238,13 @@ export function VideoPlayer({
     reader.readAsText(file);
   };
 
+  // 重试：重新解析并加载当前视频
+  const retry = () => {
+    setErr(null);
+    setResolving(true);
+    setRetryNonce((n) => n + 1);
+  };
+
   const ss = settings.subtitleStyle;
   const cues = localCues.length ? localCues : detail.subtitles?.[0]?.cues;
   const activeCue = settings.enableSubtitle ? getActiveCue(cues, state.progress) : null;
@@ -228,11 +273,30 @@ export function VideoPlayer({
             trySkipOutro();
           }}
           onLoadedMetadata={(e) => player.setDuration((e.target as HTMLVideoElement).duration)}
+          onError={() => {
+            if (videoRef.current) detachHls(videoRef.current);
+            setResolving(false);
+            setErr('视频解码失败或地址无效，换个线路试试。');
+          }}
           onEnded={() => {
             if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
             else player.onEnded();
           }}
         />
+        {/* 加载中 / 出错占位，避免黑屏 */}
+        {resolving && !err && (
+          <div className="vp-loading">
+            <div className="vp-spinner" />
+            <span>加载中…</span>
+          </div>
+        )}
+        {err && (
+          <div className="vp-error">
+            <Icon name="x-circle" size={30} />
+            <p>{err}</p>
+            <button className="mini" onClick={retry}>重试</button>
+          </div>
+        )}
         {/* 弹幕层：仅当源提供真实弹幕数据且已开启时渲染 */}
         {settings.enableDanmaku && detail.danmaku && detail.danmaku.length > 0 && (
           <Danmaku active={state.isPlaying} seed={detail.id + episodeIndex} items={detail.danmaku} />

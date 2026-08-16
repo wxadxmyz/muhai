@@ -83,6 +83,46 @@ jobs:
           set -o pipefail
           pnpm tauri android init 2>&1 | tee /tmp/init.log
 
+      - name: Patch MainActivity (preserve back-button interception)
+        run: |
+          DIR="src-tauri/gen/android/app/src/main/java/com/reelflow/app"
+          mkdir -p "$DIR"
+          cat > "$DIR/MainActivity.kt" <<'EOF'
+          package com.reelflow.app
+
+          import android.webkit.WebView
+          import android.annotation.SuppressLint
+
+          class MainActivity : TauriActivity() {
+            private lateinit var wv: WebView
+
+            override fun onWebViewCreate(webView: WebView) {
+              wv = webView
+            }
+
+            // 拦截 Android 系统返回键/返回手势：
+            // 调用前端 window.androidBackCallback()，返回 true 才允许默认返回（退出 App），
+            // 返回 false 则由前端自行处理（关闭视频/详情/弹层 / 回上一级），App 不退出。
+            @SuppressLint("MissingSuperCall", "SetTextI18n")
+            @Deprecated("")
+            override fun onBackPressed() {
+              wv.evaluateJavascript(
+                """
+                try {
+                  window.androidBackCallback()
+                } catch (_) {
+                  true
+                }
+                """.trimIndent()
+              ) { result ->
+                if (result == "true") {
+                  super.onBackPressed()
+                }
+              }
+            }
+          }
+          EOF
+
       - name: Sync Android launcher icon
         run: |
           python3 -m pip install --quiet pillow
@@ -125,6 +165,12 @@ jobs:
             "$SRC"
           $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$OUT"
           echo "SIGNED_APK=$OUT" >> "$GITHUB_ENV"
+
+      - name: Ensure release exists
+        if: steps.build.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "影流 ReelFlow Android APK (v2.2.1)" || true
 
       - name: Upload APK to Release
         id: upload

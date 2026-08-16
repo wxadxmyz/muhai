@@ -50,6 +50,7 @@ export default function VideoApp() {
   }, [settings.themeColor]);
 
   // touchStart ref for swipe navigation
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
@@ -123,6 +124,22 @@ export default function VideoApp() {
   const playingVideo = state.current?.mediaType === 'video' && detail;
   const cloudPayload = () =>
     JSON.stringify({ kind: 'video', favorites: library.lib.favorites, history: library.lib.history, watchProgress: library.lib.watchProgress });
+
+  // Android 系统返回键/手势：优先关闭视频/详情/弹层或回到上一级，而非直接退出 App。
+  // 需配合 src-tauri/gen/android/.../MainActivity.kt 的 onBackPressed 覆写（见交付说明）。
+  useEffect(() => {
+    (window as any).androidBackCallback = () => {
+      if (searchOpen) { setSearchOpen(false); return false; }
+      if (showCloud) { setShowCloud(false); return false; }
+      if (settingsSub) { setSettingsSub(null); return false; }
+      if (playingVideo) { closeVideo(); return false; }
+      if (detail) { setDetail(null); return false; }
+      if (tab !== 'home') { setTab('home'); return false; }
+      return true; // 首页：允许退出
+    };
+    return () => { delete (window as any).androidBackCallback; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchOpen, showCloud, settingsSub, playingVideo, detail, tab]);
 
   return (
     <div

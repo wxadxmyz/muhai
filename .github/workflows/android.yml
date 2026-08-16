@@ -91,6 +91,13 @@ jobs:
       - name: Build Tauri Android APK
         id: build
         if: steps.init.outcome == 'success'
+        env:
+          # rquickjs-sys 在 Android 目标上用 bindgen 生成 FFI 绑定时，clang 以
+          # --target=aarch64-linux-android 调用，会丢掉宿主多重架构头目录
+          # /usr/include/x86_64-linux-gnu（glibc 的 bits/ 头所在），导致
+          # bits/libc-header-start.h 找不到。显式加回该 -isystem 让 bindgen 能解析宿主头。
+          # aarch64/x86_64-linux-android 均为 LP64，宿主头类型宽度与 Android 一致，绑定正确。
+          BINDGEN_EXTRA_CLANG_ARGS: -isystem /usr/include/x86_64-linux-gnu
         run: |
           export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
           export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}

@@ -143,30 +143,6 @@ jobs:
           fi
           gh release upload "$RELEASE_TAG" "$APK" --clobber 2>&1 | tee /tmp/upload.log
 
-      - name: Push APK slices to apk-cache branch
-        id: slice
-        if: steps.build.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          APK="${SIGNED_APK:-$(find src-tauri/gen/android -name '*.apk' | head -1)}"
-          echo "Slicing APK: $APK"
-          mkdir -p /tmp/sl
-          rm -f /tmp/sl/*
-          split -b 1200000 "$APK" /tmp/sl/part_
-          cd "$GITHUB_WORKSPACE"
-          git config user.email "ci@local"
-          git config user.name "CI"
-          git checkout --orphan apk-cache 2>/dev/null || git checkout apk-cache
-          git rm -rf . >/dev/null 2>&1 || true
-          rm -rf apk_cache && mkdir -p apk_cache
-          cp /tmp/sl/part_* apk_cache/
-          git add -A
-          git commit -m "apk slices ${{ github.ref_name }}" || true
-          git push -f origin apk-cache
-          echo "Slices pushed: $(ls /tmp/sl/part_* | wc -l)"
-
       - name: "Debug: dump logs to issue"
         if: always() && (steps.init.outcome != 'success' || steps.build.outcome != 'success' || steps.upload.outcome != 'success')
         env:

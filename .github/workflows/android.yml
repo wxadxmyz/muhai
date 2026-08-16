@@ -91,16 +91,26 @@ jobs:
       - name: Build Tauri Android APK
         id: build
         if: steps.init.outcome == 'success'
-        env:
-          # rquickjs-sys 在 Android 目标上用 bindgen 生成 FFI 绑定时，clang 以
-          # --target=aarch64-linux-android 调用，会丢掉宿主多重架构头目录
-          # /usr/include/x86_64-linux-gnu（glibc 的 bits/ 头所在），导致
-          # bits/libc-header-start.h 找不到。显式加回该 -isystem 让 bindgen 能解析宿主头。
-          # aarch64/x86_64-linux-android 均为 LP64，宿主头类型宽度与 Android 一致，绑定正确。
-          BINDGEN_EXTRA_CLANG_ARGS: -isystem /usr/include/x86_64-linux-gnu
         run: |
           export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
           export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          # rquickjs-sys 在 Android 目标用 bindgen 生成 FFI 绑定时，libclang 以
+          # --target=aarch64-linux-android 等调用。若用宿主 glibc 头会触发
+          # gnu/stubs-32.h 缺失而失败；改用 Android NDK 的 bionic sysroot 解析 C 头，
+          # bionic 无 glibc 的 stubs 问题，绑定可正常生成。
+          # 注意：此变量仅影响 bindgen 解析，不影响 cc 对 C 源码的实际交叉编译。
+          NDK_SYSROOT=""
+          for d in "$ANDROID_NDK_HOME" "$ANDROID_NDK" "$ANDROID_HOME/ndk/$NDK_VERSION" /usr/local/lib/android/ndk/*; do
+            if [ -n "$d" ] && [ -d "$d/toolchains/llvm/prebuilt/linux-x86_64/sysroot" ]; then
+              NDK_SYSROOT="$d/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+              break
+            fi
+          done
+          echo "NDK_SYSROOT=$NDK_SYSROOT"
+          if [ -z "$NDK_SYSROOT" ]; then
+            echo "::error::NDK sysroot not found; cannot configure bindgen" && exit 1
+          fi
+          export BINDGEN_EXTRA_CLANG_ARGS="--sysroot $NDK_SYSROOT"
           set -o pipefail
           pnpm tauri android build --apk 2>&1 | tee /tmp/build.log
 

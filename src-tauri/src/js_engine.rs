@@ -38,7 +38,11 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
                 .timeout(std::time::Duration::from_secs(20))
                 .build()
                 .map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))?;
-            let mut req = client.get(&url);
+            let mut req = if let Some(d) = &data {
+                client.post(&url).body(d.clone())
+            } else {
+                client.get(&url)
+            };
             if let Some(h) = &hd {
                 if let Ok(map) = serde_json::from_str::<serde_json::Value>(h) {
                     if let Some(obj) = map.as_object() {
@@ -51,9 +55,6 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
                 }
             }
             req = req.header("User-Agent", "Mozilla/5.0 (compatible; ReelFlow/2.3.0)");
-            if let Some(d) = &data {
-                req = req.post(d.clone());
-            }
             let resp = req.send().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))?;
             resp.text().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))
         })

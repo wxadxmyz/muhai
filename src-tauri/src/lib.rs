@@ -11,9 +11,6 @@ use tauri::tray::TrayIconBuilder;
 // v2.3.0 统一 JS 沙箱引擎（影流/音流共用）
 mod js_engine;
 
-// 让 fetchsource 等命令参数上的 #[serde(default)] 可被编译器解析
-use serde::Deserialize;
-
 // P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），
 // 并建立系统托盘。全局快捷键与更新检查由前端通过 @tauri-apps JS 插件调用，
 // 此处只负责初始化插件与托盘菜单。
@@ -50,26 +47,18 @@ pub fn run() {
 // 方案C：由 Rust 后端代前端抓取外网 URL（含明文 http / 跨域源），
 // 彻底绕开 WebView 前端的 CORS 与 Android 明文 HTTP 限制。
 // 仅取文本并返回，解析逻辑仍在前端 sourceFetch 完成。
-// 用结构体参数承接 url + 可选 user_agent：结构体字段上的 #[serde(default)]
-// 才是合法helper属性上下文（函数参数上的 #[serde(...)] 编译器不识别）。
-#[derive(Deserialize)]
-struct FetchSourceArgs {
-    url: String,
-    #[serde(default)]
-    user_agent: Option<String>,
-}
-
+// UA 固定 okhttp：TVBox 生态（订阅/蜘蛛/jiemi 解密）普遍只对 okhttp UA 返回
+// 真实内容，浏览器型 UA 会被反爬返回 HTML 占位页。调用方（TVBox 源/解密）
+// 一律需要 okhttp，故无需在命令参数上暴露可覆盖项（避免 serde 属性作用域问题）。
 #[tauri::command]
-async fn fetchsource(args: FetchSourceArgs) -> Result<String, String> {
-    // TVBox 生态（订阅/蜘蛛/jiemi 解密）普遍只对 okhttp UA 返回正常内容，
-    // 浏览器型 UA 常被反爬返回 HTML 占位页。故默认 okhttp，调用方可覆盖。
-    let ua = args.user_agent.unwrap_or_else(|| "okhttp/4.10.0".to_string());
+async fn fetchsource(url: String) -> Result<String, String> {
+    let ua = "okhttp/4.10.0";
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
-        .get(&args.url)
+        .get(&url)
         .header("User-Agent", ua)
         .header("Accept", "*/*")
         .send()

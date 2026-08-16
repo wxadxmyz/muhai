@@ -32,11 +32,11 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
 
         // fetch 桥接：同步 HTTP，返回响应体字符串。
         // 兼容 TVBox spider 习惯：fetch(url, headers_json?, data?)
-        let fetch_fn = Function::new(ctx.clone(), |url: String, hd: Option<String>, data: Option<String>| -> Result<String, String> {
+        let fetch_fn = Function::new(ctx.clone(), |url: String, hd: Option<String>, data: Option<String>| -> Result<String, rquickjs::Error> {
             let client = reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
                 .build()
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| rquickjs::Error::new_loading_message("fetch", e.to_string()))?;
             let mut req = client.get(&url);
             if let Some(h) = &hd {
                 if let Ok(map) = serde_json::from_str::<serde_json::Value>(h) {
@@ -53,8 +53,8 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
             if let Some(d) = &data {
                 req = req.method(reqwest::Method::POST).body(d.clone());
             }
-            let resp = req.send().map_err(|e| e.to_string())?;
-            resp.text().map_err(|e| e.to_string())
+            let resp = req.send().map_err(|e| rquickjs::Error::new_loading_message("fetch", e.to_string()))?;
+            resp.text().map_err(|e| rquickjs::Error::new_loading_message("fetch", e.to_string()))
         })
         .map_err(|e| e.to_string())?;
         globals.set("fetch", fetch_fn).map_err(|e| e.to_string())?;
@@ -66,9 +66,9 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
 
         // base64 解码
         let b64dec =
-            Function::new(ctx.clone(), |s: String| -> Result<String, String> {
-                let bytes = B64.decode(s.trim()).map_err(|e| e.to_string())?;
-                String::from_utf8(bytes).map_err(|e| e.to_string())
+            Function::new(ctx.clone(), |s: String| -> Result<String, rquickjs::Error> {
+                let bytes = B64.decode(s.trim()).map_err(|e| rquickjs::Error::new_loading_message("base64Decode", e.to_string()))?;
+                String::from_utf8(bytes).map_err(|e| rquickjs::Error::new_loading_message("base64Decode", e.to_string()))
             })
             .map_err(|e| e.to_string())?;
         globals.set("base64Decode", b64dec).map_err(|e| e.to_string())?;

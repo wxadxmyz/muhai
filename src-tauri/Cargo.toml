@@ -14,7 +14,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 # 统一 JS 沙箱引擎（v2.3.0）：QuickJS 运行时，影流/音流共用
-rquickjs = "0.6"
+# 启用 bindgen：rquickjs-sys 0.6.2 未预生成 aarch64-linux-android 等 Android 绑定，
+# 必须由 libclang 在编译期生成（CI 需在 android.yml / release.yml 安装 clang/libclang-dev）。
+rquickjs = { version = "0.6", features = ["bindgen"] }
 base64 = "0.22"
 md-5 = "0.10"
 tauri-plugin-dialog = "2"

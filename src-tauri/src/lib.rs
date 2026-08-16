@@ -48,14 +48,17 @@ pub fn run() {
 // 彻底绕开 WebView 前端的 CORS 与 Android 明文 HTTP 限制。
 // 仅取文本并返回，解析逻辑仍在前端 sourceFetch 完成。
 #[tauri::command]
-async fn fetchsource(url: String) -> Result<String, String> {
+async fn fetchsource(url: String, #[serde(default)] user_agent: Option<String>) -> Result<String, String> {
+    // TVBox 生态（订阅/蜘蛛/jiemi 解密）普遍只对 okhttp UA 返回正常内容，
+    // 浏览器型 UA 常被反爬返回 HTML 占位页。故默认 okhttp，调用方可覆盖。
+    let ua = user_agent.unwrap_or_else(|| "okhttp/4.10.0".to_string());
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client
         .get(&url)
-        .header("User-Agent", "Mozilla/5.0 (compatible; ReelFlow/1.2.2)")
+        .header("User-Agent", ua)
         .header("Accept", "*/*")
         .send()
         .await

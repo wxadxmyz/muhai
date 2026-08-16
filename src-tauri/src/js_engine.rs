@@ -49,18 +49,25 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
             } else {
                 client.get(&url)
             };
+            // TVBox 生态普遍只对 okhttp UA 返回正常内容；若调用方通过 headers
+            // 显式指定了 UA，则尊重之，否则默认 okhttp。
+            let mut ua = "okhttp/4.10.0".to_string();
             if let Some(h) = &hd {
                 if let Ok(map) = serde_json::from_str::<serde_json::Value>(h) {
                     if let Some(obj) = map.as_object() {
                         for (k, v) in obj {
                             if let Some(s) = v.as_str() {
-                                req = req.header(k, s);
+                                if k.eq_ignore_ascii_case("user-agent") {
+                                    ua = s.to_string();
+                                } else {
+                                    req = req.header(k, s);
+                                }
                             }
                         }
                     }
                 }
             }
-            req = req.header("User-Agent", "Mozilla/5.0 (compatible; ReelFlow/2.3.0)");
+            req = req.header("User-Agent", ua);
             let resp = req.send().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))?;
             resp.text().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))
         })

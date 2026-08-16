@@ -52,7 +52,7 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
             }
             req = req.header("User-Agent", "Mozilla/5.0 (compatible; ReelFlow/2.3.0)");
             if let Some(d) = &data {
-                req = req.method(reqwest::Method::POST).body(d.clone());
+                req = req.post(d.clone());
             }
             let resp = req.send().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))?;
             resp.text().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))
@@ -90,7 +90,7 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
         globals.set("print", print_fn).map_err(|e| e.to_string())?;
 
         // 执行 spider 代码（定义各函数）
-        ctx.eval::<(), _>(&payload.code)
+        ctx.eval::<(), _>(payload.code.as_str())
             .map_err(|e| format!("脚本执行失败: {e}"))?;
 
         // 调用目标函数并 JSON 序列化结果
@@ -100,7 +100,7 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
             payload.func, payload.func, payload.func, args_json
         );
         let out: String = ctx
-            .eval(&expr)
+            .eval(expr.as_str())
             .map_err(|e| format!("调用 {} 失败: {e}", payload.func))?;
         Ok(out)
     })

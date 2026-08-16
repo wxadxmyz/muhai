@@ -1,35 +1,16 @@
-// tvbox / 影视仓聚合源适配器：粘贴一个配置地址（如 http://www.饭太硬.cc/tv），
-// 整体作为一个「源」存储，搜索/播放时再抓取配置、解码 base64、遍历 sites[] 做多协议搜索。
+// v2.3.0 tvbox / 影视仓聚合源适配器（重写版，已删除苹果CMS 协议）
 //
-// 影视仓生态里大量站点是苹果CMS 后端，本适配器按苹果CMS 风格
-//   GET {api}?ac=list&wd={kw}&pg=1  → 取 list[]  → 解析 vod_play_url 得到 m3u8/mp4
-// 对纯 CatVod/DRPy「爬虫式」站点（需 spider 二进制）无法直接播放，会给出提示。
+// 旧版按苹果CMS 风格 GET {api}?ac=list&wd= 抓列表，对蜘蛛源/加密源全部失效。
+// 新版：把 tvbox 配置（含 XC.json 风格整体加密配置）解析后，收集其中所有
+// 「带 spider 脚本」的源（顶层 spider / 各站点 spider / 远程脚本 api），
+// 全部委托 createJsSource 在统一 JS 引擎里执行。
+//   - 蜘蛛源（csp_* 需用户提供对应 spider 脚本，本 App 不内置蜘蛛库）
+//   - 加密源（XC.json）：整体密文由 tryDecodeConfig 解密为 spider 代码（见 E5）
 //
 // 抓取统一走 Rust 后端 fetchsource 代理，绕开 Android WebView 的 CORS 与明文 HTTP 限制。
 import { invoke } from '@tauri-apps/api/core';
-import { Episode, LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
-
-function apiBase(u: string): string {
-  return (u || '').split('?')[0].replace(/\/+$/, '');
-}
-
-// 影视源多线路以 $$$ 分隔；每条线路内部以 # 分隔，单集以 $ 分割 线路$url
-function parsePlayGroups(vodPlayUrl: string): Episode[][] {
-  if (!vodPlayUrl) return [];
-  const parse = (s: string): Episode[] =>
-    s
-      .split('#')
-      .map((seg) => {
-        const i = seg.indexOf('$');
-        return i === -1 ? null : { name: seg.slice(0, i), url: seg.slice(i + 1) };
-      })
-      .filter((x): x is Episode => !!x && !!x.url);
-  if (vodPlayUrl.includes('$$$')) {
-    return vodPlayUrl.split('$$$').map(parse).filter((g) => g.length > 0);
-  }
-  const g = parse(vodPlayUrl);
-  return g.length ? [g] : [];
-}
+import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
+import { createJsSource } from './js';
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -41,179 +22,137 @@ async function fetchText(url: string): Promise<string> {
   }
 }
 
-async function fetchJson(url: string): Promise<any> {
-  const t = await fetchText(url);
-  try {
-    return JSON.parse(t);
-  } catch {
-    return t;
-  }
-}
-
-// 兼容不同影视源返回结构：{list} / {data:{list}} / {data:[...]} / {rss:{list}}
-function normalizeList(data: any): any[] {
-  if (Array.isArray(data)) return data;
-  if (!data || typeof data !== 'object') return [];
-  if (Array.isArray(data.list)) return data.list;
-  if (Array.isArray(data.data?.list)) return data.data.list;
-  if (Array.isArray(data.data)) return data.data;
-  if (Array.isArray(data.rss?.list)) return data.rss.list;
-  if (Array.isArray(data.rss)) return data.rss;
-  return [];
-}
-
-// 影视仓部分「加密接口」直接返回 base64 密文，先尝试解码
-function tryB64(text: string): string {
+// E5 加密源解密：把整体密文配置还原为 spider 代码。
+// 当前为占位实现，返回原文本；XC.json 的 hex→解码→AES/RC4 解密在 E5 补齐。
+function tryDecodeConfig(text: string): string {
   const s = text.trim();
-  if (s.length < 16 || s.length % 4 !== 0) return text;
-  if (!/^[A-Za-z0-9+/=_-]+$/.test(s)) return text;
+  // TODO(E5)：检测纯 hex 密文 → hex 解码 → AES/RC4 解密（对齐 TVBox 算法与 key）→ 返回 spider 代码
+  return s;
+}
+
+// 从 tvbox 配置收集所有可执行的 spider 源
+async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
+  const text = await fetchText(cfg.baseUrl);
+  let data: any;
   try {
-    const d = atob(s.replace(/[-_]/g, (c) => (c === '-' ? '+' : '/')));
-    if (d.startsWith('{') || d.startsWith('[')) return d;
+    data = JSON.parse(text);
   } catch {
-    /* 不是合法 base64 */
+    // 整体密文（XC.json 风格）：解密后作为单个 js 源
+    const decoded = tryDecodeConfig(text);
+    return [
+      { ...cfg, type: 'js', name: cfg.name, spider: decoded } as SourceConfig,
+    ];
   }
-  return text;
+  const out: SourceConfig[] = [];
+  // 顶层 spider（XC.json 风格单线路）
+  if (data.spider) {
+    out.push({
+      ...cfg,
+      type: 'js',
+      name: cfg.name,
+      spider: typeof data.spider === 'string' ? data.spider : JSON.stringify(data.spider),
+    } as SourceConfig);
+  }
+  // 各站点含 spider / 远程脚本 api
+  if (Array.isArray(data.sites)) {
+    for (const s of data.sites) {
+      if (s.spider || (typeof s.api === 'string' && /^https?:\/\//.test(s.api))) {
+        out.push({
+          ...cfg,
+          type: 'js',
+          name: s.name || s.key || cfg.name,
+          spider: s.spider,
+          spiderUrl: s.spiderUrl,
+          api: s.api,
+        } as SourceConfig);
+      }
+    }
+  }
+  return out;
 }
 
 export function createTvboxSource(cfg: SourceConfig): MediaSource {
-  const base = cfg.baseUrl;
-  // itemId -> 站点 api + vodId，供 getPlayUrl 复用（实例级缓存）
-  const playCache = new Map<string, { api: string; vodId: string }>();
-
-  async function loadConfig(): Promise<any> {
-    const decoded = tryB64(await fetchText(base));
-    const json = decoded.startsWith('{') || decoded.startsWith('[') ? decoded : await fetchText(base);
-    return JSON.parse(json);
-  }
-
-  function resolveSites(data: any): any[] {
-    if (Array.isArray(data?.sites)) return data.sites;
-    if (Array.isArray(data?.urls)) return data.urls;
-    return [];
-  }
-
-  function siteToItems(site: any, list: any[]): MediaItem[] {
-    const api = apiBase(site.api || site.url || site.baseUrl || '');
-    return list.map((it: any) => {
-      const groups = parsePlayGroups(it.vod_play_url ?? it.play_url ?? '');
-      const eps = groups[0] ?? [];
-      const id = `${site.key || site.name || api}__${it.vod_id ?? it.id}`;
-      if (api) playCache.set(id, { api, vodId: String(it.vod_id ?? it.id) });
-      return {
-        id,
-        sourceId: cfg.id,
-        sourceName: cfg.name,
-        title: it.vod_name ?? it.name ?? '未知',
-        cover: it.vod_pic ?? it.pic,
-        year: it.vod_year,
-        mediaType: 'video' as const,
-        playUrl: eps[0]?.url,
-        episodes: eps,
-        raw: { ...it, siteApi: api, vodId: String(it.vod_id ?? it.id) },
-      } as MediaItem;
-    });
-  }
-
-  async function searchSite(site: any, kw: string): Promise<{ items: MediaItem[]; error?: string }> {
-    const api = apiBase(site.api || site.url || site.baseUrl || '');
-    const name = site.name || site.key || api || '未知站点';
-    if (!api) return { items: [], error: `${name}：无 api 地址` };
-    const q = encodeURIComponent(kw);
-    let lastErr = '';
-    for (const seg of ['?ac=list&wd=', '?ac=videolist&wd=']) {
-      try {
-        const data = await fetchJson(`${api}${seg}${q}&pg=1`);
-        const list = normalizeList(data);
-        if (Array.isArray(list) && list.length) {
-          return { items: siteToItems(site, list) };
-        }
-        lastErr = `${name}：返回空列表`;
-      } catch (e: any) {
-        lastErr = `${name}：${(e?.message || String(e)).slice(0, 120)}`;
-      }
-    }
-    return { items: [], error: lastErr || `${name}：未知错误` };
+  async function spiders(): Promise<MediaSource[]> {
+    const cfgs = await collectSpiders(cfg);
+    return cfgs.map((c) => createJsSource(c));
   }
 
   return {
-    async search(keyword: string, _page = 1): Promise<MediaItem[]> {
-      const data = await loadConfig();
-      const sites = Array.isArray(data?.sites)
-        ? data.sites
-        : Array.isArray(data?.urls)
-          ? data.urls
-          : [];
-      if (!sites.length) throw new Error('配置中未识别到可用站点');
-      const out: MediaItem[] = [];
-      const failures: string[] = [];
-      const limited = sites.slice(0, 12);
-      await Promise.all(
-        limited.map(async (site: any) => {
-          const r = await searchSite(site, keyword);
-          if (r.items.length) out.push(...r.items);
-          else if (r.error) failures.push(r.error);
-        }),
-      );
-      if (!out.length) {
-        const detail = failures.length ? failures.join('；') : '所有站点均无结果';
-        throw new Error(`搜索失败：${detail}`);
+    async search(keyword: string): Promise<MediaItem[]> {
+      const srcs = await spiders();
+      if (!srcs.length) {
+        throw new Error('该 tvbox 配置无可用的 spider 脚本源（csp_* 蜘蛛代号需提供对应 spider 脚本）');
       }
-      return out;
+      const results = await Promise.all(
+        srcs.map(async (s) => {
+          try {
+            return await s.search(keyword);
+          } catch {
+            return [] as MediaItem[];
+          }
+        })
+      );
+      const items = results.flat();
+      if (!items.length) throw new Error('未从任何 spider 源获取到结果');
+      return items;
     },
 
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
-      const c = playCache.get(itemId);
-      if (!c) return { url: '' };
-      try {
-        const data = await fetchJson(`${c.api}?ac=detail&ids=${encodeURIComponent(c.vodId)}`);
-        const it = normalizeList(data)[0];
-        const eps = parsePlayGroups(it?.vod_play_url ?? it?.play_url ?? '');
-        return { url: eps[0]?.[0]?.url ?? '' };
-      } catch {
-        return { url: '' };
+      const srcs = await spiders();
+      for (const s of srcs) {
+        try {
+          const r = await s.getPlayUrl(itemId);
+          if (r.url) return r;
+        } catch {
+          /* 尝试下一个源 */
+        }
       }
+      return { url: '' };
+    },
+
+    async getDetail(itemId: string) {
+      const srcs = await spiders();
+      for (const s of srcs) {
+        try {
+          const r = await s.getDetail(itemId);
+          if (r && r.title) return r;
+        } catch {
+          /* 尝试下一个源 */
+        }
+      }
+      return {
+        id: itemId,
+        sourceId: cfg.id,
+        sourceName: cfg.name,
+        title: '',
+        mediaType: 'video' as const,
+      };
     },
 
     async test(): Promise<boolean> {
-      try {
-        const data = await loadConfig();
-        return Array.isArray(data?.sites) || Array.isArray(data?.urls);
-      } catch {
-        return false;
-      }
+      const srcs = await spiders();
+      return srcs.length > 0;
     },
 
-    // 首页推荐：各站点最新列表合并（有源主页"站点推荐"用）
+    // 首页推荐：各 spider 源首页合并（有源主页"站点推荐"用）
     async home(): Promise<MediaItem[]> {
-      try {
-        const data = await loadConfig();
-        const sites = resolveSites(data);
-        const out: MediaItem[] = [];
-        const limited = sites.slice(0, 6);
-        await Promise.all(
-          limited.map(async (site: any) => {
-            const api = apiBase(site.api || site.url || site.baseUrl || '');
-            if (!api) return;
-            try {
-              const d = await fetchJson(`${api}?ac=list&pg=1`);
-              const list = normalizeList(d).slice(0, 8);
-              if (Array.isArray(list) && list.length) out.push(...siteToItems(site, list));
-            } catch {
-              /* 忽略单个站点失败 */
-            }
-          })
-        );
-        return out;
-      } catch {
-        return [];
-      }
+      const srcs = await spiders();
+      const results = await Promise.all(
+        srcs.slice(0, 6).map(async (s) => {
+          try {
+            return await s.home!();
+          } catch {
+            return [] as MediaItem[];
+          }
+        })
+      );
+      return results.flat();
     },
 
     // 直播源：返回配置中的 lives[]
     async lives(): Promise<LiveChannelSource[]> {
       try {
-        const data = await loadConfig();
+        const data = JSON.parse(await fetchText(cfg.baseUrl));
         return Array.isArray(data?.lives) ? data.lives : [];
       } catch {
         return [];

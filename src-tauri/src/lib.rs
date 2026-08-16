@@ -8,6 +8,9 @@ use tauri::Manager;
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
 
+// v2.3.0 统一 JS 沙箱引擎（影流/音流共用）
+mod js_engine;
+
 // P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），
 // 并建立系统托盘。全局快捷键与更新检查由前端通过 @tauri-apps JS 插件调用，
 // 此处只负责初始化插件与托盘菜单。
@@ -36,7 +39,7 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![fetchsource])
+        .invoke_handler(tauri::generate_handler![fetchsource, js_engine::run_spider])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

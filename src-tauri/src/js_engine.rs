@@ -8,6 +8,7 @@
 // 解密原语 base64/md5 由 Rust 注入；AES/RC4 等由加载器在脚本前拼接纯 JS 实现（见 E5）。
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use md5::{Digest, Md5};
 use rquickjs::{Context, Function, Runtime};
 use serde::Deserialize;
 
@@ -25,7 +26,7 @@ pub struct SpiderCall {
 #[tauri::command]
 pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
     let rt = Runtime::new().map_err(|e| format!("引擎初始化失败: {e}"))?;
-    let ctx = Context::new(&rt).map_err(|e| format!("上下文创建失败: {e}"))?;
+    let ctx = Context::full(&rt).map_err(|e| format!("上下文创建失败: {e}"))?;
 
     ctx.with(|ctx| -> Result<String, String> {
         let globals = ctx.globals();
@@ -36,7 +37,7 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
             let client = reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(20))
                 .build()
-                .map_err(|e| rquickjs::Error::new_loading_message("fetch", e.to_string()))?;
+                .map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))?;
             let mut req = client.get(&url);
             if let Some(h) = &hd {
                 if let Ok(map) = serde_json::from_str::<serde_json::Value>(h) {
@@ -53,8 +54,8 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
             if let Some(d) = &data {
                 req = req.method(reqwest::Method::POST).body(d.clone());
             }
-            let resp = req.send().map_err(|e| rquickjs::Error::new_loading_message("fetch", e.to_string()))?;
-            resp.text().map_err(|e| rquickjs::Error::new_loading_message("fetch", e.to_string()))
+            let resp = req.send().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))?;
+            resp.text().map_err(|e| rquickjs::Error::new_into_js_message("fetch", "response", e.to_string()))
         })
         .map_err(|e| e.to_string())?;
         globals.set("fetch", fetch_fn).map_err(|e| e.to_string())?;
@@ -67,16 +68,16 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
         // base64 解码
         let b64dec =
             Function::new(ctx.clone(), |s: String| -> Result<String, rquickjs::Error> {
-                let bytes = B64.decode(s.trim()).map_err(|e| rquickjs::Error::new_loading_message("base64Decode", e.to_string()))?;
-                String::from_utf8(bytes).map_err(|e| rquickjs::Error::new_loading_message("base64Decode", e.to_string()))
+                let bytes = B64.decode(s.trim()).map_err(|e| rquickjs::Error::new_into_js_message("base64Decode", "string", e.to_string()))?;
+                String::from_utf8(bytes).map_err(|e| rquickjs::Error::new_into_js_message("base64Decode", "string", e.to_string()))
             })
             .map_err(|e| e.to_string())?;
         globals.set("base64Decode", b64dec).map_err(|e| e.to_string())?;
 
         // md5
         let md5_fn = Function::new(ctx.clone(), |s: String| -> String {
-            let digest = md5::compute(s.as_bytes());
-            format!("{:x}", digest)
+            let digest = Md5::digest(s.as_bytes());
+            digest.iter().map(|b| format!("{:02x}", b)).collect()
         })
         .map_err(|e| e.to_string())?;
         globals.set("md5", md5_fn).map_err(|e| e.to_string())?;

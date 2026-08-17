@@ -18,6 +18,7 @@ import { Live } from './views/Live';
 import { SettingsPage } from './SettingsPage';
 import { Disclaimer } from '../components/Disclaimer';
 import { Icon } from '../components/Icon';
+import SplashScreen from '../components/SplashScreen';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 type Tab = 'home' | 'live' | 'history' | 'settings';
@@ -30,14 +31,6 @@ export default function VideoApp() {
   const { settings } = useSettings();
   const state = usePlayer();
   useGlobalShortcuts();
-
-  // 应用启动加载遮罩：防止 WebView 就绪前显示黑屏
-  const [appReady, setAppReady] = useState(false);
-  useEffect(() => {
-    // 延迟一帧确保 DOM 渲染完成后再标记就绪（解决 Android WebView 首帧黑屏）
-    const t = requestAnimationFrame(() => setAppReady(true));
-    return () => cancelAnimationFrame(t);
-  }, []);
 
   const [tab, setTab] = useState<Tab>('home');
   const [detail, setDetail] = useState<MediaItem | null>(null);
@@ -200,39 +193,26 @@ export default function VideoApp() {
     JSON.stringify({ kind: 'video', favorites: library.lib.favorites, history: library.lib.history, watchProgress: library.lib.watchProgress });
 
   return (
-    <div
-      className="app video-theme"
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      style={
-        settings.wallpaper
-          ? {
-              backgroundImage: `linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)), url(${settings.wallpaper})`,
-              backgroundSize: 'cover',
-              backgroundAttachment: 'fixed',
-            }
-          : undefined
-      }
-    >
-      {/* 启动加载遮罩：WebView 首帧就绪前显示，防止黑屏 */}
-      {!appReady && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'linear-gradient(135deg, #0d0f14, #1a1e2e)',
-          color: '#fff', flexDirection: 'column', gap: 16,
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 14,
-            background: 'linear-gradient(135deg, #6a8cff, #b15bff)',
-            display: 'grid', placeItems: center,
-            animation: 'pulse 1.5s ease-in-out infinite',
-          }}>
-            <Icon name="film" size={24} />
-          </div>
-          <span style={{ fontSize: 14, color: '#9aa1ad' }}>影流加载中…</span>
-        </div>
-      )}
+    <>
+      <SplashScreen
+        appName="影流"
+        iconSrc={import.meta.env.BASE_URL + 'icon.png'}
+        gradient="linear-gradient(160deg, #3DB8FF 0%, #6A6BFF 45%, #3B1F7A 100%)"
+      />
+      <div
+        className="app video-theme"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        style={
+          settings.wallpaper
+            ? {
+                backgroundImage: `linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,.55)), url(${settings.wallpaper})`,
+                backgroundSize: 'cover',
+                backgroundAttachment: 'fixed',
+              }
+            : undefined
+        }
+      >
       <header className="topbar">
         <div className="brand">
           <span className="logo">
@@ -369,5 +349,6 @@ export default function VideoApp() {
       <Disclaimer onAccept={() => {}} />
       {showDebug && <DebugPanel onClose={() => setShowDebug(false)} />}
     </div>
+    </>
   );
 }

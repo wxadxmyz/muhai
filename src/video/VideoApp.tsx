@@ -31,6 +31,14 @@ export default function VideoApp() {
   const state = usePlayer();
   useGlobalShortcuts();
 
+  // 应用启动加载遮罩：防止 WebView 就绪前显示黑屏
+  const [appReady, setAppReady] = useState(false);
+  useEffect(() => {
+    // 延迟一帧确保 DOM 渲染完成后再标记就绪（解决 Android WebView 首帧黑屏）
+    const t = requestAnimationFrame(() => setAppReady(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
   const [tab, setTab] = useState<Tab>('home');
   const [detail, setDetail] = useState<MediaItem | null>(null);
   const [episodeIndex, setEpisodeIndex] = useState(0);
@@ -49,6 +57,22 @@ export default function VideoApp() {
       document.documentElement.style.setProperty('--accent2', settings.themeColor);
     }
   }, [settings.themeColor]);
+
+  // Android 原生返回键桥接：Kotlin MainActivity 通过 __onAndroidBack 调用此函数
+  useEffect(() => {
+    (window as any).__onAndroidBack = () => {
+      const s = navRef.current;
+      if (s.playingVideo) { closeVideo(); return false; }
+      if (s.showDebug) { setShowDebug(false); return false; }
+      if (s.showCloud) { setShowCloud(false); return false; }
+      if (s.searchOpen) { setSearchOpen(false); return false; }
+      if (s.detail) { setDetail(null); return false; }
+      if (s.settingsSub) { setSettingsSub(null); return false; }
+      if (s.tab !== 'home') { setTab('home'); return false; }
+      return true; // 不拦截，交给系统退出
+    };
+    return () => { delete (window as any).__onAndroidBack; };
+  }, []);
 
   // 手势返回：Android 返回键 / 侧滑逐级返回，而非直接退出到桌面
   const navRef = useRef({
@@ -100,6 +124,7 @@ export default function VideoApp() {
   }, []);
 
   // touchStart ref for swipe navigation
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
     touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
@@ -189,6 +214,25 @@ export default function VideoApp() {
           : undefined
       }
     >
+      {/* 启动加载遮罩：WebView 首帧就绪前显示，防止黑屏 */}
+      {!appReady && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(135deg, #0d0f14, #1a1e2e)',
+          color: '#fff', flexDirection: 'column', gap: 16,
+        }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 14,
+            background: 'linear-gradient(135deg, #6a8cff, #b15bff)',
+            display: 'grid', placeItems: center,
+            animation: 'pulse 1.5s ease-in-out infinite',
+          }}>
+            <Icon name="film" size={24} />
+          </div>
+          <span style={{ fontSize: 14, color: '#9aa1ad' }}>影流加载中…</span>
+        </div>
+      )}
       <header className="topbar">
         <div className="brand">
           <span className="logo">

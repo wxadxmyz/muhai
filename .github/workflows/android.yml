@@ -83,6 +83,78 @@ jobs:
           set -o pipefail
           pnpm tauri android init 2>&1 | tee /tmp/init.log
 
+      - name: Patch MainActivity (Android back-button → WebView)
+        run: |
+          MAIN="src-tauri/gen/android/app/src/main/java/com/reelflow/app/MainActivity.kt"
+          if [ ! -f "$MAIN" ]; then
+            echo "MainActivity.kt not found at $MAIN, searching..."
+            MAIN=$(find src-tauri/gen/android -name "MainActivity.kt" 2>/dev/null | head -1)
+          fi
+          if [ -z "$MAIN" ]; then
+            echo "::warning::No MainActivity.kt found, skipping patch"
+            exit 0
+          fi
+          cat > "$MAIN" << 'KTEOF'
+          package com.reelflow.app
+
+          import android.os.Bundle
+          import android.webkit.JavascriptInterface
+          import android.webkit.WebView
+          import androidx.appcompat.app.AppCompatActivity
+          import com.tauri82.TauriActivity
+
+          class MainActivity : TauriActivity() {
+              private var webView: WebView? = null
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  // 等待 WebView 初始化后注入 JS bridge
+                  window?.decorView?.post {
+                      webView = findViewById(android.R.id.content)?.findViewByIdWebView()
+                      webView?.addJavascriptInterface(BackHandler(this), "AndroidBackHandler")
+                  }
+              }
+
+              override fun onBackPressed() {
+                  val wv = webView
+                  if (wv != null) {
+                      // 先让 JS 决定是否拦截；JS 可调用 preventDefault() 阻止默认行为
+                      wv.evaluateJavascript(
+                          "(function() { " +
+                          "  if (window.__onAndroidBack) { " +
+                          "    try { var r = window.__onAndroidBack(); return r === false ? 'consume' : 'pass'; } " +
+                          "    catch(e) { return 'error'; } " +
+                          "  } " +
+                          "  return 'pass'; " +
+                          "})()", null
+                      )
+                      // 给 JS 一点时间响应，然后决定是否消费事件
+                      wv.postDelayed({ super.onBackPressed() }, 80)
+                  } else {
+                      super.onBackPressed()
+                  }
+              }
+
+              class BackHandler(private val activity: AppCompatActivity) @JavascriptInterface fun consume() {
+                  activity.runOnUiThread { /* no-op: JS 已通过 __onAndroidBack 处理 */ }
+              }
+          }
+
+          // 扩展函数：从 View 树中找到 WebView
+          fun android.view.ViewGroup.findWebView(): android.webkit.WebView? {
+              for (i in 0 until childCount) {
+                  val child = getChildAt(i)
+                  if (child is android.webkit.WebView) return child
+                  if (child is android.view.ViewGroup) {
+                      val found = (child as android.view.ViewGroup).findWebView()
+                      if (found != null) return found
+                  }
+              }
+              return null
+          }
+          KTEOF
+          echo "Patched $MAIN with Android back-button → WebView dispatch"
+
       - name: Sync Android launcher icon
         run: |
           python3 -m pip install --quiet pillow

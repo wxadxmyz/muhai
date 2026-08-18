@@ -94,66 +94,54 @@ jobs:
             echo "::warning::No MainActivity.kt found, skipping patch"
             exit 0
           fi
-          cat > "$MAIN" << 'KTEOF'
-          package com.reelflow.app
-
-          import android.os.Bundle
-          import android.webkit.JavascriptInterface
-          import android.webkit.WebView
-          import androidx.appcompat.app.AppCompatActivity
-          import com.tauri82.TauriActivity
-
-          class MainActivity : TauriActivity() {
-              private var webView: WebView? = null
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  // 等待 WebView 初始化后注入 JS bridge
-                  window?.decorView?.post {
-                      webView = findViewById(android.R.id.content)?.findViewByIdWebView()
-                      webView?.addJavascriptInterface(BackHandler(this), "AndroidBackHandler")
-                  }
-              }
-
+          # 动态注入：保留生成文件的 import/类声明，只在类体内加 onBackPressed 桥接，
+          # 避免硬编码 TauriActivity 包名（tauri82 等版本化包名）导致 Kotlin 编译失败
+          python3 - "$MAIN" << 'PYEOF'
+          import sys
+          path = sys.argv[1]
+          src = open(path, encoding="utf-8").read()
+          if "class MainActivity" not in src:
+              print("::warning::class MainActivity not found, skip patch")
+              sys.exit(0)
+          if "onBackPressed" in src or "findBackWebView" in src:
+              print("::warning::already patched, skip")
+              sys.exit(0)
+          idx = src.index("class MainActivity")
+          brace = src.index("{", idx)
+          inject = '''
+              private var _backWebView: android.webkit.WebView? = null
+          
               override fun onBackPressed() {
-                  val wv = webView
-                  if (wv != null) {
-                      // 先让 JS 决定是否拦截；JS 可调用 preventDefault() 阻止默认行为
-                      wv.evaluateJavascript(
-                          "(function() { " +
-                          "  if (window.__onAndroidBack) { " +
-                          "    try { var r = window.__onAndroidBack(); return r === false ? 'consume' : 'pass'; } " +
-                          "    catch(e) { return 'error'; } " +
-                          "  } " +
-                          "  return 'pass'; " +
-                          "})()", null
-                      )
-                      // 给 JS 一点时间响应，然后决定是否消费事件
-                      wv.postDelayed({ super.onBackPressed() }, 80)
-                  } else {
-                      super.onBackPressed()
+                  val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
+                  _backWebView = wv
+                  if (wv == null) {
+            super.onBackPressed()
+            return
+                  }
+                  wv.evaluateJavascript(
+            "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : true; } catch(e) { return true; } })()"
+                  ) { result ->
+            if (result != "true") { super.onBackPressed() }
                   }
               }
-
-              class BackHandler(private val activity: AppCompatActivity) @JavascriptInterface fun consume() {
-                  activity.runOnUiThread { /* no-op: JS 已通过 __onAndroidBack 处理 */ }
-              }
-          }
-
-          // 扩展函数：从 View 树中找到 WebView
-          fun android.view.ViewGroup.findWebView(): android.webkit.WebView? {
-              for (i in 0 until childCount) {
-                  val child = getChildAt(i)
-                  if (child is android.webkit.WebView) return child
-                  if (child is android.view.ViewGroup) {
-                      val found = (child as android.view.ViewGroup).findWebView()
-                      if (found != null) return found
+          
+              private fun findBackWebView(group: android.view.ViewGroup?): android.webkit.WebView? {
+                  if (group == null) return null
+                  for (i in 0 until group.childCount) {
+            val child = group.getChildAt(i)
+            if (child is android.webkit.WebView) return child
+            if (child is android.view.ViewGroup) {
+                val found = findBackWebView(child)
+                if (found != null) return found
+            }
                   }
+                  return null
               }
-              return null
-          }
-          KTEOF
-          echo "Patched $MAIN with Android back-button → WebView dispatch"
+          '''
+          src = src[:brace + 1] + inject + src[brace + 1:]
+          open(path, "w", encoding="utf-8").write(src)
+          print(f"Patched {path} with Android back-button → WebView dispatch")
+          PYEOF
 
       - name: Sync Android launcher icon
         run: |

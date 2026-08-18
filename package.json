@@ -1,7 +1,7 @@
 {
   "name": "reelflow",
   "private": true,
-  "version": "2.3.1",
+  "version": "2.3.5",
   "type": "module",
   "description": "影流 ReelFlow - 支持自定义 API 源与云盘的影视播放器（Tauri 桌面端）",
   "scripts": {

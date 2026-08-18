@@ -7,6 +7,7 @@ import { SourceListPage } from '../components/SourceListPage';
 import { Icon } from '../components/Icon';
 import { PlayerSettingsPage } from './PlayerSettingsPage';
 import { checkForUpdate } from '../lib/tauriBridge';
+import { useSkin, SKINS } from '../lib/theme';
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -80,7 +81,7 @@ const ACCENT_NAMES: Record<string, string> = {
   '#ff6b9d': '玫红',
 };
 
-const APP_VERSION = '2.3.1';
+const APP_VERSION = '2.3.5';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -102,6 +103,7 @@ export function SettingsPage({
   const { settings, update } = useSettings();
   const [updateState, setUpdateState] = useState<string>('');
   const [checking, setChecking] = useState(false);
+  const { skin, selectedId, setSkinId } = useSkin();
   const [editingNetdisk, setEditingNetdisk] = useState<string | null>(null);
   const [ndForm, setNdForm] = useState({ name: '', baseUrl: '', token: '', mountPath: '/' });
 
@@ -175,6 +177,7 @@ export function SettingsPage({
         {/* 外观 */}
         <div className="settings-group-title">外观</div>
         <div className="settings-card">
+          <NavRow icon="sliders" label="皮肤" value={skin.name} onClick={() => setSub('skin')} />
           <NavRow icon="palette" label="主题色" value={ACCENT_NAMES[settings.themeColor || ''] || settings.themeColor || '蓝'} onClick={() => setSub('theme')} />
           <NavRow icon="camera" label="首页壁纸" onClick={() => setSub('wallpaper')} />
         </div>
@@ -334,6 +337,32 @@ export function SettingsPage({
               ))}
             </div>
           </div>
+        </SubPage>
+      )}
+
+      {sub === 'skin' && (
+        <SubPage title="皮肤" onBack={() => setSub(null)}>
+          <div className="settings-card">
+            <div className="settings-row">
+              <span className="ico">
+                <Icon name="sliders" size={20} />
+              </span>
+              <span className="label">选择皮肤（深色 / 浅色）</span>
+            </div>
+            <div className="skin-grid">
+              <button key="auto" className={`skin-cell ${selectedId === 'auto' ? 'active' : ''}`} onClick={() => setSkinId('auto')}>
+                <span className="skin-swatch" style={{ background: 'linear-gradient(135deg,#1e2230 50%,#f4f5f9 50%)' }} />
+                <span className="skin-name">自动</span>
+              </button>
+              {SKINS.map((s) => (
+                <button key={s.id} className={`skin-cell ${selectedId === s.id ? 'active' : ''}`} onClick={() => setSkinId(s.id)}>
+                  <span className="skin-swatch" style={{ background: s.swatch }} />
+                  <span className="skin-name">{s.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="settings-note">浅色皮肤：樱花粉 / 薄荷绿 / 落日橙 等；深色皮肤：暗夜黑 / 极光蓝 / 葡萄紫 / 火山红。「自动」跟随系统明暗。</p>
         </SubPage>
       )}
 

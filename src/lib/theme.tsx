@@ -11,6 +11,26 @@ export interface Skin {
 // 多套完整皮肤：每套包含底色模式 + 主色 + 背景质感（通过 CSS 变量整体切换）
 export const SKINS: Skin[] = [
   {
+    id: 'clean',
+    name: '简洁白',
+    mode: 'light',
+    swatch: 'linear-gradient(135deg,#ffffff,#eef0f5)',
+    vars: {
+      '--bg': '#f4f5f9',
+      '--panel': '#ffffff',
+      '--panel2': '#eef0f5',
+      '--panel3': '#e4e7ee',
+      '--text': '#171922',
+      '--muted': '#6c7180',
+      '--border': '#e3e6ee',
+      '--danger': '#ff5b6e',
+      '--ok': '#2bb673',
+      '--accent': '#6a8cff',
+      '--accent2': '#b15bff',
+      '--shadow': '0 8px 30px rgba(20,30,60,.10)',
+    },
+  },
+  {
     id: 'night',
     name: '暗夜黑',
     mode: 'dark',
@@ -176,7 +196,7 @@ function apply(skin: Skin) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [selectedId, setSelectedId] = useState<string>(() => localStorage.getItem(KEY) || 'night');
+  const [selectedId, setSelectedId] = useState<string>(() => localStorage.getItem(KEY) || 'clean');
   const [systemDark, setSystemDark] = useState<boolean>(getSystemDark);
 
   // 跟随系统时：按系统明暗选用记忆的暗/亮色皮肤；手动选择：用所选皮肤

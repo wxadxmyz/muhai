@@ -55,6 +55,7 @@ export default function VideoApp() {
   useEffect(() => {
     (window as any).__onAndroidBack = () => {
       const s = navRef.current;
+      if ((window as any).__playerBack && (window as any).__playerBack()) return false;
       if (s.playingVideo) { closeVideo(); return false; }
       if (s.showDebug) { setShowDebug(false); return false; }
       if (s.showCloud) { setShowCloud(false); return false; }
@@ -84,6 +85,7 @@ export default function VideoApp() {
       try {
         const un = await getCurrentWindow().onBackButton((event) => {
           const s = navRef.current;
+          if ((window as any).__playerBack && (window as any).__playerBack()) { event.preventDefault(); return; }
           if (s.playingVideo) {
             event.preventDefault();
             closeVideo();

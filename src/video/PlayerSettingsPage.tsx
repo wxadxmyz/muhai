@@ -31,7 +31,7 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   return <div className={`switch ${on ? 'on' : ''}`} onClick={() => onChange(!on)} role="switch" aria-checked={on} />;
 }
 
-// 影流「播放」设置子页（取代旧版设置内的内联播放分组）。
+// 幕海「播放」设置子页（取代旧版设置内的内联播放分组）。
 export function PlayerSettingsPage({ onBack }: { onBack: () => void }) {
   const { settings, update } = useSettings();
 

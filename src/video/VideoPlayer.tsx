@@ -159,14 +159,14 @@ export function VideoPlayer({
     setResolving(true);
     setErr(null);
     const wantResume = startAt;
-    ensureResolved(state.current).then((it) => {
+    ensureResolved(state.current).then(async (it) => {
       if (!alive || !v) return;
       if (!it.playUrl) {
         setResolving(false);
         setErr('该音源未返回可播放地址，换条线路或换个音源试试。');
         return;
       }
-      attachHls(v, it.playUrl, {
+      await attachHls(v, it.playUrl, {
         headers: it.raw?.headers as Record<string, string> | undefined,
         onError: () => {
           if (!alive) return;

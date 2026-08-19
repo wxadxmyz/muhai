@@ -1,8 +1,8 @@
 [package]
 name = "reelflow"
 version = "2.3.1"
-description = "影流 - 可自定义 API 源与云盘的影视播放器"
-authors = ["ReelFlow Contributors"]
+description = "幕海 - 可自定义 API 源与云盘的影视播放器"
+authors = ["MuHai Contributors"]
 edition = "2021"
 
 [build-dependencies]
@@ -13,7 +13,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
-# 统一 JS 沙箱引擎（v2.3.0）：QuickJS 运行时，影流/音流共用
+# 统一 JS 沙箱引擎（v2.3.0）：QuickJS 运行时，幕海/律云共用
 # 启用 bindgen：rquickjs-sys 0.6.2 未预生成 aarch64-linux-android 等 Android 绑定，
 # 必须由 libclang 在编译期生成（CI 需在 android.yml / release.yml 安装 clang/libclang-dev）。
 rquickjs = { version = "0.6", features = ["bindgen"] }

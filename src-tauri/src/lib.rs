@@ -8,7 +8,7 @@ use tauri::Manager;
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
 
-// v2.3.0 统一 JS 沙箱引擎（影流/音流共用）
+// v2.3.0 统一 JS 沙箱引擎（幕海/律云共用）
 mod js_engine;
 
 // P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），

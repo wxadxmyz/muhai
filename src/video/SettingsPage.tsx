@@ -81,7 +81,7 @@ const ACCENT_NAMES: Record<string, string> = {
   '#ff6b9d': '玫红',
 };
 
-const APP_VERSION = '2.3.5';
+const APP_VERSION = '2.3.6';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -419,7 +419,7 @@ export function SettingsPage({
       {sub === 'about' && (
         <SubPage title="关于" onBack={() => setSub(null)}>
           <div className="about-box">
-            <h2>影流 ReelFlow</h2>
+            <h2>幕海 MuHai</h2>
             <p className="muted">版本 v{APP_VERSION}</p>
             <p className="about-desc">
               一款开源的本地媒体聚合播放工具，内容来自用户自行添加的第三方源，软件本身不提供任何资源。

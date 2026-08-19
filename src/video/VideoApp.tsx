@@ -78,7 +78,7 @@ export default function VideoApp() {
     showCloud: false,
     showDebug: false,
   });
-  navRef.current = { tab, detail, playingVideo, searchOpen, settingsSub, showCloud, showDebug };
+  navRef.current = { tab, detail, playingVideo: !!detail && state.current?.mediaType === 'video', searchOpen, settingsSub, showCloud, showDebug };
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
@@ -197,7 +197,7 @@ export default function VideoApp() {
   return (
     <>
       <SplashScreen
-        appName="影流"
+        appName="幕海"
         iconSrc={import.meta.env.BASE_URL + 'icon.png'}
         gradient="linear-gradient(160deg, #3DB8FF 0%, #6A6BFF 45%, #3B1F7A 100%)"
       />

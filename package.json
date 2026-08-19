@@ -1,9 +1,9 @@
 {
   "name": "reelflow",
   "private": true,
-  "version": "2.3.5",
+  "version": "2.3.6",
   "type": "module",
-  "description": "影流 ReelFlow - 支持自定义 API 源与云盘的影视播放器（Tauri 桌面端）",
+  "description": "幕海 MuHai - 支持自定义 API 源与云盘的影视播放器（Tauri 桌面端）",
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
@@ -18,7 +18,7 @@
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-updater": "^2.10.1",
-    "hls.js": "^1.6.17",
+    "hls.js": "^1.6.19",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

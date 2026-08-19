@@ -30,8 +30,8 @@ importers:
         specifier: ^2.10.1
         version: 2.10.1
       hls.js:
-        specifier: ^1.6.17
-        version: 1.6.17
+        specifier: ^1.6.19
+        version: 1.6.19
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -623,8 +623,8 @@ packages:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
     engines: {node: '>=6.9.0'}
 
-  hls.js@1.6.17:
-    resolution: {integrity: sha512-NUplVGVuc1hSPwdB/9/cbRkUmLrYi75/hqiXKdA+l300pJNxDu96R7jRb2imDzWJqIUF4I5ThmAdp9GvOCXsuQ==}
+  hls.js@1.6.19:
+    resolution: {integrity: sha512-A//aZeaAgM5rgUCbTURD4gkfyw5Uag2/4Jky7CfDOukL/DN+P5DjbgK2BYteyP3/KnCkPfkGVkbLxQG2T0AbUQ==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -1195,7 +1195,7 @@ snapshots:
 
   gensync@1.0.0-beta.2: {}
 
-  hls.js@1.6.17: {}
+  hls.js@1.6.19: {}
 
   js-tokens@4.0.0: {}
 

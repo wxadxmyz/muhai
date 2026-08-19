@@ -1,5 +1,5 @@
 [package]
-name = "reelflow"
+name = "muhai"
 version = "2.3.1"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
@@ -34,5 +34,5 @@ name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "reelflow"
+name = "muhai"
 path = "src/main.rs"

@@ -62,5 +62,5 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: '幕海 v__VERSION__'
-          releaseBody: '影流 ReelFlow 桌面安装包（Windows / macOS / Linux）'
+          releaseBody: '幕海 MuHai 桌面安装包（Windows / macOS / Linux）'
           args: ${{ matrix.args }}

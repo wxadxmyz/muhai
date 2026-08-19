@@ -61,6 +61,6 @@ jobs:
           BINDGEN_EXTRA_CLANG_ARGS: -isystem /usr/include/x86_64-linux-gnu
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: '影流 v__VERSION__'
+          releaseName: '幕海 v__VERSION__'
           releaseBody: '影流 ReelFlow 桌面安装包（Windows / macOS / Linux）'
           args: ${{ matrix.args }}

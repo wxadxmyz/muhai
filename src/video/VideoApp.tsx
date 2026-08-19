@@ -220,7 +220,7 @@ export default function VideoApp() {
           <span className="logo">
             <Icon name="film" size={20} />
           </span>{' '}
-          影视
+          幕海
         </div>
         <nav className="nav">
           <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>

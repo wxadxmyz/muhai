@@ -207,7 +207,7 @@ jobs:
         if: steps.build.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "影流 ReelFlow Android APK (v2.2.1)" || true
+        run: gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --notes "幕海 MuHai Android APK" || true
 
       - name: Upload APK to Release
         id: upload

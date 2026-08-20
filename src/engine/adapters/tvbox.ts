@@ -45,6 +45,12 @@ function stripMd5(u: string): string {
   return String(u).split(';md5;')[0];
 }
 
+// 把相对路径 spider 引用解析成绝对 URL（针对 ddys-tvbox 之类的 "./spider/x.js"）
+function resolveUrl(ref: string, base: string): string {
+  if (/^https?:\/\//i.test(ref)) return ref;
+  try { return new URL(ref, base).toString(); } catch { return ref; }
+}
+
 // 把 spider 字段归一为 {spider 内联代码 | spiderUrl 远程地址}
 function spiderField(v: any): { spider?: string; spiderUrl?: string } {
   if (typeof v !== 'string') return { spider: JSON.stringify(v) };
@@ -77,7 +83,7 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
       return [{ ...cfg, type: 'js', name: cfg.name, ...sf } as SourceConfig];
     }
     if (typeof data.api === 'string' && /\.js(\?|$)/i.test(data.api)) {
-      return [{ ...cfg, type: 'js', name: cfg.name, spiderUrl: stripMd5(data.api) } as SourceConfig];
+      return [{ ...cfg, type: 'js', name: cfg.name, spiderUrl: resolveUrl(stripMd5(data.api), cfg.baseUrl) } as SourceConfig];
     }
     return [];
   }
@@ -91,7 +97,7 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
       sharedCode = sf.spider;
     } else if (sf.spiderUrl) {
       try {
-        sharedCode = await fetchText(sf.spiderUrl); // 预先取回共享蜘蛛，避免每站点重复拉取
+        sharedCode = await fetchText(resolveUrl(sf.spiderUrl, cfg.baseUrl)); // 预先取回共享蜘蛛，避免每站点重复拉取
       } catch {
         sharedCode = null;
       }
@@ -104,9 +110,9 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
     const sf = s.spider
       ? spiderField(s.spider)
       : s.spiderUrl
-        ? { spiderUrl: stripMd5(s.spiderUrl) }
+        ? { spiderUrl: resolveUrl(stripMd5(s.spiderUrl), cfg.baseUrl) }
         : typeof s.api === 'string' && /\.js(\?|$)/i.test(s.api)
-          ? { spiderUrl: stripMd5(s.api) }
+          ? { spiderUrl: resolveUrl(stripMd5(s.api), cfg.baseUrl) }
           : null;
     let spider = sf?.spider ?? null;
     const spiderUrl = sf?.spiderUrl ?? null;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSources } from '../store';
 import { useSettings } from '../lib/settings';
 import { SubPage } from '../components/SubPage';
@@ -6,6 +6,7 @@ import { ImportSourcePage } from '../components/ImportSourcePage';
 import { SourceListPage } from '../components/SourceListPage';
 import { Icon } from '../components/Icon';
 import { PlayerSettingsPage } from './PlayerSettingsPage';
+import { getVersion } from '@tauri-apps/api/app';
 import { checkForUpdate } from '../lib/tauriBridge';
 import { useSkin, SKINS } from '../lib/theme';
 
@@ -81,7 +82,8 @@ const ACCENT_NAMES: Record<string, string> = {
   '#ff6b9d': '玫红',
 };
 
-const APP_VERSION = '2.3.6';
+// 兜底版本号：真实版本由 getVersion() 从安装包动态读取，避免显示写死旧版
+const APP_VERSION_FALLBACK = '2.3.9';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -106,6 +108,10 @@ export function SettingsPage({
   const { skin, selectedId, setSkinId } = useSkin();
   const [editingNetdisk, setEditingNetdisk] = useState<string | null>(null);
   const [ndForm, setNdForm] = useState({ name: '', baseUrl: '', token: '', mountPath: '/' });
+  const [appVersion, setAppVersion] = useState(APP_VERSION_FALLBACK);
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
+  }, []);
 
   const boundNetdisk = (key: string) => {
     const label = NETDISKS.find((n) => n.key === key)?.label ?? '';
@@ -394,7 +400,7 @@ export function SettingsPage({
                 <Icon name="download" size={20} />
               </span>
               <span className="label">当前版本</span>
-              <span className="value">v{APP_VERSION}</span>
+              <span className="value">v{appVersion}</span>
             </div>
           </div>
           <button
@@ -407,7 +413,7 @@ export function SettingsPage({
               setChecking(false);
               if (!r.available) setUpdateState('已是最新版本');
               else if (r.updated) setUpdateState(`已更新至 v${r.version}`);
-              else setUpdateState('发现新版本，但当前为侧载包，请手动下载更新。');
+              else setUpdateState('当前为侧载安装，请在 Release 页手动下载最新 APK。');
             }}
           >
             {checking ? '检查中…' : '检查更新'}
@@ -420,7 +426,7 @@ export function SettingsPage({
         <SubPage title="关于" onBack={() => setSub(null)}>
           <div className="about-box">
             <h2>幕海 MuHai</h2>
-            <p className="muted">版本 v{APP_VERSION}</p>
+            <p className="muted">版本 v{appVersion}</p>
             <p className="about-desc">
               一款开源的本地媒体聚合播放工具，内容来自用户自行添加的第三方源，软件本身不提供任何资源。
             </p>

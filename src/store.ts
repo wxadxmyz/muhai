@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { createSource, SourceConfig, SourceType, uuid } from './engine';
 
 const PREFIX = 'mps_sources_';
@@ -11,7 +11,18 @@ export interface SourceForm {
   mountPath?: string;
 }
 
-function load(appKey: string): SourceConfig[] {
+// 单例仓库：按 appKey 维护唯一内存态。所有 useSources(appKey) 调用共享同一实例，
+// 任一处（导入页 / 源管理 / 主页）增删改都会触发全部消费者重新渲染，
+// 根治"在导入页添加源后主页不刷新"的问题。持久化仍交给 localStorage。
+type Listener = () => void;
+
+interface StoreState {
+  sources: SourceConfig[];
+}
+
+const stores = new Map<string, { state: StoreState; listeners: Set<Listener> }>();
+
+function readPersisted(appKey: string): SourceConfig[] {
   try {
     const raw = localStorage.getItem(PREFIX + appKey);
     if (raw) return JSON.parse(raw);
@@ -22,73 +33,130 @@ function load(appKey: string): SourceConfig[] {
   return [];
 }
 
-export function useSources(appKey: string) {
-  const [sources, setSources] = useState<SourceConfig[]>(() => load(appKey));
+function getStore(appKey: string) {
+  let s = stores.get(appKey);
+  if (!s) {
+    s = { state: { sources: readPersisted(appKey) }, listeners: new Set() };
+    stores.set(appKey, s);
+  }
+  return s;
+}
 
-  useEffect(() => {
+function persist(appKey: string, sources: SourceConfig[]) {
+  try {
     localStorage.setItem(PREFIX + appKey, JSON.stringify(sources));
-  }, [sources, appKey]);
+  } catch {
+    /* ignore */
+  }
+}
 
-  const add = useCallback((form: SourceForm) => {
-    setSources((s) => [
-      ...s,
-      {
-        id: uuid(),
-        name: form.name,
-        type: form.type,
-        baseUrl: form.baseUrl,
-        token: form.token,
-        enabled: true,
-        priority: s.length,
-        extra: form.mountPath ? { mountPath: form.mountPath } : undefined,
-      },
-    ]);
-  }, []);
+function commit(appKey: string, next: SourceConfig[]) {
+  const s = getStore(appKey);
+  s.state = { sources: next };
+  persist(appKey, next);
+  s.listeners.forEach((l) => l());
+}
 
-  const update = useCallback((id: string, patch: Partial<SourceConfig>) => {
-    setSources((s) => s.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-  }, []);
+export function useSources(appKey: string) {
+  const store = getStore(appKey);
 
-  const remove = useCallback((id: string) => {
-    setSources((s) => s.filter((x) => x.id !== id));
-  }, []);
+  const subscribe = useCallback(
+    (cb: Listener) => {
+      store.listeners.add(cb);
+      return () => {
+        store.listeners.delete(cb);
+      };
+    },
+    [store]
+  );
 
-  const toggle = useCallback((id: string) => {
-    setSources((s) => s.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
-  }, []);
+  const getSnapshot = useCallback(() => store.state, [store]);
 
-  const move = useCallback((id: string, dir: -1 | 1) => {
-    setSources((s) => {
-      const sorted = [...s].sort((a, b) => a.priority - b.priority);
+  const state = useSyncExternalStore(subscribe, getSnapshot);
+  const sources = state.sources;
+
+  const add = useCallback(
+    (form: SourceForm) => {
+      const cur = getStore(appKey).state.sources;
+      commit(appKey, [
+        ...cur,
+        {
+          id: uuid(),
+          name: form.name,
+          type: form.type,
+          baseUrl: form.baseUrl,
+          token: form.token,
+          enabled: true,
+          priority: cur.length,
+          extra: form.mountPath ? { mountPath: form.mountPath } : undefined,
+        },
+      ]);
+    },
+    [appKey]
+  );
+
+  const update = useCallback(
+    (id: string, patch: Partial<SourceConfig>) => {
+      const cur = getStore(appKey).state.sources;
+      commit(appKey, cur.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    },
+    [appKey]
+  );
+
+  const remove = useCallback(
+    (id: string) => {
+      const cur = getStore(appKey).state.sources;
+      commit(appKey, cur.filter((x) => x.id !== id));
+    },
+    [appKey]
+  );
+
+  const toggle = useCallback(
+    (id: string) => {
+      const cur = getStore(appKey).state.sources;
+      commit(appKey, cur.map((x) => (x.id === id ? { ...x, enabled: !x.enabled } : x)));
+    },
+    [appKey]
+  );
+
+  const move = useCallback(
+    (id: string, dir: -1 | 1) => {
+      const cur = getStore(appKey).state.sources;
+      const sorted = [...cur].sort((a, b) => a.priority - b.priority);
       const i = sorted.findIndex((x) => x.id === id);
       const j = i + dir;
-      if (i < 0 || j < 0 || j >= sorted.length) return s;
+      if (i < 0 || j < 0 || j >= sorted.length) return;
       const pa = sorted[i].priority;
       sorted[i].priority = sorted[j].priority;
       sorted[j].priority = pa;
-      return sorted;
-    });
-  }, []);
+      commit(appKey, sorted);
+    },
+    [appKey]
+  );
 
-  const importSources = useCallback((json: string): { added: number; errors: string[] } => {
-    try {
-      const arr = JSON.parse(json);
-      if (!Array.isArray(arr)) return { added: 0, errors: ['应为源数组 JSON'] };
-      const valid = arr.filter((r: any) => r?.type && r?.baseUrl);
-      setSources((s) => [
-        ...s,
-        ...valid.map((r: any) => ({ id: uuid(), enabled: true, priority: s.length, ...r })),
-      ]);
-      const errors = arr.length - valid.length > 0 ? ['已跳过无效条目'] : [];
-      return { added: valid.length, errors };
-    } catch (e: any) {
-      return { added: 0, errors: [e?.message ?? '解析失败'] };
-    }
-  }, []);
+  const importSources = useCallback(
+    (json: string): { added: number; errors: string[] } => {
+      try {
+        const arr = JSON.parse(json);
+        if (!Array.isArray(arr)) return { added: 0, errors: ['应为源数组 JSON'] };
+        const valid = arr.filter((r: any) => r?.type && r?.baseUrl);
+        const cur = getStore(appKey).state.sources;
+        commit(appKey, [
+          ...cur,
+          ...valid.map((r: any) => ({ id: uuid(), enabled: true, priority: cur.length, ...r })),
+        ]);
+        const errors = arr.length - valid.length > 0 ? ['已跳过无效条目'] : [];
+        return { added: valid.length, errors };
+      } catch (e: any) {
+        return { added: 0, errors: [e?.message ?? '解析失败'] };
+      }
+    },
+    [appKey]
+  );
 
   const exportSources = useCallback((): string => {
-    return JSON.stringify(sources, null, 2);
-  }, [sources]);
+    return JSON.stringify(getStore(appKey).state.sources, null, 2);
+  }, [appKey]);
 
   const test = useCallback(async (cfg: SourceConfig): Promise<boolean> => {
     try {

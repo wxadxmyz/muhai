@@ -1,12 +1,12 @@
 import { MediaItem } from '../../engine';
-import { aggregateHome } from '../../engine';
+import { aggregateHome, aggregateSearch } from '../../engine';
 import { useLibrary } from '../../lib/library';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
 import { useEffect, useState } from 'react';
 
-const CATEGORIES = ['推荐', '电影', '剧集', '动漫', '综艺', '纪录片'];
+const CATEGORIES = ['电影', '电视剧', '动漫', '综艺', '电影筛选', '电视剧筛选', '动漫筛选'];
 
 export function Home({
   sources,
@@ -25,6 +25,7 @@ export function Home({
   const [homeItems, setHomeItems] = useState<MediaItem[]>([]);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeError, setHomeError] = useState('');
+  const [activeCat, setActiveCat] = useState<string | null>(null);
 
   useEffect(() => {
     if (sources.length === 0) {
@@ -34,14 +35,18 @@ export function Home({
     let cancelled = false;
     setHomeLoading(true);
     setHomeError('');
-    aggregateHome(sources, { timeout: 8000 })
-      .then((r) => {
-        if (cancelled) return;
-        setHomeItems(r.items);
-        if (!r.items.length && r.errors.length) {
-          setHomeError(r.errors[0]?.message ?? '源暂未返回内容');
-        }
-      })
+    // 选中分类时按关键词取内容（留在首页，不跳搜索页）；
+    // 未选时拉取各源首页推荐作为"推荐"流。
+    const p = activeCat
+      ? aggregateSearch(sources, activeCat.replace('筛选', ''), { timeout: 8000, mediaType: 'video' })
+      : aggregateHome(sources, { timeout: 8000 });
+    p.then((r) => {
+      if (cancelled) return;
+      setHomeItems(r.items);
+      if (!r.items.length && r.errors.length) {
+        setHomeError(r.errors[0]?.message ?? '源暂未返回内容');
+      }
+    })
       .catch((e) => {
         if (!cancelled) setHomeError(e?.message ?? '加载失败');
       })
@@ -51,7 +56,7 @@ export function Home({
     return () => {
       cancelled = true;
     };
-  }, [sources]);
+  }, [sources, activeCat]);
 
   const PosterCard = ({ it }: { it: MediaItem }) => {
     return (
@@ -68,7 +73,7 @@ export function Home({
 
   const homeTop = (
     <div className="home-top">
-      <div className="ht-logo">影<span className="dot">流</span></div>
+      <div className="ht-logo">幕<span className="dot">海</span></div>
       <div className="ht-actions">
         <button className="ht-ico" onClick={() => onSearch('')} title="搜索"><Icon name="search" size={22} /></button>
       </div>
@@ -95,18 +100,28 @@ export function Home({
     <div className="view home">
       {homeTop}
 
-      <div className="chips">
+      <div className="chips" style={{ display: 'flex', overflowX: 'auto', flexWrap: 'nowrap', gap: 8, paddingBottom: 4 }}>
         {CATEGORIES.map((c) => (
-          <button key={c} className={`chip${c === '推荐' ? ' chip-rec' : ''}`} onClick={() => { if (c !== '推荐') onSearch(c); }}>{c}</button>
+          <button
+            key={c}
+            className={`chip${activeCat === c ? ' chip-rec' : ''}`}
+            style={{ whiteSpace: 'nowrap' }}
+            onClick={() => setActiveCat(activeCat === c ? null : c)}
+          >
+            {c}
+          </button>
         ))}
       </div>
 
       <section className="row-section">
-        <div className="row-head"><h3>站点推荐</h3><span className="row-more" onClick={() => onSearch('')}>更多 ›</span></div>
+        <div className="row-head">
+          <h3>{activeCat ? activeCat : '推荐'}</h3>
+          {activeCat && <span className="row-more" onClick={() => setActiveCat(null)}>返回推荐 ›</span>}
+        </div>
         {homeLoading ? (
-          <div className="empty sm">正在从已添加的来源加载推荐…</div>
+          <div className="empty sm">正在从已添加的来源加载…</div>
         ) : homeItems.length === 0 ? (
-          <div className="empty sm">{homeError || '已添加来源，但暂未返回可展示的内容。点上方分类或搜索开始看片～'}</div>
+          <div className="empty sm">{homeError || '该分类暂无内容，换个关键词或检查源。'}</div>
         ) : (
           <div className="poster-grid">
             {homeItems.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}

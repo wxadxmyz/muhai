@@ -69,11 +69,15 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
     }
   }
 
-  // 单线路（无 sites 数组）：顶层 spider 即唯一源
+  // 单线路（无 sites 数组）：顶层 spider 即唯一源；
+  // drpy2 单文件形态：顶层 api 直接是远程 .js 蜘蛛脚本
   if (!Array.isArray(data.sites)) {
     if (data.spider) {
       const sf = spiderField(data.spider);
       return [{ ...cfg, type: 'js', name: cfg.name, ...sf } as SourceConfig];
+    }
+    if (typeof data.api === 'string' && /\.js(\?|$)/i.test(data.api)) {
+      return [{ ...cfg, type: 'js', name: cfg.name, spiderUrl: stripMd5(data.api) } as SourceConfig];
     }
     return [];
   }
@@ -96,11 +100,14 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
 
   const out: SourceConfig[] = [];
   for (const s of data.sites) {
+    // drpy2 形态：站点 api 为远程 .js 蜘蛛脚本（如 ".../drpy2.min.js"），亦纳入
     const sf = s.spider
       ? spiderField(s.spider)
       : s.spiderUrl
         ? { spiderUrl: stripMd5(s.spiderUrl) }
-        : null;
+        : typeof s.api === 'string' && /\.js(\?|$)/i.test(s.api)
+          ? { spiderUrl: stripMd5(s.api) }
+          : null;
     let spider = sf?.spider ?? null;
     const spiderUrl = sf?.spiderUrl ?? null;
     if (!spider && !spiderUrl && sharedCode) spider = sharedCode; // 继承共享蜘蛛

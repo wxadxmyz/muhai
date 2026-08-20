@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Hls from 'hls.js';
 import { invoke } from '@tauri-apps/api/core';
 import { aggregateLives } from '../../engine';
 import { SourceConfig, LiveChannelSource } from '../../engine/types';
@@ -7,6 +8,7 @@ import { Icon } from '../../components/Icon';
 interface Channel {
   name: string;
   url: string;
+  logo?: string;
 }
 
 // 拉取文本：优先走 Rust 后端 fetchsource 代理（绕开 WebView CORS），失败回退 fetch
@@ -20,19 +22,23 @@ async function fetchText(url: string): Promise<string> {
   }
 }
 
-// 解析 m3u / txt 直播列表为频道名+地址
+// 解析 m3u / txt 直播列表为频道名+地址+台标
 function parseM3U(text: string): Channel[] {
   const lines = text.split(/\r?\n/);
   const channels: Channel[] = [];
   let name = '';
+  let logo = '';
   for (const raw of lines) {
     const t = raw.trim();
     if (t.startsWith('#EXTINF')) {
+      const logoMatch = t.match(/tvg-logo="([^"]*)"/i);
+      logo = logoMatch ? logoMatch[1] : '';
       const idx = t.lastIndexOf(',');
       name = idx >= 0 ? t.slice(idx + 1).trim() : '';
     } else if (t && !t.startsWith('#') && /^https?:\/\//.test(t)) {
-      channels.push({ name: name || t, url: t });
+      channels.push({ name: name || t, url: t, logo });
       name = '';
+      logo = '';
     }
   }
   return channels;
@@ -45,6 +51,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [playing, setPlaying] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!sources.length) {
@@ -61,6 +68,29 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       })
       .catch(() => setError('直播源加载失败'));
   }, [sources]);
+
+  // m3u8 在 Android WebView 原生 <video> 大多无法直接播放，统一用 hls.js 解封装；
+  // 非 HLS 地址（mp4 等）走原生 src。
+  useEffect(() => {
+    if (!playing || !videoRef.current) return;
+    const video = videoRef.current;
+    const isHls = /\.m3u8(\?|$)/i.test(playing);
+    let hls: Hls | null = null;
+    if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = playing; // iOS / Safari 原生 HLS
+    } else if (isHls && Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(playing);
+      hls.attachMedia(video);
+    } else {
+      video.src = playing;
+    }
+    return () => {
+      if (hls) hls.destroy();
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [playing]);
 
   const openLive = async (live: LiveChannelSource & { sourceName: string }) => {
     setLoading(true);
@@ -96,7 +126,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
             {channels.map((c, i) => (
               <div key={i} className="pcard tap" onClick={() => setPlaying(c.url)}>
                 <div className="pcover">
-                  <span className="ph-big">{c.name.slice(0, 1)}</span>
+                  {c.logo ? <img src={c.logo} alt="" /> : <span className="ph-big">{c.name.slice(0, 1)}</span>}
                 </div>
                 <div className="ptitle">{c.name}</div>
               </div>
@@ -138,7 +168,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
       {playing && (
         <div className="live-player">
-          <video src={playing} controls autoPlay playsInline className="live-video" />
+          <video ref={videoRef} controls autoPlay playsInline className="live-video" />
           <button className="live-close" onClick={() => setPlaying(null)}>
             关闭
           </button>

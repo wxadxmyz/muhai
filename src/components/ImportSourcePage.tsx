@@ -127,19 +127,6 @@ export function ImportSourcePage({
           </button>
         </div>
 
-        {mediaType === 'video' && (
-          <div className="recommend-row">
-            <span className="muted sm">推荐影视源：</span>
-            <button
-              type="button"
-              className="chip"
-              onClick={() => setUrl('http://tvbox.xn--4kq62z5rby2qupq9ub.top/')}
-            >
-              饭太硬可用订阅（绕过被软封锁的 /tv）
-            </button>
-          </div>
-        )}
-
         {links.length > 0 && (
           <div className="link-list">
             {links.map((l, i) => (

@@ -5,11 +5,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version tag to upload to'
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -63,9 +58,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CI: true
-          BINDGEN_EXTRA_CLANG_ARGS: ${{ matrix.platform == 'ubuntu-22.04' && '-isystem /usr/include/x86_64-linux-gnu' || '' }}
+          BINDGEN_EXTRA_CLANG_ARGS: -isystem /usr/include/x86_64-linux-gnu
         with:
-          tagName: ${{ github.event.inputs.version || github.ref_name }}
+          tagName: ${{ github.ref_name }}
           releaseName: '幕海 v__VERSION__'
           releaseBody: '幕海 MuHai 桌面安装包（Windows / macOS / Linux）'
           args: ${{ matrix.args }}

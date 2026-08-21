@@ -83,7 +83,7 @@ const ACCENT_NAMES: Record<string, string> = {
 };
 
 // 兜底版本号：真实版本由 getVersion() 从安装包动态读取，避免显示写死旧版
-const APP_VERSION_FALLBACK = '2.3.9';
+const APP_VERSION_FALLBACK = '2.3.10';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -194,7 +194,7 @@ export function SettingsPage({
           <NavRow
             icon="download"
             label="检查更新"
-            value={`v${APP_VERSION}`}
+            value={`v${appVersion}`}
             onClick={() => setSub('update')}
           />
           <NavRow icon="file-text" label="关于" onClick={() => setSub('about')} />

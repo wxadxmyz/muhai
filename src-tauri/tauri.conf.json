@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "幕海",
-  "version": "2.3.9",
-  "identifier": "com.reelflow.app",
+  "version": "2.3.10",
+  "identifier": "com.muhai.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",

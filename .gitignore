@@ -10,11 +10,9 @@ dist-ssr
 
 # Rust / Tauri
 /src-tauri/target
-/src-tauri/gen
 **/target
 **/*.rs.bk
 .cargo/
-Cargo.lock
 
 # Logs
 logs

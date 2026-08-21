@@ -85,7 +85,7 @@ jobs:
 
       - name: Patch MainActivity (Android back-button → WebView)
         run: |
-          MAIN="src-tauri/gen/android/app/src/main/java/com/reelflow/app/MainActivity.kt"
+          MAIN="src-tauri/gen/android/app/src/main/java/com/muhai/app/MainActivity.kt"
           if [ ! -f "$MAIN" ]; then
             echo "MainActivity.kt not found at $MAIN, searching..."
             MAIN=$(find src-tauri/gen/android -name "MainActivity.kt" 2>/dev/null | head -1)

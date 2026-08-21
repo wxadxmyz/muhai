@@ -75,8 +75,8 @@ async fn fetchsource(url: String) -> Result<String, String> {
 #[cfg(desktop)]
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, "hide", "隐藏到托盘", true, None::<str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<str>)?;
+    let hide = MenuItem::with_id(app, "hide", "隐藏到托盘", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &hide, &PredefinedMenuItem::separator(app)?, &quit])?;
     let _tray = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())

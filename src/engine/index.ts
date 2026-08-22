@@ -39,7 +39,7 @@ export async function aggregateSearch(
   const results = await Promise.all(
     active.map(async (s) => {
       try {
-        const items = await withTimeout(createSource(s).search(keyword, 1), opts.timeout ?? 8000);
+        const items = await withTimeout(createSource(s).search(keyword, 1), opts.timeout ?? 30000);
         return { ok: true as const, sourceId: s.id, items };
       } catch (e: any) {
         return { ok: false as const, sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' };
@@ -77,7 +77,7 @@ export async function aggregateHome(
       try {
         const src = createSource(s);
         if (!src.home) return { ok: false as const, sourceId: s.id, sourceName: s.name, message: '该源不支持首页' };
-        const items = await withTimeout(src.home(), opts.timeout ?? 8000);
+        const items = await withTimeout(src.home(), opts.timeout ?? 30000);
         return { ok: true as const, sourceId: s.id, sourceName: s.name, items };
       } catch (e: any) {
         return { ok: false as const, sourceId: s.id, sourceName: s.name, message: e?.message ?? '首页加载失败' };

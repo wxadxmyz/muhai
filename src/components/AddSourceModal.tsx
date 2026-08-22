@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { SOURCE_TYPES, SourceType } from '../engine';
 import { SourceForm } from '../store';
+import { requestDisclaimerToast } from '../lib/disclaimer';
 
 export function AddSourceModal({
   onSubmit,
@@ -33,6 +34,7 @@ export function AddSourceModal({
       token: token.trim() || undefined,
       mountPath: type === 'alist' ? mountPath.trim() || '/' : undefined,
     });
+    requestDisclaimerToast();
   };
 
   return (

@@ -54,7 +54,7 @@ pub fn run() {
 async fn fetchsource(url: String) -> Result<String, String> {
     let ua = "okhttp/4.10.0";
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client

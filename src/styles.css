@@ -4,7 +4,7 @@
   /* 安全区：状态栏/底部导航条高度，由 viewport-fit=cover 下的 env() 提供。
      若部分机型 env() 返回 0，可改由 JS 把真实值注入到 documentElement 覆盖这里。 */
   --sat: env(safe-area-inset-top, 0px);
-  --sab: max(env(safe-area-inset-bottom, 0px), 18px); /* 兜底至少18px，避免安卓手势条遮挡底部导航 */
+  --sab: env(safe-area-inset-bottom, 0px); /* 手势导航全屏无灰条；三键导航由 edge-to-edge 的 env() 提供真实底部预留（MainActivity 已 enableEdgeToEdge） */
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
 }
@@ -779,7 +779,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* 左侧源栏 */
 .search-sources {
-  flex: 0 0 88px;
+  flex: 0 0 132px;
   background: var(--panel);
   border-right: 1px solid var(--border);
   overflow-y: auto;
@@ -867,7 +867,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .search-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 .search-card {
@@ -886,7 +886,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .search-poster {
   position: relative;
-  aspect-ratio: 2 / 3;
+  aspect-ratio: 3 / 4;
   background: var(--panel2);
   overflow: hidden;
 }
@@ -977,6 +977,92 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   .search-source-badge { width: 30px; height: 30px; font-size: 12px; }
   .search-source-name { font-size: 11px; }
 }
+
+/* ============ 直播页 v2（迷你播放预览 + 左分类 + 右频道网格） ============ */
+.live { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
+.live > .search-bar.big { flex: 0 0 auto; }
+
+/* 顶部迷你播放预览 */
+.live-preview {
+  flex: 0 0 auto;
+  margin: 10px 12px 6px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #2a3142, #1a2030);
+  position: relative;
+  aspect-ratio: 16 / 9;
+  box-shadow: var(--shadow);
+}
+.live-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+.live-preview .lp-empty {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; color: #cfd6e4; font-size: 13px;
+}
+.live-preview .lp-name {
+  position: absolute; top: 10px; left: 12px; right: 12px;
+  color: #fff; font-size: 14px; font-weight: 700;
+  text-shadow: 0 1px 4px rgba(0,0,0,.6);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 主体：左分类 + 右频道网格 */
+.live-main {
+  flex: 1; min-height: 0;
+  display: flex; gap: 10px;
+  padding: 4px 12px 80px;
+}
+.live-cats {
+  flex: 0 0 76px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 6px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.live-cat {
+  font-size: 12px; padding: 9px 4px; border-radius: 9px;
+  color: var(--muted); text-align: center; cursor: pointer; user-select: none;
+  transition: background .15s, color .15s;
+}
+.live-cat.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+.live-cat:hover:not(.on) { color: var(--text); background: var(--panel2); }
+
+.live-grid {
+  flex: 1; min-width: 0;
+  overflow-y: auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start;
+  -webkit-overflow-scrolling: touch;
+}
+.live-ch {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 11px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.live-ch:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
+.live-ch .lc-logo {
+  width: 38px; height: 38px; border-radius: 9px;
+  display: grid; place-items: center; overflow: hidden;
+  color: #fff; font-size: 13px; font-weight: 700; flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+}
+.live-ch .lc-logo img { width: 100%; height: 100%; object-fit: cover; }
+.live-ch .lc-info { min-width: 0; }
+.live-ch .lc-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.live-ch .lc-prog {
+  font-size: 10px; color: var(--muted); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.live-grid > .empty { grid-column: 1 / -1; }
 
 /* ============ 主页底部「使用须知」轻提示（添加源后弹一次，2s 自动消失） ============ */
 .home-disclaimer {

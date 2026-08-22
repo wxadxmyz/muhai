@@ -84,7 +84,17 @@ function isTvboxConfig(data: any): boolean {
 
 function nameFromUrl(u: string): string {
   try {
-    const h = new URL(u).hostname.replace(/^www\./, '');
+    const url = new URL(u);
+    const h = url.hostname.replace(/^www\./, '');
+    // jsDelivr / GitHub(raw) 等 CDN：用路径里的仓库名或文件名当名字，
+    // 避免导入后显示成裸域名（如 cdn.jsdelivr.net）。
+    if (/(^|\.)jsdelivr\.net$/.test(h) || /(^|\.)githubusercontent\.com$/.test(h) || /(^|\.)github\.com$/.test(h)) {
+      const parts = url.pathname.split('/').filter(Boolean);
+      const last = parts[parts.length - 1] || '';
+      const file = last.replace(/\.[^./?]+$/, ''); // 去掉扩展名
+      if (file && file !== 'main' && file !== 'master') return decodeURIComponent(file);
+      if (parts.length >= 2) return decodeURIComponent(parts[1]); // 仓库名
+    }
     if (h) return h;
   } catch {
     /* ignore */
@@ -120,9 +130,12 @@ function parseFetched(text: string, url: string): FetchResult {
       const data = JSON.parse(trimmed);
       // 影视仓 / TVBox 聚合配置：整体作为「一个」tvbox 源，仓库里只显示你粘贴的这个地址
       if (isTvboxConfig(data)) {
+        // 优先用配置自身的可读名称（如 name 字段），域名仅作兜底，避免显示成 cdn.jsdelivr.net
+        const cfgName =
+          typeof data.name === 'string' && data.name.trim() ? data.name.trim() : nameFromUrl(url);
         return {
           kind: 'sources',
-          sources: [{ name: nameFromUrl(url), type: 'tvbox', baseUrl: url }],
+          sources: [{ name: cfgName, type: 'tvbox', baseUrl: url }],
         };
       }
       const valid = normalize(toSourceList(data));

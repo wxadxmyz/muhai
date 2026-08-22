@@ -38,8 +38,8 @@ export function Home({
     // 选中分类时按关键词取内容（留在首页，不跳搜索页）；
     // 未选时拉取各源首页推荐作为"推荐"流。
     const p = activeCat
-      ? aggregateSearch(sources, activeCat.replace('筛选', ''), { timeout: 8000, mediaType: 'video' })
-      : aggregateHome(sources, { timeout: 8000 });
+      ? aggregateSearch(sources, activeCat.replace('筛选', ''), { timeout: 30000, mediaType: 'video' })
+      : aggregateHome(sources, { timeout: 30000 });
     p.then((r) => {
       if (cancelled) return;
       setHomeItems(r.items);

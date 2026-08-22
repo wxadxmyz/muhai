@@ -150,10 +150,11 @@ export function ImportSourcePage({
         <input
           ref={fileRef}
           type="file"
-          accept=".json,.json5,.txt,.text,.conf,.m3u,.js,.yml,.yaml,application/json,text/plain"
+          accept="*/*"
           style={{ display: 'none' }}
           onChange={onFile}
         />
+        {/* 放开文件选择器为全部类型，以便移动端也能选中 .json 源文件 */}
 
         <div className="divider">
           <span>或</span>

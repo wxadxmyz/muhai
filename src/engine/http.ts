@@ -6,7 +6,7 @@ export async function fetchJson(
   opts: { method?: string; body?: any; headers?: Record<string, string>; timeout?: number } = {}
 ): Promise<any> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), opts.timeout ?? 8000);
+  const t = setTimeout(() => ctrl.abort(), opts.timeout ?? 30000);
   const t0 = Date.now();
   const method = opts.method ?? 'GET';
   try {
@@ -45,7 +45,7 @@ export async function fetchJson(
   }
 }
 
-export function withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T> {
+export function withTimeout<T>(p: Promise<T>, ms = 30000): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('timeout')), ms);
     p.then(resolve, reject).finally(() => clearTimeout(t));

@@ -977,3 +977,39 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   .search-source-badge { width: 30px; height: 30px; font-size: 12px; }
   .search-source-name { font-size: 11px; }
 }
+
+/* ============ 主页底部「使用须知」轻提示（添加源后弹一次，2s 自动消失） ============ */
+.home-disclaimer {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  max-width: min(92vw, 520px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(20, 22, 28, 0.92);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  z-index: 50;
+  animation: home-disclaimer-in 0.2s ease-out;
+}
+.home-disclaimer-icon { flex: 0 0 auto; opacity: 0.85; }
+.home-disclaimer-text { flex: 1 1 auto; }
+.home-disclaimer-close {
+  flex: 0 0 auto;
+  cursor: pointer;
+  opacity: 0.7;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.home-disclaimer-close:hover { opacity: 1; }
+@keyframes home-disclaimer-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

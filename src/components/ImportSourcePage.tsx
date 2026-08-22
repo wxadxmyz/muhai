@@ -4,6 +4,7 @@ import { SubPage } from './SubPage';
 import { fetchFromUrl, parsePasted } from '../lib/sourceFetch';
 import { isValidShareCode, decodeSources } from '../lib/sharecode';
 import { Icon } from './Icon';
+import { requestDisclaimerToast } from '../lib/disclaimer';
 
 // 「导入 json 源 / 导入 json 音源」全屏子页：配置地址自动抓取 + 本地文件 + 手动粘贴。
 // 取代旧版的弹窗式导入。
@@ -37,6 +38,7 @@ export function ImportSourcePage({
     if (r.added > 0) {
       setStatus({ type: 'ok', msg: `已成功导入 ${r.added} 个源` });
       onImported?.();
+      requestDisclaimerToast();
     } else {
       setStatus({ type: 'err', msg: r.errors.join('；') || '导入失败' });
     }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { aggregateSearch, MediaItem, MediaType, SourceConfig } from '../engine';
+import { aggregateSearch, expandSources, MediaItem, MediaType, SourceConfig } from '../engine';
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
@@ -11,34 +11,8 @@ type SourceState =
 
 const ALL_KEY = '__all__';
 
-function sourceKey(src: SourceConfig): string {
-  return src.id || src.name;
-}
-
-function buildSourceState(
-  sources: SourceConfig[],
-  items: MediaItem[],
-  errors: { sourceId: string; sourceName: string; message: string }[],
-): Map<string, SourceState> {
-  const map = new Map<string, SourceState>();
-  // 计数
-  const counts = new Map<string, number>();
-  for (const it of items) {
-    counts.set(it.sourceId, (counts.get(it.sourceId) ?? 0) + 1);
-  }
-  // 错误
-  const errs = new Map<string, string>();
-  for (const e of errors) {
-    const key = e.sourceId || e.sourceName;
-    if (!errs.has(key)) errs.set(key, e.message);
-  }
-  for (const src of sources) {
-    const k = sourceKey(src);
-    if (errs.has(k)) map.set(k, { kind: 'error', message: errs.get(k)! });
-    else if ((counts.get(k) ?? 0) > 0) map.set(k, { kind: 'ok', count: counts.get(k)! });
-    else map.set(k, { kind: 'empty' });
-  }
-  return map;
+function parentIdOf(src: SourceConfig): string {
+  return ((src as any).parentId as string) || src.id;
 }
 
 export function SearchView({
@@ -68,13 +42,37 @@ export function SearchView({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
+  const [expanded, setExpanded] = useState<SourceConfig[]>([]);
   const [toastOn, setToastOn] = useState(true);
   const toastTimer = useRef<number | null>(null);
 
-  const sourceState = useMemo(
-    () => buildSourceState(sources, items, errors),
-    [sources, items, errors],
-  );
+  // 子站 id <-> name 映射（供过滤）
+  const nameOf = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of expanded) m.set(s.id, s.name);
+    return m;
+  }, [expanded]);
+
+  const sourceState = useMemo(() => {
+    const map = new Map<string, SourceState>();
+    // 计数：items 的 sourceName 即子站名
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      counts.set(it.sourceName, (counts.get(it.sourceName) ?? 0) + 1);
+    }
+    // 错误：按配置 id（parentId）归类到其下所有子站
+    const errs = new Map<string, string>();
+    for (const e of errors) {
+      if (!errs.has(e.sourceId)) errs.set(e.sourceId, e.message);
+    }
+    for (const s of expanded) {
+      const pid = parentIdOf(s);
+      if (errs.has(pid)) map.set(s.id, { kind: 'error', message: errs.get(pid)! });
+      else if ((counts.get(s.name) ?? 0) > 0) map.set(s.id, { kind: 'ok', count: counts.get(s.name)! });
+      else map.set(s.id, { kind: 'empty' });
+    }
+    return map;
+  }, [expanded, items, errors]);
 
   const showHints = !searched && kw.trim() === '';
 
@@ -100,23 +98,31 @@ export function SearchView({
     setSearched(true);
     setActiveSource(ALL_KEY);
     library.addSearch(query);
+    // 展开 tvbox 子站（左侧源栏用）
+    try {
+      const ex = await expandSources(sources);
+      setExpanded(ex);
+    } catch {
+      setExpanded(sources);
+    }
     const r = await aggregateSearch(sources, query, { timeout: 30000, mediaType });
     setItems(r.items);
     setErrors(r.errors);
     setLoading(false);
   };
 
-  // 按当前源过滤
+  // 按当前源过滤（子站用 name 匹配，items 的 sourceName 即子站名）
   const visibleItems = useMemo(() => {
     if (activeSource === ALL_KEY) return items;
-    return items.filter((it) => sourceKey({ id: it.sourceId, name: it.sourceName } as SourceConfig) === activeSource);
-  }, [items, activeSource]);
+    const n = nameOf.get(activeSource);
+    if (!n) return items;
+    return items.filter((it) => it.sourceName === n);
+  }, [items, activeSource, nameOf]);
 
-  // 全部源的总结果数（不受 activeSource 影响，用于侧栏"全部"徽标）
   const totalCount = items.length;
   const okSourceCount = useMemo(() => {
     const s = new Set<string>();
-    for (const it of items) s.add(it.sourceId);
+    for (const it of items) s.add(it.sourceName);
     return s.size;
   }, [items]);
 
@@ -195,19 +201,19 @@ export function SearchView({
               <span className="search-source-name">全部</span>
               <span className="search-source-count">{totalCount}</span>
             </div>
-            {sources.map((src) => {
-              const st = sourceState.get(sourceKey(src));
+            {expanded.map((src) => {
+              const st = sourceState.get(src.id);
               const isError = st?.kind === 'error';
-              const isActive = activeSource === sourceKey(src);
+              const isActive = activeSource === src.id;
               return (
                 <div
-                  key={sourceKey(src)}
+                  key={src.id}
                   className={
                     'search-source' +
                     (isActive ? ' active' : '') +
                     (isError ? ' error' : '')
                   }
-                  onClick={() => !isError && setActiveSource(sourceKey(src))}
+                  onClick={() => !isError && setActiveSource(src.id)}
                   role="button"
                   title={isError ? `该源未连通：${st?.kind === 'error' ? st.message : ''}` : src.name}
                 >

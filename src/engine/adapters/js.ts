@@ -33,6 +33,19 @@ function catvodize(code: string): string {
   return CATVOD_REQ_SHIM + stripped;
 }
 
+// 跨实例 spider 脚本缓存：同一 URL 的 spider 只下载/执行预处理一次。
+// 多子站共享同一 spider（如 drpy2.min.js）时避免重复拉取导致的超时。
+const codeCache = new Map<string, string>();
+function cachedCatvodize(url: string | undefined, code: string): string {
+  if (!url) return catvodize(code);
+  const hit = codeCache.get(url);
+  if (hit) return hit;
+  const out = catvodize(code);
+  if (codeCache.size > 64) codeCache.clear(); // 防内存膨胀，最多缓存 64 个脚本
+  codeCache.set(url, out);
+  return out;
+}
+
 // 从预处理后的代码里检测是否声明了对应的 Content 命名函数
 function detectCaps(code: string) {
   return {
@@ -51,11 +64,16 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
   async function loadCode(): Promise<string> {
     if (cachedCode) return cachedCode;
     let raw: string;
+    let cacheKey: string | undefined;
     if (jsCfg.spider) raw = jsCfg.spider;
-    else if (jsCfg.spiderUrl) raw = await invoke<string>('fetchsource', { url: jsCfg.spiderUrl });
-    else if (jsCfg.api) raw = await invoke<string>('fetchsource', { url: jsCfg.api });
-    else throw new Error('JS 源缺少 spider 脚本（需提供 spider / spiderUrl / api 之一）');
-    cachedCode = catvodize(raw);
+    else if (jsCfg.spiderUrl) {
+      cacheKey = jsCfg.spiderUrl;
+      raw = await invoke<string>('fetchsource', { url: jsCfg.spiderUrl });
+    } else if (jsCfg.api) {
+      cacheKey = jsCfg.api;
+      raw = await invoke<string>('fetchsource', { url: jsCfg.api });
+    } else throw new Error('JS 源缺少 spider 脚本（需提供 spider / spiderUrl / api 之一）');
+    cachedCode = cachedCatvodize(cacheKey, raw);
     caps = detectCaps(cachedCode);
     return cachedCode;
   }

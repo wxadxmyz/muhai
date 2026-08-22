@@ -118,8 +118,11 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
     const spiderUrl = sf?.spiderUrl ?? null;
     if (!spider && !spiderUrl && sharedCode) spider = sharedCode; // 继承共享蜘蛛
     if (!spider && !spiderUrl) continue; // 既无自有也无共享蜘蛛，跳过
+    const subId = s.key ? `${cfg.id}::${s.key}` : `${cfg.id}::${out.length}`;
     out.push({
       ...cfg,
+      id: subId, // 子站唯一 id，供前端按子站过滤/标记
+      parentId: cfg.id, // 记录所属配置，便于错误归类
       type: 'js',
       name: s.name || s.key || cfg.name,
       spider: spider ?? undefined,
@@ -129,6 +132,11 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
     } as SourceConfig);
   }
   return out;
+}
+
+// 供前端使用的子站展开入口（无缓存版本，需上层做整体缓存）
+export async function expandTvboxSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
+  return collectSpiders(cfg);
 }
 
 export function createTvboxSource(cfg: SourceConfig): MediaSource {

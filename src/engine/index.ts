@@ -2,7 +2,7 @@
 import { createMusicJsonSource } from './adapters/musicJson';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
-import { createTvboxSource } from './adapters/tvbox';
+import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
 import { createJsSource } from './adapters/js';
 import { withTimeout } from './http';
 import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
@@ -24,6 +24,29 @@ export function createSource(cfg: SourceConfig): MediaSource {
     default:
       throw new Error(`未知源类型: ${(cfg as any).type}`);
   }
+}
+
+// 把 tvbox 配置展开为子站列表（供搜索页左侧源栏等使用）。
+// 非 tvbox 源原样返回；limit 用于限制子站数量（首页聚合等场景）。
+export async function expandSources(
+  sources: SourceConfig[],
+  opts: { limit?: number } = {}
+): Promise<SourceConfig[]> {
+  const active = sources.filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
+  const out: SourceConfig[] = [];
+  for (const s of active) {
+    if (s.type === 'tvbox') {
+      try {
+        const subs = await expandTvboxSpiders(s);
+        out.push(...(opts.limit ? subs.slice(0, opts.limit) : subs));
+      } catch {
+        out.push(s); // 展开失败回退为配置本身
+      }
+    } else {
+      out.push(s);
+    }
+  }
+  return out;
 }
 
 // 跨源搜索：并发请求所有启用源，按优先级合并
@@ -66,21 +89,23 @@ export async function aggregateSearch(
   return { items: Array.from(map.values()), errors };
 }
 
-// 首页聚合：并发拉取所有启用源的首页推荐，合并去重
+// 首页聚合：并发拉取所有启用源的首页推荐，合并去重。
+// tvbox 配置先展开为子站，每配置最多取前 limit 个子站（默认 8），避免全量子站超时。
 export async function aggregateHome(
   sources: SourceConfig[],
-  opts: { timeout?: number } = {}
+  opts: { timeout?: number; limit?: number } = {}
 ): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
   const active = sources.filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
+  const expanded = await expandSources(active, { limit: opts.limit ?? 8 });
   const results = await Promise.all(
-    active.map(async (s) => {
+    expanded.map(async (s) => {
       try {
         const src = createSource(s);
-        if (!src.home) return { ok: false as const, sourceId: s.id, sourceName: s.name, message: '该源不支持首页' };
+        if (!src.home) return { ok: false as const, sourceId: (s as any).parentId ?? s.id, sourceName: s.name, message: '该源不支持首页' };
         const items = await withTimeout(src.home(), opts.timeout ?? 30000);
-        return { ok: true as const, sourceId: s.id, sourceName: s.name, items };
+        return { ok: true as const, sourceId: (s as any).parentId ?? s.id, sourceName: s.name, items };
       } catch (e: any) {
-        return { ok: false as const, sourceId: s.id, sourceName: s.name, message: e?.message ?? '首页加载失败' };
+        return { ok: false as const, sourceId: (s as any).parentId ?? s.id, sourceName: s.name, message: e?.message ?? '首页加载失败' };
       }
     })
   );

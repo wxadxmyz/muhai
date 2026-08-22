@@ -113,6 +113,16 @@ export function SettingsPage({
     getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
   }, []);
 
+  // 系统返回逐级：先关闭网盘编辑等内部子层，再交还外层（如关闭设置子页），避免直接回主页
+  useEffect(() => {
+    const prev = (window as any).__onAndroidBack;
+    (window as any).__onAndroidBack = () => {
+      if (editingNetdisk) { setEditingNetdisk(null); return false; }
+      return typeof prev === 'function' ? prev() : true;
+    };
+    return () => { (window as any).__onAndroidBack = prev; };
+  }, [editingNetdisk]);
+
   const boundNetdisk = (key: string) => {
     const label = NETDISKS.find((n) => n.key === key)?.label ?? '';
     return store.sources.some((s) => s.type === 'alist' && s.name.includes(label));

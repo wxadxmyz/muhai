@@ -1,8 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { aggregateSearch, MediaItem, MediaType, SourceConfig } from '../engine';
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
+
+type SourceState =
+  | { kind: 'ok'; count: number }
+  | { kind: 'empty' }
+  | { kind: 'error'; message: string };
+
+const ALL_KEY = '__all__';
+
+function sourceKey(src: SourceConfig): string {
+  return src.id || src.name;
+}
+
+function buildSourceState(
+  sources: SourceConfig[],
+  items: MediaItem[],
+  errors: { sourceId: string; sourceName: string; message: string }[],
+): Map<string, SourceState> {
+  const map = new Map<string, SourceState>();
+  // 计数
+  const counts = new Map<string, number>();
+  for (const it of items) {
+    counts.set(it.sourceId, (counts.get(it.sourceId) ?? 0) + 1);
+  }
+  // 错误
+  const errs = new Map<string, string>();
+  for (const e of errors) {
+    const key = e.sourceId || e.sourceName;
+    if (!errs.has(key)) errs.set(key, e.message);
+  }
+  for (const src of sources) {
+    const k = sourceKey(src);
+    if (errs.has(k)) map.set(k, { kind: 'error', message: errs.get(k)! });
+    else if ((counts.get(k) ?? 0) > 0) map.set(k, { kind: 'ok', count: counts.get(k)! });
+    else map.set(k, { kind: 'empty' });
+  }
+  return map;
+}
 
 export function SearchView({
   sources,
@@ -30,8 +67,30 @@ export function SearchView({
   const [errors, setErrors] = useState<{ sourceId: string; sourceName: string; message: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
+  const [toastOn, setToastOn] = useState(true);
+  const toastTimer = useRef<number | null>(null);
+
+  const sourceState = useMemo(
+    () => buildSourceState(sources, items, errors),
+    [sources, items, errors],
+  );
 
   const showHints = !searched && kw.trim() === '';
+
+  // 每次搜索后展示一次提示条，3.5s 自动消失
+  const flashToast = () => {
+    setToastOn(true);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastOn(false), 3500);
+  };
+  useEffect(() => {
+    if (searched) flashToast();
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searched]);
 
   const run = async (q?: string) => {
     const query = (q ?? kw).trim();
@@ -39,17 +98,27 @@ export function SearchView({
     setKw(query);
     setLoading(true);
     setSearched(true);
+    setActiveSource(ALL_KEY);
     library.addSearch(query);
-    const r = await aggregateSearch(sources, query, { timeout: 8000, mediaType });
+    const r = await aggregateSearch(sources, query, { timeout: 30000, mediaType });
     setItems(r.items);
     setErrors(r.errors);
     setLoading(false);
   };
 
-  const groups = items.reduce<Record<string, MediaItem[]>>((acc, it) => {
-    (acc[it.sourceName] ??= []).push(it);
-    return acc;
-  }, {});
+  // 按当前源过滤
+  const visibleItems = useMemo(() => {
+    if (activeSource === ALL_KEY) return items;
+    return items.filter((it) => sourceKey({ id: it.sourceId, name: it.sourceName } as SourceConfig) === activeSource);
+  }, [items, activeSource]);
+
+  // 全部源的总结果数（不受 activeSource 影响，用于侧栏"全部"徽标）
+  const totalCount = items.length;
+  const okSourceCount = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of items) s.add(it.sourceId);
+    return s.size;
+  }, [items]);
 
   useEffect(() => {
     if (initialQuery && initialQuery.trim()) run(initialQuery);
@@ -77,82 +146,143 @@ export function SearchView({
         <button className="primary" onClick={() => run()}>搜索</button>
       </div>
 
-      {showHints && (
-        <>
-          {library.lib.searchHistory.length > 0 && (
-            <div className="search-history">
-              <div className="sh-head">
-                <span>搜索历史</span>
-                <button className="link" onClick={() => library.clearSearch()}>清空</button>
-              </div>
-              <div className="bubbles">
-                {library.lib.searchHistory.map((h) => (
-                  <span key={h} className="bub" onClick={() => run(h)}>
-                    {h}
-                    <span className="bub-x" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }}><Icon name="x" size={12} /></span>
-                  </span>
-                ))}
-              </div>
+      <div className={'search-toast' + (toastOn ? ' show' : '')}>
+        <span className="search-toast-icon">⚠</span>
+        <span className="search-toast-text">
+          内容来自第三方公开接口，仅供本地检索与学习使用，请遵守当地法律法规。
+        </span>
+        <span className="search-toast-close" onClick={() => setToastOn(false)} aria-label="关闭">×</span>
+      </div>
+
+      {!showHints && (
+        <div className="search-count">
+          <span>
+            共 <b>{visibleItems.length}</b> 部
+            {activeSource === ALL_KEY ? <> · 来自 <b>{okSourceCount}</b> 个源</> : null}
+          </span>
+          {loading && <span className="search-count-tip">跨源搜索中…</span>}
+        </div>
+      )}
+
+      {showHints ? (
+        library.lib.searchHistory.length > 0 ? (
+          <div className="search-history">
+            <div className="sh-head">
+              <span>搜索历史</span>
+              <button className="link" onClick={() => library.clearSearch()}>清空</button>
             </div>
-          )}
-        </>
-      )}
-
-      {errors.length > 0 && (
-        <div className="err">
-          部分源失败：
-          {errors.map((e, i) => (
-            <span key={i}>
-              {i > 0 ? '；' : ''}
-              {e.sourceName}（{e.message}）
-            </span>
-          ))}
-        </div>
-      )}
-
-      {loading && <div className="loading">跨源搜索中…</div>}
-
-      {Object.entries(groups).map(([src, list]) => (
-        <div key={src} className="result-group">
-          <div className="row-head">
-            <h4>来自：{src}（{list.length}）</h4>
-            {enableQueue && onQueue && (
-              <button className="link" onClick={() => onQueue(list)}>整组加入队列</button>
-            )}
+            <div className="bubbles">
+              {library.lib.searchHistory.map((h) => (
+                <span key={h} className="bub" onClick={() => run(h)}>
+                  {h}
+                  <span className="bub-x" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }}>
+                    <Icon name="x" size={12} />
+                  </span>
+                </span>
+              ))}
+            </div>
           </div>
-          <div className={mediaType === 'video' ? 'cards video-cards' : 'cards'}>
-            {list.map((it) => (
-              <div className={mediaType === 'video' ? 'vcard' : 'card'} key={it.sourceId + it.id} onClick={() => onPlay(it)}>
-                <div className={mediaType === 'video' ? 'vcover' : 'cover'}>
-                  {it.cover ? <img src={it.cover} alt="" /> : <Icon name={it.mediaType === 'music' ? 'music' : 'film'} size={mediaType === 'video' ? 40 : 22} />}
-                </div>
-                <div className="meta">
-                  <div className="title">{it.title}</div>
-                  <div className="sub">{it.artist ?? it.year ?? ''}{it.artist && it.year ? ' · ' + it.year : ''}</div>
-                  <div className="src-tag">{it.sourceName}</div>
-                </div>
-                {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
-                <div className="card-actions" onClick={(e) => e.stopPropagation()}>
-                  <button className="mini" title="播放" onClick={() => onPlay(it)}><Icon name="play" size={16} /></button>
-                  {enableQueue && onQueue && (
-                    <button className="mini" title="加入队列" onClick={() => onQueue([it])}><Icon name="plus" size={16} /></button>
+        ) : null
+      ) : (
+        <div className="search-body">
+          <aside className="search-sources" aria-label="视频源">
+            <div
+              className={'search-source' + (activeSource === ALL_KEY ? ' active' : '')}
+              onClick={() => setActiveSource(ALL_KEY)}
+              role="button"
+            >
+              <div className="search-source-badge all">全</div>
+              <span className="search-source-name">全部</span>
+              <span className="search-source-count">{totalCount}</span>
+            </div>
+            {sources.map((src) => {
+              const st = sourceState.get(sourceKey(src));
+              const isError = st?.kind === 'error';
+              const isActive = activeSource === sourceKey(src);
+              return (
+                <div
+                  key={sourceKey(src)}
+                  className={
+                    'search-source' +
+                    (isActive ? ' active' : '') +
+                    (isError ? ' error' : '')
+                  }
+                  onClick={() => !isError && setActiveSource(sourceKey(src))}
+                  role="button"
+                  title={isError ? `该源未连通：${st?.kind === 'error' ? st.message : ''}` : src.name}
+                >
+                  <div className="search-source-badge">{src.name.slice(0, 1)}</div>
+                  <span className="search-source-name">{src.name}</span>
+                  {isError ? (
+                    <span className="search-source-warn" aria-label="未连通">!</span>
+                  ) : (
+                    <span className="search-source-count">{st?.kind === 'ok' ? st.count : 0}</span>
                   )}
-                  <button
-                    className={'mini' + (library.isFavorite(it) ? ' fav' : '')}
-                    title="收藏"
-                    onClick={() => library.toggleFavorite(it)}
-                  >
-                    <Icon name={library.isFavorite(it) ? 'heart-filled' : 'heart'} size={16} />
-                  </button>
-                  <button className="mini" title="下载" onClick={() => downloadStore.start(it)}><Icon name="download" size={16} /></button>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+              );
+            })}
+          </aside>
 
-      {searched && !loading && items.length === 0 && <div className="empty">没有找到结果，换个关键词或检查音源。</div>}
+          <main className="search-grid-wrap">
+            {activeSource !== ALL_KEY &&
+              sourceState.get(activeSource)?.kind === 'error' && (
+                <div className="search-grid-error">
+                  <div className="search-grid-error-title">该源未连通</div>
+                  <div className="search-grid-error-msg">
+                    {sourceState.get(activeSource)?.kind === 'error'
+                      ? (sourceState.get(activeSource) as { kind: 'error'; message: string }).message
+                      : ''}
+                  </div>
+                </div>
+              )}
+
+            {(activeSource === ALL_KEY || sourceState.get(activeSource)?.kind !== 'error') &&
+              (visibleItems.length > 0 ? (
+                <div className="search-grid">
+                  {visibleItems.map((it) => (
+                    <div
+                      className="search-card"
+                      key={it.sourceId + it.id}
+                      onClick={() => onPlay(it)}
+                    >
+                      <div className="search-poster">
+                        {it.cover ? (
+                          <img src={it.cover} alt="" loading="lazy" />
+                        ) : (
+                          <div className="search-poster-fallback">
+                            <Icon name={it.mediaType === 'music' ? 'music' : 'film'} size={32} />
+                          </div>
+                        )}
+                        <span className="search-poster-src" title={it.sourceName}>
+                          {it.sourceName.slice(0, 2)}
+                        </span>
+                        {it.episodes && it.episodes.length > 0 && (
+                          <span className="search-poster-eps">
+                            {it.episodes.length > 1 ? `更新至 ${it.episodes.length} 集` : it.episodes[0].name || '全集'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="search-card-meta">
+                        <div className="search-card-title">{it.title}</div>
+                        <div className="search-card-sub">
+                          {it.year ?? (it.episodes && it.episodes.length > 1 ? `${it.episodes.length} 集` : '')}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                !loading && searched && (
+                  <div className="empty">
+                    {activeSource === ALL_KEY
+                      ? '没有找到结果，换个关键词或检查音源。'
+                      : '该源暂无相关内容。'}
+                  </div>
+                )
+              ))}
+          </main>
+        </div>
+      )}
     </div>
   );
 }

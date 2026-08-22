@@ -154,7 +154,13 @@ export function Home({
         {homeLoading ? (
           <div className="empty sm">正在从已添加的来源加载…</div>
         ) : homeItems.length === 0 ? (
-          <div className="empty sm">{homeError || '该分类暂无内容，换个关键词或检查源。'}</div>
+          <div className="empty sm">
+            {homeError
+              ? (homeError.toLowerCase().includes('timeout') || homeError.includes('超时') || homeError.toLowerCase().includes('timed out')
+                  ? '源响应超时，请检查网络或更换可用源。'
+                  : homeError)
+              : '该分类暂无内容，换个关键词或检查源。'}
+          </div>
         ) : (
           <div className="poster-grid">
             {homeItems.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}

@@ -148,7 +148,7 @@ export function ImportSourcePage({
         <input
           ref={fileRef}
           type="file"
-          accept=".json,application/json,text/plain"
+          accept=".json,.json5,.txt,.text,.conf,.m3u,.js,.yml,.yaml,application/json,text/plain"
           style={{ display: 'none' }}
           onChange={onFile}
         />

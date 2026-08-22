@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { aggregateSearch, expandSources, MediaItem, MediaType, SourceConfig } from '../engine';
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
@@ -43,8 +43,6 @@ export function SearchView({
   const [searched, setSearched] = useState(false);
   const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
-  const [toastOn, setToastOn] = useState(true);
-  const toastTimer = useRef<number | null>(null);
 
   // 子站 id <-> name 映射（供过滤）
   const nameOf = useMemo(() => {
@@ -76,20 +74,6 @@ export function SearchView({
 
   const showHints = !searched && kw.trim() === '';
 
-  // 每次搜索后展示一次提示条，3.5s 自动消失
-  const flashToast = () => {
-    setToastOn(true);
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToastOn(false), 3500);
-  };
-  useEffect(() => {
-    if (searched) flashToast();
-    return () => {
-      if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searched]);
-
   const run = async (q?: string) => {
     const query = (q ?? kw).trim();
     if (!query) return;
@@ -105,7 +89,7 @@ export function SearchView({
     } catch {
       setExpanded(sources);
     }
-    const r = await aggregateSearch(sources, query, { timeout: 30000, mediaType });
+    const r = await aggregateSearch(sources, query, { timeout: 60000, mediaType });
     setItems(r.items);
     setErrors(r.errors);
     setLoading(false);
@@ -150,14 +134,6 @@ export function SearchView({
           {kw ? <span className="sclear" onClick={() => setKw('')}>×</span> : null}
         </div>
         <button className="primary" onClick={() => run()}>搜索</button>
-      </div>
-
-      <div className={'search-toast' + (toastOn ? ' show' : '')}>
-        <span className="search-toast-icon">⚠</span>
-        <span className="search-toast-text">
-          内容来自第三方公开接口，仅供本地检索与学习使用，请遵守当地法律法规。
-        </span>
-        <span className="search-toast-close" onClick={() => setToastOn(false)} aria-label="关闭">×</span>
       </div>
 
       {!showHints && (

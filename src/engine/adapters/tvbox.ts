@@ -5,13 +5,12 @@
 // 「带 spider 脚本」的源（顶层 spider / 各站点 spider / 远程脚本 api），
 // 全部委托 createJsSource 在统一 JS 引擎里执行。
 //   - 蜘蛛源（csp_* 需用户提供对应 spider 脚本，本 App 不内置蜘蛛库）
-//   - 加密源（XC.json）：整体密文由 tryDecodeConfig 解密为 spider 代码（见 E5）
+//   - 加密源（XC.json 等整体密文）：本 App 不做第三方解密，密文配置按无源处理
 //
 // 抓取统一走 Rust 后端 fetchsource 代理，绕开 Android WebView 的 CORS 与明文 HTTP 限制。
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { createJsSource } from './js';
-import { getDecryptConfig } from '../../lib/settings';
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -21,23 +20,6 @@ async function fetchText(url: string): Promise<string> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   }
-}
-
-// E5 加密源解密（v2.3.0 实现）：把"整体加密接口"还原为可读 JSON 配置。
-// 采用饭太硬 jiemi.php 服务端解密（App 把加密接口 URL 发给该端点，服务端用私钥解出）。
-// 仅当 JSON.parse 失败时触发（即配置是密文），正常 JSON 配置不触发，最小化第三方调用。
-// 端点可在「设置」里改/关（getDecryptConfig）。
-async function tryDecodeConfig(cfg: SourceConfig): Promise<string> {
-  const { enabled, endpoint } = getDecryptConfig();
-  if (!enabled || !endpoint) return '';
-  try {
-    const u = `${endpoint}?url=${encodeURIComponent(cfg.baseUrl)}`;
-    const dec = await fetchText(u);
-    if (dec && dec.trim().startsWith('{')) return dec; // 解密成功，返回 JSON 文本
-  } catch {
-    /* 解密失败，返回空，交由上层按无源处理 */
-  }
-  return '';
 }
 
 // 去掉 TVBox spider 地址常见的 ";md5;<hash>" 校验后缀
@@ -65,14 +47,9 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   try {
     data = JSON.parse(text);
   } catch {
-    // 整体密文（XC.json 风格）：尝试服务端解密
-    const dec = await tryDecodeConfig(cfg);
-    if (!dec) return [];
-    try {
-      data = JSON.parse(dec);
-    } catch {
-      return [];
-    }
+    // 配置无法解析为 JSON：本 App 不内置/不依赖第三方解密（已移除饭太硬 jiemi.php 依赖），
+    // 密文配置直接按无源处理，避免发出无谓的外部请求与超时。
+    return [];
   }
 
   // 单线路（无 sites 数组）：顶层 spider 即唯一源；

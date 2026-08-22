@@ -4,7 +4,13 @@ import { useLibrary } from '../../lib/library';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  hasShownDisclaimer,
+  markDisclaimerShown,
+  onDisclaimerRequest,
+  takePendingDisclaimer,
+} from '../../lib/disclaimer';
 
 const CATEGORIES = ['电影', '电视剧', '动漫', '综艺', '电影筛选', '电视剧筛选', '动漫筛选'];
 
@@ -26,6 +32,31 @@ export function Home({
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeError, setHomeError] = useState('');
   const [activeCat, setActiveCat] = useState<string | null>(null);
+  const [disclaimerOn, setDisclaimerOn] = useState(false);
+  const disclaimerTimer = useRef<number | null>(null);
+
+  // 「使用须知」提示：添加源成功后弹一次（2s 自动消失），localStorage 保证只弹一次。
+  useEffect(() => {
+    const show = () => {
+      if (hasShownDisclaimer()) return;
+      setDisclaimerOn(true);
+      markDisclaimerShown();
+      try {
+        localStorage.removeItem('disclaimer_pending');
+      } catch {
+        /* ignore */
+      }
+      if (disclaimerTimer.current) window.clearTimeout(disclaimerTimer.current);
+      disclaimerTimer.current = window.setTimeout(() => setDisclaimerOn(false), 2000);
+    };
+    // 添加源时若主页尚未挂载监听，用 pending 标志补弹
+    if (takePendingDisclaimer()) show();
+    const off = onDisclaimerRequest(show);
+    return () => {
+      off();
+      if (disclaimerTimer.current) window.clearTimeout(disclaimerTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (sources.length === 0) {
@@ -38,8 +69,8 @@ export function Home({
     // 选中分类时按关键词取内容（留在首页，不跳搜索页）；
     // 未选时拉取各源首页推荐作为"推荐"流。
     const p = activeCat
-      ? aggregateSearch(sources, activeCat.replace('筛选', ''), { timeout: 30000, mediaType: 'video' })
-      : aggregateHome(sources, { timeout: 30000 });
+      ? aggregateSearch(sources, activeCat.replace('筛选', ''), { timeout: 60000, mediaType: 'video' })
+      : aggregateHome(sources, { timeout: 60000 });
     p.then((r) => {
       if (cancelled) return;
       setHomeItems(r.items);
@@ -57,6 +88,8 @@ export function Home({
       cancelled = true;
     };
   }, [sources, activeCat]);
+
+  // 主页底部「使用须知」轻提示（添加源成功后弹一次）
 
   const PosterCard = ({ it }: { it: MediaItem }) => {
     return (
@@ -128,6 +161,25 @@ export function Home({
           </div>
         )}
       </section>
+
+      {disclaimerOn && (
+        <div className="home-disclaimer" onClick={() => setDisclaimerOn(false)}>
+          <span className="home-disclaimer-icon">⚠</span>
+          <span className="home-disclaimer-text">
+            内容来自第三方公开接口，仅供本地检索与学习使用，请遵守当地法律法规。
+          </span>
+          <span
+            className="home-disclaimer-close"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDisclaimerOn(false);
+            }}
+            aria-label="关闭"
+          >
+            ×
+          </span>
+        </div>
+      )}
     </div>
   );
 }

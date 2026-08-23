@@ -64,6 +64,23 @@ function parseM3U(text: string): Channel[] {
 
 const ALL_CAT = '推荐';
 
+// 问题 #3 修复：部分 IPTV 源需要 Referer / UA 才返回 200，否则 403。
+// 这里给 hls.js 拉流统一带上常见 Header（Referer 用源站 host，UA 用 okhttp）。
+// 后续若源配置里有自定义 headers，可在此合并。
+function streamHeaders(url: string): Record<string, string> {
+  let ref = '';
+  try {
+    ref = new URL(url).origin;
+  } catch {
+    /* ignore */
+  }
+  return {
+    'User-Agent':
+      'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+    Referer: ref || 'https://www.google.com',
+  };
+}
+
 export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
   const [channels, setChannels] = useState<Channel[] | null>(null);
@@ -73,6 +90,23 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // 问题 #8 修复（直播二级）：当处于频道列表态（channels 不为 null）且未在播放时，
+  // 系统返回手势应先退回源列表（setChannels(null)），而不是直接回主页。
+  useEffect(() => {
+    const prev = (window as any).__onAndroidBack;
+    (window as any).__onAndroidBack = () => {
+      if (channels && !playing) {
+        setChannels(null);
+        setActiveName('');
+        return false; // 已逐级退一层，拦截系统返回
+      }
+      return prev ? !!prev() : true;
+    };
+    return () => {
+      (window as any).__onAndroidBack = prev;
+    };
+  }, [channels, playing]);
 
   useEffect(() => {
     if (!sources.length) {
@@ -91,16 +125,21 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   }, [sources]);
 
   // m3u8 在 Android WebView 原生 <video> 大多无法直接播放，统一用 hls.js 解封装；
-  // 非 HLS 地址（mp4 等）走原生 src。
+  // 非 HLS 地址（mp4 等）走原生 src。hls.js 拉流携带 Referer/UA 以兼容需鉴权的 IPTV 源。
   useEffect(() => {
     if (!playing || !videoRef.current) return;
     const el = videoRef.current;
     const isHls = /\.m3u8(\?|$)/i.test(playing.url);
+    const hdrs = streamHeaders(playing.url);
     let hls: Hls | null = null;
     if (isHls && el.canPlayType('application/vnd.apple.mpegurl')) {
       el.src = playing.url; // iOS / Safari 原生 HLS
     } else if (isHls && Hls.isSupported()) {
-      hls = new Hls();
+      hls = new Hls({
+        xhrSetup: (xhr: XMLHttpRequest, u: string) => {
+          for (const [k, v] of Object.entries(streamHeaders(u))) xhr.setRequestHeader(k, v);
+        },
+      });
       hls.loadSource(playing.url);
       hls.attachMedia(el);
     } else {
@@ -156,6 +195,12 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
       {channels ? (
         <>
+          {/* 问题 #3 修复：二级频道列表顶部返回条，回到源列表 */}
+          <div className="live-back tap" onClick={() => { setChannels(null); setActiveName(''); }}>
+            <Icon name="arrow-left" size={18} />
+            <span>返回直播源</span>
+          </div>
+
           {/* 顶部迷你播放预览（未选频道时显示占位引导） */}
           <div className="live-preview">
             {playing ? (

@@ -1006,6 +1006,15 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* 问题 #3 修复：二级频道列表返回条 */
+.live-back {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 14px 4px;
+  font-size: 14px; font-weight: 600; color: var(--text);
+  cursor: pointer; user-select: none;
+}
+.live-back:hover { color: var(--accent); }
+
 /* 主体：左分类 + 右频道网格 */
 .live-main {
   flex: 1; min-height: 0;

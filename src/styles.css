@@ -980,12 +980,21 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ============ 直播页 v2（迷你播放预览 + 左分类 + 右频道网格） ============ */
 .live { display: flex; flex-direction: column; height: 100%; background: var(--bg); }
-.live > .search-bar.big { flex: 0 0 auto; }
+
+/* 直播页顶部标题栏 */
+.live-header {
+  flex: 0 0 auto;
+  padding: calc(8px + var(--sat,0px)) 14px 8px;
+}
+.live-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 18px; font-weight: 700; color: var(--text);
+}
 
 /* 顶部迷你播放预览 */
 .live-preview {
   flex: 0 0 auto;
-  margin: 10px 12px 6px;
+  margin: 6px 12px 8px;
   border-radius: 14px;
   overflow: hidden;
   background: linear-gradient(135deg, #2a3142, #1a2030);
@@ -997,20 +1006,29 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .live-preview .lp-empty {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 8px; color: #cfd6e4; font-size: 13px;
+  gap: 8px; color: #cfd6e4; font-size: 14px;
 }
 .live-preview .lp-name {
   position: absolute; top: 10px; left: 12px; right: 12px;
-  color: #fff; font-size: 14px; font-weight: 700;
+  color: #fff; font-size: 15px; font-weight: 700;
   text-shadow: 0 1px 4px rgba(0,0,0,.6);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  z-index: 2;
+}
+.live-preview .lp-controls {
+  position: absolute; bottom: 10px; right: 12px;
+  display: flex; gap: 10px; z-index: 3;
+}
+.live-preview .lp-controls button {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: rgba(0,0,0,.45); color: #fff;
+  display: grid; place-items: center; backdrop-filter: blur(4px);
 }
 
 /* 问题 #3 修复：二级频道列表返回条 */
 .live-back {
-  display: flex; align-items: center; gap: 6px;
-  padding: 10px 14px 4px;
-  font-size: 14px; font-weight: 600; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 600; color: var(--text);
   cursor: pointer; user-select: none;
 }
 .live-back:hover { color: var(--accent); }
@@ -1018,21 +1036,21 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* 主体：左分类 + 右频道网格 */
 .live-main {
   flex: 1; min-height: 0;
-  display: flex; gap: 10px;
-  padding: 4px 12px 80px;
+  display: flex; gap: 12px;
+  padding: 4px 12px calc(12px + var(--sab,0px) + 56px);
 }
 .live-cats {
-  flex: 0 0 76px;
+  flex: 0 0 92px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 8px 6px;
+  border-radius: 14px;
+  padding: 10px 8px;
   overflow-y: auto;
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 6px;
   -webkit-overflow-scrolling: touch;
 }
 .live-cat {
-  font-size: 12px; padding: 9px 4px; border-radius: 9px;
+  font-size: 14px; padding: 11px 6px; border-radius: 11px;
   color: var(--muted); text-align: center; cursor: pointer; user-select: none;
   transition: background .15s, color .15s;
 }
@@ -1043,33 +1061,33 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   flex: 1; min-width: 0;
   overflow-y: auto;
   /* 问题 #4 修复：直播频道列表改为单列（原为 1fr 1fr 双列） */
-  display: grid; grid-template-columns: 1fr; gap: 10px; align-content: start;
+  display: grid; grid-template-columns: 1fr; gap: 12px; align-content: start;
   -webkit-overflow-scrolling: touch;
 }
 .live-ch {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 11px;
-  padding: 11px;
-  display: flex; align-items: center; gap: 10px;
+  border-radius: 13px;
+  padding: 13px;
+  display: flex; align-items: center; gap: 12px;
   cursor: pointer;
   transition: border-color .15s, transform .15s, box-shadow .15s;
 }
 .live-ch:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
 .live-ch .lc-logo {
-  width: 38px; height: 38px; border-radius: 9px;
+  width: 46px; height: 46px; border-radius: 11px;
   display: grid; place-items: center; overflow: hidden;
-  color: #fff; font-size: 13px; font-weight: 700; flex: 0 0 auto;
+  color: #fff; font-size: 15px; font-weight: 700; flex: 0 0 auto;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
 }
 .live-ch .lc-logo img { width: 100%; height: 100%; object-fit: cover; }
 .live-ch .lc-info { min-width: 0; }
 .live-ch .lc-name {
-  font-size: 13px; font-weight: 600; color: var(--text);
+  font-size: 15px; font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .live-ch .lc-prog {
-  font-size: 10px; color: var(--muted); margin-top: 2px;
+  font-size: 12px; color: var(--muted); margin-top: 3px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .live-grid > .empty { grid-column: 1 / -1; }

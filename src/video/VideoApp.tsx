@@ -102,8 +102,14 @@ export default function VideoApp() {
             event.preventDefault();
             setDetail(null);
           } else if (s.settingsSub) {
-            event.preventDefault();
-            setSettingsSub(null);
+            // 问题 #8 修复：先让设置页内部逐级退出（如关闭网盘编辑三级表单），
+            // 仅当无内部子层时才关闭整个设置子页，避免侧滑直接回主页。
+            if (typeof (window as any).__settingsInnerBack === 'function' && (window as any).__settingsInnerBack()) {
+              event.preventDefault();
+            } else {
+              event.preventDefault();
+              setSettingsSub(null);
+            }
           } else if (s.tab !== 'home') {
             event.preventDefault();
             setTab('home');

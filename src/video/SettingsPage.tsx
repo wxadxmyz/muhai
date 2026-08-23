@@ -68,20 +68,6 @@ function ToggleRow({
   );
 }
 
-const ACCENTS = ['#4f8cff', '#ff5d73', '#23c08b', '#ff9f43', '#a66bff', '#1ec8e8', '#f4b2c0', '#ff6b9d'];
-
-// 主题色 hex → 中文名映射，设置页展示中文而非原始色值
-const ACCENT_NAMES: Record<string, string> = {
-  '#4f8cff': '蓝',
-  '#ff5d73': '粉红',
-  '#23c08b': '翠绿',
-  '#ff9f43': '橙',
-  '#a66bff': '紫',
-  '#1ec8e8': '青',
-  '#f4b2c0': '浅粉',
-  '#ff6b9d': '玫红',
-};
-
 // 兜底版本号：真实版本由 getVersion() 从安装包动态读取，避免显示写死旧版
 const APP_VERSION_FALLBACK = '2.3.10';
 
@@ -120,7 +106,16 @@ export function SettingsPage({
       if (editingNetdisk) { setEditingNetdisk(null); return false; }
       return typeof prev === 'function' ? prev() : true;
     };
-    return () => { (window as any).__onAndroidBack = prev; };
+    // 问题 #8 修复：向 VideoApp 的 Tauri onBackButton 路径暴露"是否有内部子层可逐级退出"。
+    // 否则在 settingsSub 且 editingNetdisk 时，onBackButton 会直接 setSettingsSub(null) 跳回主页。
+    (window as any).__settingsInnerBack = () => {
+      if (editingNetdisk) { setEditingNetdisk(null); return true; }
+      return false;
+    };
+    return () => {
+      (window as any).__onAndroidBack = prev;
+      delete (window as any).__settingsInnerBack;
+    };
   }, [editingNetdisk]);
 
   const boundNetdisk = (key: string) => {
@@ -142,12 +137,6 @@ export function SettingsPage({
   };
 
   const count = `${store.sources.length} 个`;
-
-  const applyTheme = (c: string) => {
-    document.documentElement.style.setProperty('--accent', c);
-    document.documentElement.style.setProperty('--accent2', c);
-    update({ themeColor: c });
-  };
 
   return (
     <>
@@ -193,8 +182,8 @@ export function SettingsPage({
         {/* 外观 */}
         <div className="settings-group-title">外观</div>
         <div className="settings-card">
+          {/* 问题 #7 修复：删除重复的「主题色」入口，皮肤已涵盖深浅色 + 整套配色；主题色仅改 --accent 与之重叠 */}
           <NavRow icon="sliders" label="皮肤" value={skin.name} onClick={() => setSub('skin')} />
-          <NavRow icon="palette" label="主题色" value={ACCENT_NAMES[settings.themeColor || ''] || settings.themeColor || '蓝'} onClick={() => setSub('theme')} />
           <NavRow icon="camera" label="首页壁纸" onClick={() => setSub('wallpaper')} />
         </div>
 
@@ -330,29 +319,6 @@ export function SettingsPage({
             </div>
           </div>
           <p className="settings-note">离线缓存路径在桌面端设置中指定，移动端默认保存在应用私有目录。</p>
-        </SubPage>
-      )}
-
-      {sub === 'theme' && (
-        <SubPage title="主题色" onBack={() => setSub(null)}>
-          <div className="settings-card">
-            <div className="settings-row">
-              <span className="ico">
-                <Icon name="palette" size={20} />
-              </span>
-              <span className="label">选择强调色</span>
-            </div>
-            <div className="skin-grid">
-              {ACCENTS.map((c) => (
-                <button
-                  key={c}
-                  className={`skin-cell ${settings.themeColor === c ? 'active' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => applyTheme(c)}
-                />
-              ))}
-            </div>
-          </div>
         </SubPage>
       )}
 

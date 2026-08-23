@@ -127,7 +127,10 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
         let expr = format!(
             r#"
 const __api = {api};
-const __ext = {ext} ? JSON.parse({ext}) : null;
+// ext 已是经 serde_json 序列化的合法 JSON 字面量（字符串或对象），无需再 JSON.parse。
+// 此前前端 JSON.stringify 一次、Rust 端 serde_json::to_string 又一次，导致注入的是
+// 双重转义字符串字面量，JSON.parse 抛错使依赖 ext 的 drpy2/csp 站点初始化失败。
+const __ext = {ext};
 let __t;
 if (typeof spider !== 'undefined' && spider !== null) {{
   __t = (typeof spider === 'function') ? new spider(__api, __ext) : spider;

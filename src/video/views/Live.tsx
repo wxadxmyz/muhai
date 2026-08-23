@@ -39,11 +39,24 @@ function parseM3U(text: string): Channel[] {
       group = groupMatch ? groupMatch[1] : '';
       const idx = t.lastIndexOf(',');
       name = idx >= 0 ? t.slice(idx + 1).trim() : '';
-    } else if (t && !t.startsWith('#') && /^https?:\/\//.test(t)) {
-      channels.push({ name: name || t, url: t, logo, group });
-      name = '';
-      logo = '';
-      group = '';
+    } else if (t && !t.startsWith('#')) {
+      // 标准 EXTINF 后的直链，或纯文本 "名称,url" 格式（如 CCTV1,http://...）
+      let url = '';
+      if (/^https?:\/\//.test(t)) {
+        url = t;
+      } else {
+        const m = t.match(/,\s*(https?:\/\/\S+)\s*$/);
+        if (m) {
+          url = m[1];
+          if (!name) name = t.slice(0, t.lastIndexOf(',')).trim();
+        }
+      }
+      if (url) {
+        channels.push({ name: name || url, url, logo, group });
+        name = '';
+        logo = '';
+        group = '';
+      }
     }
   }
   return channels;

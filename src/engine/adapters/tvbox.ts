@@ -105,7 +105,10 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
       spider: spider ?? undefined,
       spiderUrl: spiderUrl ?? undefined,
       api: s.api,
-      ext: s.ext ? JSON.stringify(s.ext) : undefined,
+      // 仅序列化一次：直接传原始 ext（字符串/JSON 字符串），由 Rust 端 run_spider
+      // 统一用 serde_json::to_string 生成合法 JSON 字面量注入 QuickJS，避免双重序列化
+      // 导致 JSON.parse 抛错、drpy2/csp 站点（如 ext=douban.js）初始化失败（问题 #1/#2）。
+      ext: s.ext ?? undefined,
     } as SourceConfig);
   }
   return out;

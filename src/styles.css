@@ -4,7 +4,9 @@
   /* 安全区：状态栏/底部导航条高度，由 viewport-fit=cover 下的 env() 提供。
      若部分机型 env() 返回 0，可改由 JS 把真实值注入到 documentElement 覆盖这里。 */
   --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px); /* 手势导航全屏无灰条；三键导航由 edge-to-edge 的 env() 提供真实底部预留（MainActivity 已 enableEdgeToEdge） */
+  /* 问题 #5 修复：部分国产 ROM / Android WebView 在 edge-to-edge 下不报告底部 inset（返回 0），
+     导致底部 Tab 被系统手势条压住。用 max(..., 12px) 兜底，确保至少留出 12px 安全间距。 */
+  --sab: max(env(safe-area-inset-bottom, 0px), 12px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
 }
@@ -196,9 +198,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .inline-fields input { width: 120px; }
 .about { line-height: 1.7; margin-top: 10px; }
 
-/* 皮肤选择网格 */
+/* 皮肤选择网格（问题 #6 修复：皮肤选项为带文字的小长方形卡片，文字居中，与主题色圆球解耦） */
 .skin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 8px; }
-.skin-cell { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 6px; background: var(--panel2); border: 1px solid var(--border); border-radius: 11px; cursor: pointer; }
+.skin-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px 6px; height: 64px; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; text-align: center; }
 .skin-cell.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
 .skin-swatch { width: 100%; height: 38px; border-radius: 8px; }
 .skin-name { font-size: 12px; color: var(--text); }
@@ -503,8 +505,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 }
 /* 弹窗 / 面板入场更柔和 */
 .modal, .fs-panel, .vp-panel, .warn-box { animation: pop .16s ease; }
-/* 选中态描边更精致 */
-.skin-cell.active { box-shadow: 0 0 0 2px var(--accent), 0 6px 18px rgba(0,0,0,.18); }
+/* 选中态描边更精致（皮肤页 .skin-cell.active 的描边在 .skin-cell 规则内已定义） */
 .mini.active, .ep-btn.active { box-shadow: 0 4px 14px rgba(0,0,0,.18); }
 /* 滚动条细化（WebKit） */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -668,9 +669,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .empty-hint { text-align: center; color: var(--muted); padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .empty-hint p { margin: 0; font-size: 15px; }
 
-.skin-grid { display: flex; flex-wrap: wrap; gap: 14px; padding: 16px; }
-.skin-cell { width: 42px; height: 42px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
-.skin-cell.active { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); }
+/* 注：原主题色页（圆形 .skin-cell）已随问题 #7 删除，此处不再保留其圆球样式。
+   皮肤页使用上方 .skin-cell（长方形卡片，文字居中）定义。 */
 
 .about-box { text-align: center; padding: 40px 24px; }
 .about-box h2 { margin: 0 0 6px; font-size: 24px; }
@@ -1033,7 +1033,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .live-grid {
   flex: 1; min-width: 0;
   overflow-y: auto;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: start;
+  /* 问题 #4 修复：直播频道列表改为单列（原为 1fr 1fr 双列） */
+  display: grid; grid-template-columns: 1fr; gap: 10px; align-content: start;
   -webkit-overflow-scrolling: touch;
 }
 .live-ch {

@@ -4,7 +4,6 @@ import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
 import { createJsSource } from './adapters/js';
-import { createLivesDirectSource } from './adapters/livesDirect';
 import { withTimeout } from './http';
 import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
 
@@ -22,8 +21,6 @@ export function createSource(cfg: SourceConfig): MediaSource {
       return createJsSource(cfg);
     case 'mock':
       return createMockSource(cfg);
-    case 'lives-direct':
-      return createLivesDirectSource();
     default:
       throw new Error(`未知源类型: ${(cfg as any).type}`);
   }
@@ -127,10 +124,27 @@ export async function aggregateHome(
 }
 
 // 直播源聚合：收集所有启用 tvbox 源的 lives[]
+// 问题 #3 修复：直播源聚合结果模块级缓存，避免 Live 组件每次 mount 重复拉取
+// （切 Tab 出去再回来会重新挂载，无缓存则又要等几秒才出源列表）。
+// key 用"生效 tvbox 源 id 升序拼接"，源变化即失效。
+let _livesCache: { key: string; data: { groups: any[]; errors: string[] } } | null = null;
+function livesCacheKey(sources: SourceConfig[]): string {
+  return sources
+    .filter((s) => s.enabled && s.type === 'tvbox')
+    .sort((a, b) => a.priority - b.priority)
+    .map((s) => s.id)
+    .join('|');
+}
+
 export async function aggregateLives(
-  sources: SourceConfig[]
+  sources: SourceConfig[],
+  opts: { force?: boolean } = {}
 ): Promise<{ groups: { sourceId: string; sourceName: string; channels: LiveChannelSource[] }[]; errors: string[] }> {
-  const active = sources.filter((s) => s.enabled && (s.type === 'tvbox' || s.type === 'lives-direct')).sort((a, b) => a.priority - b.priority);
+  const key = livesCacheKey(sources);
+  if (!opts.force && _livesCache && _livesCache.key === key) {
+    return _livesCache.data as any;
+  }
+  const active = sources.filter((s) => s.enabled && s.type === 'tvbox').sort((a, b) => a.priority - b.priority);
   const groups: { sourceId: string; sourceName: string; channels: LiveChannelSource[] }[] = [];
   const errors: string[] = [];
   await Promise.all(
@@ -145,7 +159,9 @@ export async function aggregateLives(
       }
     })
   );
-  return { groups, errors };
+  const data = { groups, errors };
+  _livesCache = { key, data };
+  return data;
 }
 
 // 源管理器：内存态，持久化由上层（localStorage / 文件）负责

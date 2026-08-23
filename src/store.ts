@@ -29,8 +29,17 @@ function readPersisted(appKey: string): SourceConfig[] {
   } catch {
     /* ignore */
   }
-  // 无默认源：首次运行为干净的空态，由用户自行导入真实源
-  return [];
+  // 首次启动自动注入内置直连直播源（mux.dev 公开 HLS），保证 app 一打开就能看直播
+  return [
+    {
+      id: uuid(),
+      name: '幕海·内置直播',
+      type: 'lives-direct',
+      baseUrl: 'built-in://lives',
+      enabled: true,
+      priority: 0,
+    },
+  ];
 }
 
 function getStore(appKey: string) {

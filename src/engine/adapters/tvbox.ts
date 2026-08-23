@@ -33,6 +33,44 @@ function resolveUrl(ref: string, base: string): string {
   try { return new URL(ref, base).toString(); } catch { return ref; }
 }
 
+// 问题 #10 修复：TVBox 配置普遍是带 // 行注释、/* */ 块注释的 JS 风格文本，
+// 标准 JSON.parse 会直接抛错，导致整个源被当无效源跳过（实测清单里 xhztv、
+// raw.liucn.cc/box/m、二月红 等首选源就带大量注释）。解析前先剥离注释再 parse。
+function stripJsonComments(text: string): string {
+  // 先清理字符串值内的裸换行/Tab（TVBox 配置偶发未转义换行，JSON 不允许）
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (const ch of text) {
+    if (esc) {
+      out += ch;
+      esc = false;
+      continue;
+    }
+    if (ch === '\\') {
+      out += ch;
+      esc = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = !inStr;
+      out += ch;
+      continue;
+    }
+    if (inStr && (ch === '\n' || ch === '\r' || ch === '\t')) {
+      out += ' '; // 字符串内换行/Tab 转空格
+      continue;
+    }
+    out += ch;
+  }
+  return out
+    .replace(/\/\*[\s\S]*?\*\//g, '') // 块注释
+    .replace(/^[ \t]*\/\/.*$/gm, '') // 整行 // 注释
+    .replace(/(^|[^:])(\/\/.*$)/gm, '$1') // 行内 // 注释（不误伤 http://）
+    .replace(/,(\s*[}\]])/g, '$1') // 尾随逗号容错
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ''); // 其他非转义控制字符
+}
+
 // 把 spider 字段归一为 {spider 内联代码 | spiderUrl 远程地址}
 function spiderField(v: any): { spider?: string; spiderUrl?: string } {
   if (typeof v !== 'string') return { spider: JSON.stringify(v) };
@@ -45,7 +83,7 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   const text = await fetchText(cfg.baseUrl);
   let data: any;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(stripJsonComments(text));
   } catch {
     // 配置无法解析为 JSON：本 App 不内置/不依赖第三方解密（已移除饭太硬 jiemi.php 依赖），
     // 密文配置直接按无源处理，避免发出无谓的外部请求与超时。

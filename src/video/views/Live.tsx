@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import Hls from 'hls.js';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { aggregateLives } from '../../engine';
 import { SourceConfig, LiveChannelSource } from '../../engine/types';
 import { Icon } from '../../components/Icon';
@@ -89,7 +90,40 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [activeCat, setActiveCat] = useState(ALL_CAT);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [paused, setPaused] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // 点击 video 或按钮切换播放/暂停
+  const togglePlay = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) { el.play(); setPaused(false); }
+    else { el.pause(); setPaused(true); }
+  };
+
+  // 真正的全屏/横屏：先尝试屏幕方向锁定，再尝试 HTML5 fullscreen API
+  const toggleFullscreen = async () => {
+    const el = videoRef.current;
+    if (!el) return;
+    try {
+      const screen = (window as any).screen;
+      if (screen?.orientation?.lock) {
+        await screen.orientation.lock('landscape');
+      }
+      const docEl = document.documentElement as any;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        await el.requestFullscreen();
+      } else if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (docEl?.webkitRequestFullscreen) {
+        await docEl.webkitRequestFullscreen();
+      }
+      setIsFullscreen(!document.fullscreenElement);
+    } catch {
+      /* 部分环境不支持，忽略 */
+    }
+  };
 
   // 问题 #8 修复（直播二级）：当处于频道列表态（channels 不为 null）且未在播放时，
   // 系统返回手势应先退回源列表（setChannels(null)），而不是直接回主页。
@@ -186,32 +220,52 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
   return (
     <div className="view live">
-      <div className="search-bar big">
-        <span className="search-ico">
-          <Icon name="cast" size={18} />
-        </span>
-        <input placeholder="直播频道来自已添加的源" readOnly />
+      {/* 顶部标题栏：一级显示"直播"，二级显示"返回 + 直播频道" */}
+      <div className="live-header">
+        {channels ? (
+          <div className="live-back tap" onClick={() => { setChannels(null); setActiveName(''); }}>
+            <Icon name="arrow-left" size={20} />
+            <span>返回直播源</span>
+          </div>
+        ) : (
+          <div className="live-title">
+            <Icon name="cast" size={20} />
+            <span>直播</span>
+          </div>
+        )}
       </div>
 
       {channels ? (
         <>
-          {/* 问题 #3 修复：二级频道列表顶部返回条，回到源列表 */}
-          <div className="live-back tap" onClick={() => { setChannels(null); setActiveName(''); }}>
-            <Icon name="arrow-left" size={18} />
-            <span>返回直播源</span>
-          </div>
-
-          {/* 顶部迷你播放预览（未选频道时显示占位引导） */}
+          {/* 顶部播放器：去掉原生 controls，用自定义控制层 */}
           <div className="live-preview">
             {playing ? (
-              <video ref={videoRef} controls autoPlay playsInline className="live-video" />
+              <>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="live-video"
+                  onClick={togglePlay}
+                  onPlay={() => setPaused(false)}
+                  onPause={() => setPaused(true)}
+                />
+                {playing && <div className="lp-name">{playing.name}</div>}
+                <div className="lp-controls">
+                  <button onClick={togglePlay}>
+                    <Icon name={paused ? 'play' : 'pause'} size={18} />
+                  </button>
+                  <button onClick={toggleFullscreen}>
+                    <Icon name="maximize" size={18} />
+                  </button>
+                </div>
+              </>
             ) : (
               <div className="lp-empty">
-                <Icon name="play" size={22} />
+                <Icon name="play" size={28} />
                 <span>点击频道开始播放</span>
               </div>
             )}
-            {playing && <div className="lp-name">{playing.name}</div>}
           </div>
 
           {/* 主体：左分类 + 右频道网格 */}

@@ -38,6 +38,43 @@ function normalize(arr: any[]): any[] {
     .filter((r) => r.type && r.baseUrl);
 }
 
+// 问题 #10 修复（导入侧）：TVBox 配置普遍是带 // 注释、/* */ 块注释、字符串内裸换行
+// 的 JS 风格文本，标准 JSON.parse 直接抛错，导致导入时提示"未识别到可用源配置"。
+// 这里复用与 tvbox.ts 一致的清洗逻辑。
+function stripJsonComments(text: string): string {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (const ch of text) {
+    if (esc) {
+      out += ch;
+      esc = false;
+      continue;
+    }
+    if (ch === '\\') {
+      out += ch;
+      esc = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = !inStr;
+      out += ch;
+      continue;
+    }
+    if (inStr && (ch === '\n' || ch === '\r' || ch === '\t')) {
+      out += ' ';
+      continue;
+    }
+    out += ch;
+  }
+  return out
+    .replace(/\/\*[\s\S]*?\*\//g, '') // 块注释
+    .replace(/^[ \t]*\/\/.*$/gm, '') // 整行 // 注释
+    .replace(/(^|[^:])(\/\/.*$)/gm, '$1') // 行内 // 注释（不误伤 http://）
+    .replace(/,(\s*[}\]])/g, '$1') // 尾随逗号容错
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ''); // 其他非转义控制字符
+}
+
 // 兼容常见的 tvbox / 苹果CMS / 聚合源 JSON 结构，统一转成带 type+baseUrl 的源数组：
 //  1) 顶层数组
 //  2) {sources:[...]}
@@ -127,7 +164,7 @@ function parseFetched(text: string, url: string): FetchResult {
 
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     try {
-      const data = JSON.parse(trimmed);
+      const data = JSON.parse(stripJsonComments(trimmed));
       // 影视仓 / TVBox 聚合配置：整体作为「一个」tvbox 源，仓库里只显示你粘贴的这个地址
       if (isTvboxConfig(data)) {
         // 优先用配置自身的可读名称（如 name 字段），域名仅作兜底，避免显示成 cdn.jsdelivr.net
@@ -190,7 +227,7 @@ export function parsePasted(text: string): { sources: any[]; error?: string } {
   const t = text.trim();
   if (!t) return { sources: [], error: '内容为空' };
   try {
-    const data = JSON.parse(t);
+    const data = JSON.parse(stripJsonComments(t));
     const valid = normalize(toSourceList(data));
     if (valid.length) return { sources: valid };
     return { sources: [], error: '未找到有效源（需包含 type 与 baseUrl）' };

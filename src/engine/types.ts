@@ -1,7 +1,7 @@
 // 统一媒体源引擎 —— 核心类型定义
 // 与《媒体源引擎接口规范 v1》保持一致
 
-export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js';
+export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js' | 'lives-direct';
 
 export type MediaType = 'music' | 'video';
 

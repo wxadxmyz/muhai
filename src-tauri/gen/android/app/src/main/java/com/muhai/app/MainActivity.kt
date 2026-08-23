@@ -16,7 +16,10 @@ class MainActivity : TauriActivity() {
         wv.evaluateJavascript(
             "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : true; } catch(e) { return true; } })()"
         ) { result ->
-            if (result != "true") { super.onBackPressed() }
+            // 问题 #8 修复：逻辑写反修正。
+            // JS 返回 true  = "已无更内层，请执行系统返回"（退到主页/退出）
+            // JS 返回 false = "我已逐级退了一层，别走系统返回"（留在当前层）
+            if (result == "true") { super.onBackPressed() }
         }
     }
 
@@ -36,5 +39,12 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+
+    // 问题 #9 修复：底部系统手势条透明化，跟随 App 主题背景（白显白、黑显黑）。
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+    // Android 12+：关闭系统自动加的对比度条，否则仍会强制显示灰条。
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+      window.isNavigationBarContrastEnforced = false
+    }
   }
 }

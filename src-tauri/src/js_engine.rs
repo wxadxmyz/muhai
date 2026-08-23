@@ -23,9 +23,12 @@ pub struct SpiderCall {
     /// TVBox csp 模型：站点代号（如 "csp_DoubanGuard"），传给 spider 构造器选路
     #[serde(default)]
     pub api: Option<String>,
-    /// TVBox csp 模型：站点 ext 配置（JSON 字符串），传给 spider 构造器
+    /// TVBox csp 模型：站点 ext 配置（字符串或对象皆可），传给 spider 构造器。
+    /// 改为 serde_json::Value 以兼容对象型 ext（如 {"class":"电影"}），
+    /// 否则 ext 为对象时 Option<String> 反序列化失败、整个 run_spider 抛错，
+    /// 导致依赖 ext 的 drpy2/csp 站点（问题 #1/#2）全部返回空。
     #[serde(default)]
-    pub ext: Option<String>,
+    pub ext: Option<serde_json::Value>,
 }
 
 /// 执行一段 spider 脚本并调用指定函数，返回 JSON 字符串。

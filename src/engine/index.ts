@@ -4,6 +4,7 @@ import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
 import { createJsSource } from './adapters/js';
+import { createLivesDirectSource } from './adapters/livesDirect';
 import { withTimeout } from './http';
 import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
 
@@ -21,6 +22,8 @@ export function createSource(cfg: SourceConfig): MediaSource {
       return createJsSource(cfg);
     case 'mock':
       return createMockSource(cfg);
+    case 'lives-direct':
+      return createLivesDirectSource();
     default:
       throw new Error(`未知源类型: ${(cfg as any).type}`);
   }
@@ -127,7 +130,7 @@ export async function aggregateHome(
 export async function aggregateLives(
   sources: SourceConfig[]
 ): Promise<{ groups: { sourceId: string; sourceName: string; channels: LiveChannelSource[] }[]; errors: string[] }> {
-  const active = sources.filter((s) => s.enabled && s.type === 'tvbox').sort((a, b) => a.priority - b.priority);
+  const active = sources.filter((s) => s.enabled && (s.type === 'tvbox' || s.type === 'lives-direct')).sort((a, b) => a.priority - b.priority);
   const groups: { sourceId: string; sourceName: string; channels: LiveChannelSource[] }[] = [];
   const errors: string[] = [];
   await Promise.all(

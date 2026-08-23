@@ -1,0 +1,26 @@
+{
+  "name": "幕海·纯直连直播（无 jar 依赖）",
+  "version": "1.0",
+  "lives": [
+    {
+      "name": "公开测试线路",
+      "type": 0,
+      "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+    },
+    {
+      "name": "公开测试·多语轨",
+      "type": 0,
+      "url": "https://test-streams.mux.dev/pts_shift/master.m3u8"
+    },
+    {
+      "name": "CCTV1 央视(公开直链)",
+      "type": 0,
+      "url": "http://ivi.bupt.edu.cn/hls/cctv1.m3u8"
+    },
+    {
+      "name": "CCTV13 新闻(公开直链)",
+      "type": 0,
+      "url": "http://ivi.bupt.edu.cn/hls/cctv13.m3u8"
+    }
+  ]
+}

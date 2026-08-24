@@ -1,10 +1,45 @@
 package com.muhai.app
 
 import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.content.pm.ActivityInfo
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
     private var _backWebView: android.webkit.WebView? = null
+    private var _bridgeAttached = false
+
+    // JS 桥：前端通过 window.MuHaiAndroid.setOrientation('landscape'|'portrait'|'auto')
+    // 调用原生强制横/竖屏。原因：部分 ROM/WebView 对 HTML5 requestFullscreen 与
+    // screen.orientation.lock 支持差（点击无反应），只能走原生 requestedOrientation。
+    private class OrientationBridge(private val activity: MainActivity) {
+        @JavascriptInterface
+        fun setOrientation(mode: String) {
+            val o = when (mode) {
+                "landscape" -> ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE
+                "portrait" -> ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+                else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+            activity.runOnUiThread { activity.requestedOrientation = o }
+        }
+    }
+
+    // 把 JS 桥挂到 WebView（WebView 由 Tauri 创建，需等其就绪后再注入）。
+    private fun attachBridge() {
+        if (_bridgeAttached) return
+        val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
+        _backWebView = wv
+        if (wv != null) {
+            wv.addJavascriptInterface(OrientationBridge(this), "MuHaiAndroid")
+            _bridgeAttached = true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        attachBridge()
+    }
 
     override fun onBackPressed() {
         val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
@@ -46,5 +81,6 @@ class MainActivity : TauriActivity() {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
       window.isNavigationBarContrastEnforced = false
     }
+    attachBridge()
   }
 }

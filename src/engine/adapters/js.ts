@@ -82,13 +82,13 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
     const code = await loadCode();
     let raw: string;
     try {
-      raw = await invoke<string>('run_spider', {
+      raw = await invoke<string>('spiderrun', {
         payload: { code, func, args, api: jsCfg.api, ext: jsCfg.ext },
       });
     } catch (e: any) {
       // v2.4.3：连 Rust 端调用都失败（脚本下载/沙箱执行异常）时，也把错误记进 lastRaw，
       // 保证搜索/首页空白时错误文案一定带“原始返回”，无需 root 即可定位（之前不显示就是这路没记录）。
-      const errMsg = `run_spider 调用失败: ${e?.message ?? e}`;
+      const errMsg = `spiderrun 调用失败: ${e?.message ?? e}`;
       lastRaw.set(jsCfg.id, errMsg);
       console.log(`[spider] ${jsCfg.name} ${func} 调用失败: ${errMsg}`);
       throw new Error(errMsg);

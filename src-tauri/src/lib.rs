@@ -39,9 +39,240 @@ pub fn run() {
     }
 
     builder
-        .invoke_handler(tauri::generate_handler![fetchsource, js_engine::run_spider])
+        .invoke_handler(tauri::generate_handler![
+            fetchsource,
+            js_engine::run_spider,
+            discover_dlna,
+            cast_video
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 投屏（DLNA / SSDP）
+// 直播播放器调用 discover_dlna 扫描局域网 DLNA 设备，再用 cast_video
+// 把当前播放 URL 推送到选中设备。电视/盒子需支持 DLNA 接收（如大多数
+// 智能电视、小米盒子、当贝等）。发现失败则前端 fallback 到系统分享。
+// ─────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize, Clone)]
+struct DlnaDevice {
+    name: String,
+    location: String,
+    #[serde(rename = "controlUrl")]
+    control_url: String,
+}
+
+const SSDP_ADDR: &str = "239.255.255.250:1900";
+const SSDP_MSG: &str = "M-SEARCH * HTTP/1.1\r\n\
+HOST: 239.255.255.250:1900\r\n\
+MAN: \"ssdp:discover\"\r\n\
+MX: 3\r\n\
+ST: urn:schemas-upnp-org:service:AVTransport:1\r\n\r\n";
+
+/// 扫描局域网 DLNA 设备（AVTransport 服务）。timeout_ms 默认 4000。
+#[tauri::command]
+async fn discover_dlna(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, String> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::UdpSocket;
+    use tokio::time::{sleep, Duration};
+
+    let to = Duration::from_millis(timeout_ms.unwrap_or(4000));
+    let socket = UdpSocket::bind("0.0.0.0:0")
+        .await
+        .map_err(|e| e.to_string())?;
+    socket
+        .set_broadcast(true)
+        .map_err(|e| e.to_string())?;
+    socket
+        .send_to(SSDP_MSG.as_bytes(), SSDP_ADDR)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut buf = [0u8; 4096];
+    let mut locations: Vec<String> = Vec::new();
+    let start = std::time::Instant::now();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    loop {
+        if start.elapsed() >= to {
+            break;
+        }
+        match tokio::time::timeout(Duration::from_millis(500), socket.recv_from(&mut buf)).await {
+            Ok(Ok((n, _))) => {
+                let text = String::from_utf8_lossy(&buf[..n]);
+                if let Some(loc) = text.lines().find_map(|l| {
+                    let l = l.trim();
+                    if l.to_lowercase().starts_with("location:") {
+                        Some(l[8..].trim().to_string())
+                    } else {
+                        None
+                    }
+                }) {
+                    if !locations.contains(&loc) {
+                        locations.push(loc);
+                    }
+                }
+            }
+            _ => continue,
+        }
+    }
+
+    // 取设备描述 XML，解析 friendlyName + AVTransport 控制 URL
+    let mut devices: Vec<DlnaDevice> = Vec::new();
+    for loc in locations {
+        if let Ok(resp) = client.get(&loc).send().await {
+            if let Ok(xml) = resp.text().await {
+                if let Some((name, ctrl)) = parse_dlna(xml) {
+                    devices.push(DlnaDevice {
+                        name,
+                        location: loc,
+                        control_url: ctrl,
+                    });
+                }
+            }
+        }
+    }
+    Ok(devices)
+}
+
+/// 解析设备描述 XML，提取 friendlyName 与 AVTransport 服务的 controlURL（绝对化）。
+fn parse_dlna(xml: String) -> Option<(String, String)> {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let mut reader = Reader::new(xml.as_bytes());
+    reader.trim_text(true);
+    let mut buf = Vec::new();
+    let mut friendly = String::new();
+    let mut in_avt = false;
+    let mut ctrl_rel = String::new();
+    let mut name = String::new();
+    let mut ctrl = String::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                if tag == "friendlyname" {
+                    name = "friendlyname".into();
+                } else if tag == "avtransport" {
+                    in_avt = true;
+                } else if tag == "servicetype" && in_avt {
+                    name = "servicetype".into();
+                } else if tag == "controlurl" {
+                    name = "controlurl".into();
+                }
+            }
+            Ok(Event::Text(t)) => {
+                let v = t.unescape().unwrap_or_default().to_string();
+                match name.as_str() {
+                    "friendlyname" => friendly = v,
+                    "servicetype" => {
+                        if v.to_lowercase().contains("avtransport") {
+                            in_avt = true;
+                        }
+                    }
+                    "controlurl" => {
+                        if in_avt {
+                            ctrl_rel = v;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                // 一个 <service> 结束就重置 avtransport 上下文，避免误捕获后续 service
+                if tag == "service" {
+                    in_avt = false;
+                }
+                name.clear();
+            }
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    if ctrl_rel.is_empty() {
+        return None;
+    }
+    // 把相对 controlURL 绝对化（用 location 的 origin 拼接）
+    let ctrl = if url::Url::parse(&ctrl_rel).map(|u| u.has_host()).unwrap_or(false) {
+        ctrl_rel.clone()
+    } else if let Ok(base) = url::Url::parse(&location) {
+        match base.join(&ctrl_rel) {
+            Ok(joined) => joined.to_string(),
+            Err(_) => ctrl_rel.clone(),
+        }
+    } else {
+        ctrl_rel.clone()
+    };
+    Some((friendly, ctrl))
+}
+
+/// 把视频 URL 推送到指定 DLNA 设备的 AVTransport 服务（SOAP SetAVTransportURI）。
+#[tauri::command]
+async fn cast_video(location: String, video_url: String) -> Result<String, String> {
+    use tokio::time::Duration;
+
+    // 重新解析设备描述拿到 controlURL（location 为发现时返回的 XML 地址）
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let xml = client
+        .get(&location)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    let (_name, ctrl) = parse_dlna(xml).ok_or("无法解析设备控制地址")?;
+
+    let metadata = format!(
+        r#"<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-upnp-org:rest:2006/05#" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="0" parentID="-1" restricted="0"><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="http-get:*:video/mp4:*">{url}</res><dc:title>Live</dc:title></item></DIDL-Lite>"#,
+        url = video_url
+    );
+    let body = format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<s:Body>
+<u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+<InstanceID>0</InstanceID>
+<CurrentURI>{uri}</CurrentURI>
+<CurrentURIMetaData>{meta}</CurrentURIMetaData>
+</u:SetAVTransportURI>
+</s:Body>
+</s:Envelope>"#,
+        uri = video_url,
+        meta = quick_xml::escape::escape(&metadata)
+    );
+
+    let resp = client
+        .post(&ctrl)
+        .header("Content-Type", "text/xml; charset=\"utf-8\"")
+        .header(
+            "SOAPAction",
+            "\"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI\"",
+        )
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    if status.is_success() {
+        Ok("投屏已发送".into())
+    } else {
+        Err(format!("投屏失败：HTTP {}", status))
+    }
 }
 
 // 方案C：由 Rust 后端代前端抓取外网 URL（含明文 http / 跨域源），

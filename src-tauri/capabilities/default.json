@@ -5,9 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "fetchsource",
-    "run-spider",
-    "discover-dlna",
-    "cast-video"
+    "allow-fetchsource",
+    "allow-run-spider",
+    "allow-discover-dlna",
+    "allow-cast-video"
   ]
 }

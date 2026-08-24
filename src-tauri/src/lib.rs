@@ -41,7 +41,7 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             fetchsource,
-            js_engine::spiderrun,
+            spiderrun,
             dlnascan,
             castvideo
         ])
@@ -271,6 +271,14 @@ async fn castvideo(location: String, video_url: String) -> Result<String, String
     } else {
         Err(format!("投屏失败：HTTP {}", status))
     }
+}
+
+// spider 引擎命令（顶层暴露，供前端 js.ts invoke('spiderrun') 调用）。
+// 实际逻辑在 js_engine::spiderrun（QuickJS 沙箱执行），此处仅作顶层命令封装，
+// 以满足 Tauri v2 ACL 对应用自定义命令的权限标识要求。
+#[tauri::command]
+fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
+    js_engine::spiderrun(payload)
 }
 
 // 方案C：由 Rust 后端代前端抓取外网 URL（含明文 http / 跨域源），

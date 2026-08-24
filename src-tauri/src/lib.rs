@@ -127,7 +127,7 @@ async fn discover_dlna(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, Strin
     for loc in locations {
         if let Ok(resp) = client.get(&loc).send().await {
             if let Ok(xml) = resp.text().await {
-                if let Some((name, ctrl)) = parse_dlna(xml) {
+                if let Some((name, ctrl)) = parse_dlna(xml, &loc) {
                     devices.push(DlnaDevice {
                         name,
                         location: loc,
@@ -141,7 +141,7 @@ async fn discover_dlna(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, Strin
 }
 
 /// 解析设备描述 XML，提取 friendlyName 与 AVTransport 服务的 controlURL（绝对化）。
-fn parse_dlna(xml: String) -> Option<(String, String)> {
+fn parse_dlna(xml: String, location: &str) -> Option<(String, String)> {
     use quick_xml::events::Event;
     use quick_xml::reader::Reader;
 
@@ -235,7 +235,7 @@ async fn cast_video(location: String, video_url: String) -> Result<String, Strin
         .text()
         .await
         .map_err(|e| e.to_string())?;
-    let (_name, ctrl) = parse_dlna(xml).ok_or("无法解析设备控制地址")?;
+    let (_name, ctrl) = parse_dlna(xml, &location).ok_or("无法解析设备控制地址")?;
 
     let metadata = format!(
         r#"<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-upnp-org:rest:2006/05#" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="0" parentID="-1" restricted="0"><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="http-get:*:video/mp4:*">{url}</res><dc:title>Live</dc:title></item></DIDL-Lite>"#,

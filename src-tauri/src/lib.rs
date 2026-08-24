@@ -145,7 +145,6 @@ fn parse_dlna(xml: String, location: &str) -> Option<(String, String)> {
     use quick_xml::reader::Reader;
 
     let mut reader = Reader::from_str(&xml);
-    reader.trim_text(true);
     let mut buf = Vec::new();
     let mut friendly = String::new();
     let mut in_avt = false;

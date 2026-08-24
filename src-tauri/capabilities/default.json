@@ -1,24 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "主窗口默认权限：允许应用核心能力与原生插件（对话框/文件系统/通知/自启/全局快捷键/更新）。因本应用需访问用户自定义的任意影视 API 与云盘地址，未做来源限制。",
+  "description": "幕海默认能力：放行应用自定义命令（蜘蛛执行、源抓取、投屏扫描/推送）",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-hide",
-    "core:window:allow-show",
-    "core:window:allow-unminimize",
-    "core:window:allow-set-focus",
-    "allow-fetchsource",
-    "dialog:default",
-    "fs:default",
-    "fs:allow-write-file",
-    "notification:default",
-    "autostart:default",
-    "global-shortcut:default",
-    "global-shortcut:allow-register",
-    "updater:default",
-    "updater:allow-check",
-    "updater:allow-download-and-install"
+    "fetchsource",
+    "run_spider",
+    "discover_dlna",
+    "cast_video"
   ]
 }

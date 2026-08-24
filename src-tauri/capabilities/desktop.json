@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-capability",
   "description": "幕海桌面端（Windows/macOS/Linux）默认权限：在移动端基础上追加自启/全局快捷键/更新",
-  "platforms": ["linux", "macos", "windows"],
+  "platforms": ["linux", "macOS", "windows"],
   "windows": ["main"],
   "permissions": [
     "core:default",

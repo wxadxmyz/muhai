@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "幕海移动端（安卓/iOS）默认权限：放行核心能力与自定义命令",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "notification:default",
+    "allow-fetchsource",
+    "allow-spiderrun",
+    "allow-dlnascan",
+    "allow-castvideo"
+  ]
+}

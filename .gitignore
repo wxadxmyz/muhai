@@ -13,6 +13,8 @@ dist-ssr
 **/target
 **/*.rs.bk
 .cargo/
+# Tauri 自动生成的安卓/iOS 工程（含版本号，禁止提交，由 CI 重新生成）
+/src-tauri/gen/
 
 # Logs
 logs

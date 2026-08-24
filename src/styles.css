@@ -1036,6 +1036,18 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   right: 20px;
   z-index: 9999;
 }
+/* CSS 模拟横屏全屏：fixed 填满视口，绕开 WebView 对 HTML5 requestFullscreen 的支持差异 */
+.live-preview.css-fullscreen {
+  position: fixed; inset: 0; z-index: 9999;
+  width: 100vw; height: 100vh;
+  margin: 0; border-radius: 0; background: #000;
+}
+.live-preview.css-fullscreen .live-video { width: 100%; height: 100%; }
+.live-preview.css-fullscreen .lp-controls {
+  position: fixed; bottom: calc(24px + var(--sab, 0px)); right: 24px; z-index: 10000;
+  gap: 16px;
+}
+.live-preview.css-fullscreen .lp-controls button { width: 46px; height: 46px; }
 
 /* 问题 #3 修复：二级频道列表返回条 */
 .live-back {

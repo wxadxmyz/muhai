@@ -25,21 +25,19 @@ const stores = new Map<string, { state: StoreState; listeners: Set<Listener> }>(
 function readPersisted(appKey: string): SourceConfig[] {
   try {
     const raw = localStorage.getItem(PREFIX + appKey);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const list = JSON.parse(raw);
+      // v2.4.2 起移除内置直连直播源（lives-direct / built-in://lives）。
+      // 已装用户的旧 localStorage 里可能残留该源，这里读取时过滤掉，
+      // 避免仓库管理页仍显示"幕海·内置直播"。
+      return (Array.isArray(list) ? list : []).filter(
+        (s: SourceConfig) => s.type !== 'lives-direct' && s.baseUrl !== 'built-in://lives'
+      );
+    }
   } catch {
     /* ignore */
   }
-  // 首次启动自动注入内置直连直播源（mux.dev 公开 HLS），保证 app 一打开就能看直播
-  return [
-    {
-      id: uuid(),
-      name: '幕海·内置直播',
-      type: 'lives-direct',
-      baseUrl: 'built-in://lives',
-      enabled: true,
-      priority: 0,
-    },
-  ];
+  return [];
 }
 
 function getStore(appKey: string) {

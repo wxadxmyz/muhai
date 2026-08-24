@@ -32,7 +32,8 @@ pub struct SpiderCall {
 }
 
 /// 执行一段 spider 脚本并调用指定函数，,返回 JSON 字符串。
-#[tauri::command]
+/// 注意：本函数不再是 Tauri 命令，由 lib.rs 顶层 spiderrun 命令委托调用，
+/// 以避免子模块命令在 Tauri v2 ACL 权限标识生成上的限制。
 pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
     // [DEBUG-搜空] 记录收到的调用类型与各字段，定位"搜索/主页全 0"根因
     println!(

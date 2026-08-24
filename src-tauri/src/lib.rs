@@ -41,9 +41,9 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             fetchsource,
-            js_engine::run_spider,
-            discover_dlna,
-            cast_video
+            js_engine::spiderrun,
+            dlnascan,
+            castvideo
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -73,7 +73,7 @@ ST: urn:schemas-upnp-org:service:AVTransport:1\r\n\r\n";
 
 /// 扫描局域网 DLNA 设备（AVTransport 服务）。timeout_ms 默认 4000。
 #[tauri::command]
-async fn discover_dlna(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, String> {
+async fn dlnascan(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, String> {
     use tokio::net::UdpSocket;
     use tokio::time::Duration;
 
@@ -217,7 +217,7 @@ fn parse_dlna(xml: String, location: &str) -> Option<(String, String)> {
 
 /// 把视频 URL 推送到指定 DLNA 设备的 AVTransport 服务（SOAP SetAVTransportURI）。
 #[tauri::command]
-async fn cast_video(location: String, video_url: String) -> Result<String, String> {
+async fn castvideo(location: String, video_url: String) -> Result<String, String> {
     use tokio::time::Duration;
 
     // 重新解析设备描述拿到 controlURL（location 为发现时返回的 XML 地址）

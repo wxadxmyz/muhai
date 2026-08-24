@@ -13,6 +13,12 @@ interface Channel {
   group?: string;
 }
 
+interface DlnaDevice {
+  name: string;
+  location: string;
+  controlUrl: string;
+}
+
 // 拉取文本：优先走 Rust 后端 fetchsource 代理（绕开 WebView CORS），失败回退 fetch
 async function fetchText(url: string): Promise<string> {
   try {
@@ -93,6 +99,11 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [paused, setPaused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // 投屏（DLNA）
+  const [castDevices, setCastDevices] = useState<DlnaDevice[]>([]);
+  const [castSheet, setCastSheet] = useState(false);
+  const [castLoading, setCastLoading] = useState(false);
+  const [castMsg, setCastMsg] = useState('');
 
   // 点击 video 或按钮切换播放/暂停
   const togglePlay = () => {
@@ -102,26 +113,66 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     else { el.pause(); setPaused(true); }
   };
 
-  // 真正的全屏/横屏：先尝试屏幕方向锁定，再尝试 HTML5 fullscreen API
+  // 真正的全屏/横屏：对播放器容器（含控制条）请求全屏，再锁横屏。
+  // 这样投屏按钮等控制层也会随容器进入全屏，满足"横屏里也有投屏"的需求。
   const toggleFullscreen = async () => {
-    const el = videoRef.current;
+    const el = document.querySelector('.live-preview') as HTMLElement | null;
     if (!el) return;
     try {
       const screen = (window as any).screen;
       if (screen?.orientation?.lock) {
         await screen.orientation.lock('landscape');
       }
-      const docEl = document.documentElement as any;
       if (!document.fullscreenElement && el.requestFullscreen) {
         await el.requestFullscreen();
       } else if (document.exitFullscreen) {
         await document.exitFullscreen();
-      } else if (docEl?.webkitRequestFullscreen) {
-        await docEl.webkitRequestFullscreen();
+      } else {
+        const docEl = document.documentElement as any;
+        if (docEl?.webkitRequestFullscreen) await docEl.webkitRequestFullscreen();
       }
       setIsFullscreen(!document.fullscreenElement);
     } catch {
       /* 部分环境不支持，忽略 */
+    }
+  };
+
+  // 投屏：扫描局域网 DLNA 设备并弹窗选择
+  const handleCast = async () => {
+    setCastLoading(true);
+    setCastMsg('');
+    setCastDevices([]);
+    setCastSheet(true);
+    try {
+      const devs = await invoke<DlnaDevice[]>('discover_dlna', { timeoutMs: 4000 });
+      setCastDevices(devs);
+      if (!devs.length) setCastMsg('未找到局域网投屏设备，请确认电视已开机并连接同一 WiFi');
+    } catch (e: any) {
+      setCastMsg(e?.message ?? '投屏设备发现失败');
+    } finally {
+      setCastLoading(false);
+    }
+  };
+
+  // 投屏到指定设备
+  const handleCastTo = async (dev: DlnaDevice) => {
+    if (!playing) {
+      setCastMsg('请先播放一个频道再投屏');
+      return;
+    }
+    setCastLoading(true);
+    setCastMsg('');
+    try {
+      const r = await invoke<string>('cast_video', {
+        location: dev.location,
+        videoUrl: playing.url,
+      });
+      setCastMsg(r);
+      setTimeout(() => setCastSheet(false), 1500);
+    } catch (e: any) {
+      setCastMsg(e?.message ?? '投屏失败');
+    } finally {
+      setCastLoading(false);
     }
   };
 
@@ -258,6 +309,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                   <button onClick={toggleFullscreen}>
                     <Icon name="maximize" size={18} />
                   </button>
+                  <button onClick={handleCast} title="投屏">
+                    <Icon name="cast" size={18} />
+                  </button>
                 </div>
               </>
             ) : (
@@ -334,6 +388,32 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       )}
 
       {loading && <div className="empty sm">正在加载直播频道…</div>}
+
+      {/* 投屏设备选择浮层 */}
+      {castSheet && (
+        <div className="cast-mask" onClick={() => setCastSheet(false)}>
+          <div className="cast-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="cast-head">
+              <span>选择投屏设备</span>
+              <button className="cast-close" onClick={() => setCastSheet(false)}>
+                ✕
+              </button>
+            </div>
+            {castLoading && <div className="cast-loading">正在搜索局域网设备…</div>}
+            {!castLoading &&
+              castDevices.map((d, i) => (
+                <div key={i} className="cast-dev tap" onClick={() => handleCastTo(d)}>
+                  <Icon name="cast" size={18} />
+                  <span>{d.name || '未知设备'}</span>
+                </div>
+              ))}
+            {!castLoading && !castDevices.length && (
+              <div className="cast-empty">{castMsg || '未找到设备'}</div>
+            )}
+            {castMsg && castDevices.length > 0 && <div className="cast-msg">{castMsg}</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

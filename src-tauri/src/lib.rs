@@ -74,9 +74,8 @@ ST: urn:schemas-upnp-org:service:AVTransport:1\r\n\r\n";
 /// 扫描局域网 DLNA 设备（AVTransport 服务）。timeout_ms 默认 4000。
 #[tauri::command]
 async fn discover_dlna(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, String> {
-    use tokio::io::AsyncWriteExt;
     use tokio::net::UdpSocket;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::Duration;
 
     let to = Duration::from_millis(timeout_ms.unwrap_or(4000));
     let socket = UdpSocket::bind("0.0.0.0:0")

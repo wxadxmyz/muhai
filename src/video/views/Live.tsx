@@ -126,27 +126,23 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     else { el.pause(); setPaused(true); }
   };
 
-  // 真正的全屏/横屏：对 <video> 元素本身请求全屏（WebView 对 video 全屏支持最稳），
-  // 再锁横屏。控制条 .lp-controls 用 position:fixed 强制浮在全屏 video 上方，
-  // 所以竖屏/横屏都能看到暂停/全屏/投屏按钮。
-  const toggleFullscreen = async () => {
-    const el = videoRef.current;
-    if (!el) return;
-    try {
-      if (!document.fullscreenElement) {
-        const screen = (window as any).screen;
-        if (screen?.orientation?.lock) {
-          try { await screen.orientation.lock('landscape'); } catch { /* 忽略锁屏失败 */ }
-        }
-        if (el.requestFullscreen) await el.requestFullscreen();
-        else if ((el as any).webkitEnterFullscreen) (el as any).webkitEnterFullscreen();
-        setIsFullscreen(true);
-      } else {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        setIsFullscreen(false);
+  // 横屏方案：用 CSS 模拟全屏（position:fixed 填满视口）+ 尝试锁横屏。
+  // 不依赖 WebView 的 HTML5 requestFullscreen（部分 ROM/WebView 对该 API 支持差，
+  // 表现为点击无反应）。CSS 全屏后控制条 .lp-controls 仍浮动在上方，投屏按钮可见。
+  const toggleFullscreen = () => {
+    const preview = document.querySelector('.live-preview') as HTMLElement | null;
+    if (!preview) return;
+    const screen = (window as any).screen;
+    if (!isFullscreen) {
+      preview.classList.add('css-fullscreen');
+      setIsFullscreen(true);
+      if (screen?.orientation?.lock) {
+        screen.orientation.lock('landscape').catch(() => { /* 非全屏态锁失败可忽略，用户手动横过来即可 */ });
       }
-    } catch {
-      /* 部分环境不支持，忽略 */
+    } else {
+      preview.classList.remove('css-fullscreen');
+      setIsFullscreen(false);
+      if (screen?.orientation?.unlock) screen.orientation.unlock();
     }
   };
 
@@ -163,7 +159,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
         setCastMsg('未找到局域网投屏设备（DLNA）。请确认：① 电视已开机并和手机在同一 WiFi；② 电视支持 DLNA 投屏。也可点下方"系统分享"把直播链接发给支持投屏的播放器。');
       }
     } catch (e: any) {
-      setCastMsg('投屏设备扫描失败：' + (e?.message ?? '未知错误') + '。可尝试点"系统分享"用其他 App 投屏。');
+      const msg = e?.message || e?.toString() || '未知错误';
+      setCastMsg('投屏设备扫描失败：' + msg + '。可尝试点"系统分享"用其他 App 投屏。');
     } finally {
       setCastLoading(false);
     }

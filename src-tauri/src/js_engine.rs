@@ -31,9 +31,9 @@ pub struct SpiderCall {
     pub ext: Option<serde_json::Value>,
 }
 
-/// 执行一段 spider 脚本并调用指定函数，返回 JSON 字符串。
+/// 执行一段 spider 脚本并调用指定函数，,返回 JSON 字符串。
 #[tauri::command]
-pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
+pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
     // [DEBUG-搜空] 记录收到的调用类型与各字段，定位"搜索/主页全 0"根因
     println!(
         "[spider-debug] func={} api={:?} ext_type={} code_len={}",

@@ -80,11 +80,20 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
 
   async function call(func: string, args: string[]): Promise<any> {
     const code = await loadCode();
-    const raw = await invoke<string>('run_spider', {
-      payload: { code, func, args, api: jsCfg.api, ext: jsCfg.ext },
-    });
-    // v2.4.2 调试：记录每个 spider 最近一次原始返回，供搜索/首页空白时回显，
-    // 无需 root/logcat 即可看到蜘蛛到底返回了什么（接口失败/字段不对/被墙）。
+    let raw: string;
+    try {
+      raw = await invoke<string>('run_spider', {
+        payload: { code, func, args, api: jsCfg.api, ext: jsCfg.ext },
+      });
+    } catch (e: any) {
+      // v2.4.3：连 Rust 端调用都失败（脚本下载/沙箱执行异常）时，也把错误记进 lastRaw，
+      // 保证搜索/首页空白时错误文案一定带“原始返回”，无需 root 即可定位（之前不显示就是这路没记录）。
+      const errMsg = `run_spider 调用失败: ${e?.message ?? e}`;
+      lastRaw.set(jsCfg.id, errMsg);
+      console.log(`[spider] ${jsCfg.name} ${func} 调用失败: ${errMsg}`);
+      throw new Error(errMsg);
+    }
+    // v2.4.2 调试：记录每个 spider 最近一次原始返回，供搜索/首页空白时回显。
     lastRaw.set(jsCfg.id, raw);
     console.log(`[spider] ${jsCfg.name} ${func} 返回长度=${raw.length}`);
     let parsed: any;

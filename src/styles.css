@@ -984,7 +984,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* 直播页顶部标题栏 */
 .live-header {
   flex: 0 0 auto;
-  padding: calc(8px + var(--sat,0px)) 14px 8px;
+  padding: 4px 14px 6px;
 }
 .live-title {
   display: flex; align-items: center; gap: 8px;
@@ -1024,6 +1024,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   border: none; background: rgba(0,0,0,.45); color: #fff;
   display: grid; place-items: center; backdrop-filter: blur(4px);
 }
+/* 横屏全屏时控制条按钮放大，便于点击 */
+.live-preview:fullscreen .lp-controls { bottom: 28px; right: 28px; gap: 16px; }
+.live-preview:fullscreen .lp-controls button { width: 46px; height: 46px; }
+.live-preview:fullscreen .lp-controls button :global(svg) { width: 24px; height: 24px; }
 
 /* 问题 #3 修复：二级频道列表返回条 */
 .live-back {
@@ -1037,7 +1041,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .live-main {
   flex: 1; min-height: 0;
   display: flex; gap: 12px;
-  padding: 4px 12px calc(12px + var(--sab,0px) + 56px);
+  padding: 4px 12px calc(8px + var(--sab,0px));
 }
 .live-cats {
   flex: 0 0 92px;
@@ -1126,4 +1130,41 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 @keyframes home-disclaimer-in {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── 投屏设备选择浮层 ── */
+.cast-mask {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.cast-sheet {
+  width: 100%; max-width: 520px;
+  background: var(--bg); color: var(--text);
+  border-radius: 16px 16px 0 0;
+  padding: 8px 0 calc(12px + var(--sab,0px));
+  max-height: 70vh; overflow-y: auto;
+  animation: cast-up .18s ease;
+}
+@keyframes cast-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.cast-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  font-size: 16px; font-weight: 700;
+}
+.cast-close {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 18px; cursor: pointer; padding: 4px 8px;
+}
+.cast-loading, .cast-empty {
+  padding: 24px 16px; text-align: center; color: var(--muted); font-size: 14px;
+}
+.cast-dev {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  font-size: 15px; cursor: pointer;
+}
+.cast-dev:hover { background: var(--panel); }
+.cast-msg {
+  padding: 12px 16px; color: var(--accent); font-size: 14px; text-align: center;
 }

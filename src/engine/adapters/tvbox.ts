@@ -165,21 +165,29 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
 
   return {
     async search(keyword: string): Promise<MediaItem[]> {
-      const srcs = await spiders();
-      if (!srcs.length) {
+      const cfgs = await collectSpiders(cfg);
+      if (!cfgs.length) {
         throw new Error('该 tvbox 配置无可用的 spider 脚本源（csp_* 蜘蛛代号需提供对应 spider 脚本）');
       }
+      const srcs = cfgs.map((c) => createJsSource(c));
+      // v2.4.2：收集每个子站的具体错误，不再吞掉，最终抛出代表性原因，
+      // 让前端"该源未连通"能直接显示为什么失败（无需 root/logcat）。
+      const errors: string[] = [];
       const results = await Promise.all(
-        srcs.map(async (s) => {
+        cfgs.map(async (c, i) => {
           try {
-            return await s.search(keyword);
-          } catch {
+            return await srcs[i].search(keyword);
+          } catch (e: any) {
+            errors.push(`${c.name}: ${e?.message ?? '搜索失败'}`);
             return [] as MediaItem[];
           }
         })
       );
       const items = results.flat();
-      if (!items.length) throw new Error('未从任何 spider 源获取到结果');
+      if (!items.length) {
+        const detail = errors.length ? errors.slice(0, 3).join('；') : '所有 spider 源均未返回结果';
+        throw new Error(`未从任何 spider 源获取到结果（${detail}）`);
+      }
       return items;
     },
 
@@ -222,17 +230,24 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
 
     // 首页推荐：各 spider 源首页合并（有源主页"站点推荐"用）
     async home(): Promise<MediaItem[]> {
-      const srcs = await spiders();
+      const cfgs = await collectSpiders(cfg);
+      const srcs = cfgs.map((c) => createJsSource(c));
+      const errors: string[] = [];
       const results = await Promise.all(
-        srcs.slice(0, 6).map(async (s) => {
+        cfgs.slice(0, 6).map(async (c, i) => {
           try {
-            return await s.home!();
-          } catch {
+            return await srcs[i].home!();
+          } catch (e: any) {
+            errors.push(`${c.name}: ${e?.message ?? '首页加载失败'}`);
             return [] as MediaItem[];
           }
         })
       );
-      return results.flat();
+      const items = results.flat();
+      if (!items.length && errors.length) {
+        throw new Error(`首页加载失败（${errors.slice(0, 3).join('；')}）`);
+      }
+      return items;
     },
 
     // 直播源：返回配置中的 lives[]

@@ -34,6 +34,17 @@ pub struct SpiderCall {
 /// 执行一段 spider 脚本并调用指定函数，返回 JSON 字符串。
 #[tauri::command]
 pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
+    // [DEBUG-搜空] 记录收到的调用类型与各字段，定位"搜索/主页全 0"根因
+    println!(
+        "[spider-debug] func={} api={:?} ext_type={} code_len={}",
+        payload.func,
+        payload.api,
+        match &payload.ext {
+            Some(v) => if v.is_object() { "object" } else { "string/other" },
+            None => "none",
+        },
+        payload.code.len()
+    );
     let rt = Runtime::new().map_err(|e| format!("引擎初始化失败: {e}"))?;
     let ctx = Context::full(&rt).map_err(|e| format!("上下文创建失败: {e}"))?;
 
@@ -109,6 +120,7 @@ pub fn run_spider(payload: SpiderCall) -> Result<String, String> {
         // 执行 spider 代码（定义各函数，或定义 `spider` 类/对象）
         ctx.eval::<(), _>(payload.code.as_str())
             .map_err(|e| format!("脚本执行失败: {e}"))?;
+        println!("[spider-debug] 代码 eval 成功，准备调用 {}", payload.func);
 
         // 调用目标函数并 JSON 序列化结果。
         // 兼容两种 spider 形态：
@@ -154,6 +166,11 @@ JSON.stringify(__r === undefined ? null : __r);
         let out: String = ctx
             .eval(expr.as_str())
             .map_err(|e| format!("调用 {} 失败: {e}", payload.func))?;
+        println!(
+            "[spider-debug] 调用 {} 返回长度={}",
+            payload.func,
+            out.len()
+        );
         Ok(out)
     })
 }

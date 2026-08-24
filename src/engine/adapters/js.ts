@@ -83,6 +83,10 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
     const raw = await invoke<string>('run_spider', {
       payload: { code, func, args, api: jsCfg.api, ext: jsCfg.ext },
     });
+    // v2.4.2 调试：记录每个 spider 最近一次原始返回，供搜索/首页空白时回显，
+    // 无需 root/logcat 即可看到蜘蛛到底返回了什么（接口失败/字段不对/被墙）。
+    lastRaw.set(jsCfg.id, raw);
+    console.log(`[spider] ${jsCfg.name} ${func} 返回长度=${raw.length}`);
     let parsed: any;
     try {
       parsed = JSON.parse(raw);
@@ -216,4 +220,11 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
       }
     },
   };
+}
+
+// v2.4.2 调试：记录每个 spider 最近一次原始返回（按源 id），供 tvbox.ts 在
+// 搜索/首页空白时回显具体返回内容，无需 root 即可定位"蜘蛛跑通但返回空"。
+const lastRaw = new Map<string, string>();
+export function getSpiderRaw(id: string): string | undefined {
+  return lastRaw.get(id);
 }

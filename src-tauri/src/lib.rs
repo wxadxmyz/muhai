@@ -277,7 +277,7 @@ async fn castvideo(location: String, video_url: String) -> Result<String, String
 // 实际逻辑在 js_engine::spiderrun（QuickJS 沙箱执行），此处仅作顶层命令封装，
 // 以满足 Tauri v2 ACL 对应用自定义命令的权限标识要求。
 #[tauri::command]
-fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
+async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
     js_engine::spiderrun(payload)
 }
 

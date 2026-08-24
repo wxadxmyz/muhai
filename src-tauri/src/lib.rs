@@ -73,7 +73,7 @@ ST: urn:schemas-upnp-org:service:AVTransport:1\r\n\r\n";
 
 /// 扫描局域网 DLNA 设备（AVTransport 服务）。timeout_ms 默认 4000。
 #[tauri::command]
-async fn dlnascan(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, String> {
+pub async fn dlnascan(timeout_ms: Option<u64>) -> Result<Vec<DlnaDevice>, String> {
     use tokio::net::UdpSocket;
     use tokio::time::Duration;
 
@@ -217,7 +217,7 @@ fn parse_dlna(xml: String, location: &str) -> Option<(String, String)> {
 
 /// 把视频 URL 推送到指定 DLNA 设备的 AVTransport 服务（SOAP SetAVTransportURI）。
 #[tauri::command]
-async fn castvideo(location: String, video_url: String) -> Result<String, String> {
+pub async fn castvideo(location: String, video_url: String) -> Result<String, String> {
     use tokio::time::Duration;
 
     // 重新解析设备描述拿到 controlURL（location 为发现时返回的 XML 地址）
@@ -277,7 +277,7 @@ async fn castvideo(location: String, video_url: String) -> Result<String, String
 // 实际逻辑在 js_engine::spiderrun（QuickJS 沙箱执行），此处仅作顶层命令封装，
 // 以满足 Tauri v2 ACL 对应用自定义命令的权限标识要求。
 #[tauri::command]
-async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
+pub async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
     js_engine::spiderrun(payload)
 }
 

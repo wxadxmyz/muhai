@@ -10,7 +10,7 @@
 // 抓取统一走 Rust 后端 fetchsource 代理，绕开 Android WebView 的 CORS 与明文 HTTP 限制。
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
-import { createJsSource } from './js';
+import { createJsSource, getSpiderRaw } from './js';
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -185,7 +185,17 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
       );
       const items = results.flat();
       if (!items.length) {
-        const detail = errors.length ? errors.slice(0, 3).join('；') : '所有 spider 源均未返回结果';
+        // 收集各子站原始返回摘要，方便无 root 定位"蜘蛛跑通但返回空"
+        const raws = cfgs
+          .map((c) => {
+            const r = getSpiderRaw(c.id);
+            return r ? `${c.name}=${r.slice(0, 200)}` : null;
+          })
+          .filter(Boolean)
+          .slice(0, 2);
+        const detail = errors.length
+          ? errors.slice(0, 3).join('；')
+          : '所有 spider 源均未返回结果' + (raws.length ? ` | 原始返回: ${raws.join('；')}` : '');
         throw new Error(`未从任何 spider 源获取到结果（${detail}）`);
       }
       return items;
@@ -244,8 +254,19 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
         })
       );
       const items = results.flat();
-      if (!items.length && errors.length) {
-        throw new Error(`首页加载失败（${errors.slice(0, 3).join('；')}）`);
+      if (!items.length) {
+        const raws = cfgs
+          .slice(0, 6)
+          .map((c) => {
+            const r = getSpiderRaw(c.id);
+            return r ? `${c.name}=${r.slice(0, 200)}` : null;
+          })
+          .filter(Boolean)
+          .slice(0, 2);
+        const detail = errors.length
+          ? errors.slice(0, 3).join('；')
+          : '所有 spider 源均未返回首页' + (raws.length ? ` | 原始返回: ${raws.join('；')}` : '');
+        throw new Error(`首页加载失败（${detail}）`);
       }
       return items;
     },

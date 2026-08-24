@@ -6,8 +6,8 @@
   "permissions": [
     "core:default",
     "fetchsource",
-    "run_spider",
-    "discover_dlna",
-    "cast_video"
+    "run-spider",
+    "discover-dlna",
+    "cast-video"
   ]
 }

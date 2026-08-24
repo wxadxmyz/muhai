@@ -151,7 +151,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     setCastDevices([]);
     setCastSheet(true);
     try {
-      const devs = await invoke<DlnaDevice[]>('discover_dlna', { timeoutMs: 4000 });
+      const devs = await invoke<DlnaDevice[]>('dlnascan', { timeoutMs: 4000 });
       setCastDevices(devs);
       if (!devs.length) {
         setCastMsg('未找到局域网投屏设备（DLNA）。请确认：① 电视已开机并和手机在同一 WiFi；② 电视支持 DLNA 投屏。也可点下方"系统分享"把直播链接发给支持投屏的播放器。');
@@ -191,7 +191,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     setCastLoading(true);
     setCastMsg('');
     try {
-      const r = await invoke<string>('cast_video', {
+      const r = await invoke<string>('castvideo', {
         location: dev.location,
         videoUrl: playing.url,
       });

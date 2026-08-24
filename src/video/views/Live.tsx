@@ -95,10 +95,23 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [playing, setPlaying] = useState<{ url: string; name: string } | null>(null);
   const [activeCat, setActiveCat] = useState(ALL_CAT);
   const [loading, setLoading] = useState(false);
+  const [livesLoading, setLivesLoading] = useState(false);
   const [error, setError] = useState('');
   const [paused, setPaused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // 全屏变化同步控制条浮层：video 进全屏后，把 .lp-controls 固定到屏幕上方
+  useEffect(() => {
+    const onFs = () => {
+      const ctl = document.querySelector('.live-preview .lp-controls') as HTMLElement | null;
+      if (!ctl) return;
+      if (document.fullscreenElement) ctl.classList.add('fs-fixed');
+      else ctl.classList.remove('fs-fixed');
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
   // 投屏（DLNA）
   const [castDevices, setCastDevices] = useState<DlnaDevice[]>([]);
   const [castSheet, setCastSheet] = useState(false);
@@ -113,25 +126,25 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     else { el.pause(); setPaused(true); }
   };
 
-  // 真正的全屏/横屏：对播放器容器（含控制条）请求全屏，再锁横屏。
-  // 这样投屏按钮等控制层也会随容器进入全屏，满足"横屏里也有投屏"的需求。
+  // 真正的全屏/横屏：对 <video> 元素本身请求全屏（WebView 对 video 全屏支持最稳），
+  // 再锁横屏。控制条 .lp-controls 用 position:fixed 强制浮在全屏 video 上方，
+  // 所以竖屏/横屏都能看到暂停/全屏/投屏按钮。
   const toggleFullscreen = async () => {
-    const el = document.querySelector('.live-preview') as HTMLElement | null;
+    const el = videoRef.current;
     if (!el) return;
     try {
-      const screen = (window as any).screen;
-      if (screen?.orientation?.lock) {
-        await screen.orientation.lock('landscape');
-      }
-      if (!document.fullscreenElement && el.requestFullscreen) {
-        await el.requestFullscreen();
-      } else if (document.exitFullscreen) {
-        await document.exitFullscreen();
+      if (!document.fullscreenElement) {
+        const screen = (window as any).screen;
+        if (screen?.orientation?.lock) {
+          try { await screen.orientation.lock('landscape'); } catch { /* 忽略锁屏失败 */ }
+        }
+        if (el.requestFullscreen) await el.requestFullscreen();
+        else if ((el as any).webkitEnterFullscreen) (el as any).webkitEnterFullscreen();
+        setIsFullscreen(true);
       } else {
-        const docEl = document.documentElement as any;
-        if (docEl?.webkitRequestFullscreen) await docEl.webkitRequestFullscreen();
+        if (document.exitFullscreen) await document.exitFullscreen();
+        setIsFullscreen(false);
       }
-      setIsFullscreen(!document.fullscreenElement);
     } catch {
       /* 部分环境不支持，忽略 */
     }
@@ -146,11 +159,31 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     try {
       const devs = await invoke<DlnaDevice[]>('discover_dlna', { timeoutMs: 4000 });
       setCastDevices(devs);
-      if (!devs.length) setCastMsg('未找到局域网投屏设备，请确认电视已开机并连接同一 WiFi');
+      if (!devs.length) {
+        setCastMsg('未找到局域网投屏设备（DLNA）。请确认：① 电视已开机并和手机在同一 WiFi；② 电视支持 DLNA 投屏。也可点下方"系统分享"把直播链接发给支持投屏的播放器。');
+      }
     } catch (e: any) {
-      setCastMsg(e?.message ?? '投屏设备发现失败');
+      setCastMsg('投屏设备扫描失败：' + (e?.message ?? '未知错误') + '。可尝试点"系统分享"用其他 App 投屏。');
     } finally {
       setCastLoading(false);
+    }
+  };
+
+  // fallback：系统分享把播放链接发给支持投屏的播放器/系统面板
+  const handleCastShare = async () => {
+    if (!playing) {
+      setCastMsg('请先播放一个频道再投屏');
+      return;
+    }
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: playing.name, url: playing.url });
+      } else {
+        await navigator.clipboard?.writeText(playing.url);
+        setCastMsg('直播链接已复制，可粘贴到支持投屏的播放器');
+      }
+    } catch {
+      /* 用户取消分享，忽略 */
     }
   };
 
@@ -170,7 +203,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       setCastMsg(r);
       setTimeout(() => setCastSheet(false), 1500);
     } catch (e: any) {
-      setCastMsg(e?.message ?? '投屏失败');
+      setCastMsg('投屏失败：' + (e?.message ?? '未知错误') + '。可点"系统分享"换其他方式。');
     } finally {
       setCastLoading(false);
     }
@@ -197,16 +230,19 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     if (!sources.length) {
       setLives([]);
       setChannels(null);
+      setLivesLoading(false);
       return;
     }
     setError('');
+    setLivesLoading(true);
     aggregateLives(sources)
       .then((r) => {
         const flat = r.groups.flatMap((g) => g.channels.map((c) => ({ ...c, sourceName: g.sourceName })));
         setLives(flat);
         if (!flat.length) setError('未检测到可用直播源（需导入含 lives[] 的 tvbox 配置，如影视仓 XC.json）');
       })
-      .catch(() => setError('直播源加载失败'));
+      .catch(() => setError('直播源加载失败'))
+      .finally(() => setLivesLoading(false));
   }, [sources]);
 
   // m3u8 在 Android WebView 原生 <video> 大多无法直接播放，统一用 hls.js 解封装；
@@ -356,6 +392,14 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
             </div>
           </div>
         </>
+      ) : livesLoading ? (
+        <div className="blank-state">
+          <div className="blank-art">
+            <Icon name="cast" size={44} />
+          </div>
+          <h2>正在加载直播源…</h2>
+          <p className="muted">正在从你导入的 tvbox 配置拉取直播线路，请稍候。</p>
+        </div>
       ) : lives.length ? (
         <div className="live-list">
           {lives.map((l, i) => (
@@ -411,6 +455,11 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <div className="cast-empty">{castMsg || '未找到设备'}</div>
             )}
             {castMsg && castDevices.length > 0 && <div className="cast-msg">{castMsg}</div>}
+            {!castLoading && (
+              <button className="cast-share" onClick={handleCastShare}>
+                系统分享（用其他 App 投屏）
+              </button>
+            )}
           </div>
         </div>
       )}

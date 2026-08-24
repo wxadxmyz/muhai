@@ -126,23 +126,21 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     else { el.pause(); setPaused(true); }
   };
 
-  // 横屏方案：用 CSS 模拟全屏（position:fixed 填满视口）+ 尝试锁横屏。
-  // 不依赖 WebView 的 HTML5 requestFullscreen（部分 ROM/WebView 对该 API 支持差，
-  // 表现为点击无反应）。CSS 全屏后控制条 .lp-controls 仍浮动在上方，投屏按钮可见。
+  // 横屏方案：CSS 铺满视口（position:fixed）+ 原生强制横屏（window.MuHaiAndroid）。
+  // WebView 的 HTML5 requestFullscreen / screen.orientation.lock 在部分 ROM 上被禁用，
+  // 故横屏旋转走原生 requestedOrientation（Kotlin JS 桥），铺满走 CSS。
   const toggleFullscreen = () => {
     const preview = document.querySelector('.live-preview') as HTMLElement | null;
     if (!preview) return;
-    const screen = (window as any).screen;
     if (!isFullscreen) {
       preview.classList.add('css-fullscreen');
       setIsFullscreen(true);
-      if (screen?.orientation?.lock) {
-        screen.orientation.lock('landscape').catch(() => { /* 非全屏态锁失败可忽略，用户手动横过来即可 */ });
-      }
+      // 优先用原生接口强制横屏；不可用则退化为用户手动横置（仍铺满）。
+      try { (window as any).MuHaiAndroid?.setOrientation?.('landscape'); } catch { /* ignore */ }
     } else {
       preview.classList.remove('css-fullscreen');
       setIsFullscreen(false);
-      if (screen?.orientation?.unlock) screen.orientation.unlock();
+      try { (window as any).MuHaiAndroid?.setOrientation?.('portrait'); } catch { /* ignore */ }
     }
   };
 

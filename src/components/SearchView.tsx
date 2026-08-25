@@ -107,10 +107,17 @@ export function SearchView({
     } catch {
       setExpanded(sources);
     }
-    const r = await aggregateSearch(sources, query, { timeout: 60000, mediaType });
-    setItems(r.items);
-    setErrors(r.errors);
-    setLoading(false);
+    try {
+      const r = await aggregateSearch(sources, query, { timeout: 60000, mediaType });
+      setItems(r.items);
+      setErrors(r.errors);
+    } catch (e: any) {
+      // v2.5.2 防御：聚合失败不抛未捕获异常（避免搜索页白屏），仅记录错误
+      setErrors([{ sourceId: '', sourceName: '', message: e?.message ?? '搜索失败' }]);
+      console.log(`[spider] ${query} 搜索失败:`, e?.message ?? e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 按当前源过滤（子站用 name 匹配，items 的 sourceName 即子站名）

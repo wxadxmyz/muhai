@@ -94,53 +94,82 @@ jobs:
             echo "::warning::No MainActivity.kt found, skipping patch"
             exit 0
           fi
-          # 动态注入：保留生成文件的 import/类声明，只在类体内加 onBackPressed 桥接，
-          # 避免硬编码 TauriActivity 包名（tauri82 等版本化包名）导致 Kotlin 编译失败
+          # 动态注入：保留生成文件的 import/类声明，在类体内加 onBackInvokedCallback 桥接
+          # （Android 13+ 侧滑手势走 OnBackInvokedCallback，onBackPressed 已被抑制，必须注册 callback）。
           python3 - "$MAIN" << 'PYEOF'
-          import sys
+          import sys, re
           path = sys.argv[1]
           src = open(path, encoding="utf-8").read()
           if "class MainActivity" not in src:
               print("::warning::class MainActivity not found, skip patch")
               sys.exit(0)
-          if "onBackPressed" in src or "findBackWebView" in src:
+          if "onBackInvokedCallback" in src or "findBackWebView" in src:
               print("::warning::already patched, skip")
               sys.exit(0)
+
+          # 1) 类体内注入辅助方法和 callback 注册方法
           idx = src.index("class MainActivity")
           brace = src.index("{", idx)
           inject = '''
               private var _backWebView: android.webkit.WebView? = null
-          
-              override fun onBackPressed() {
-                  val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
-                  _backWebView = wv
-                  if (wv == null) {
-            super.onBackPressed()
-            return
-                  }
-                  wv.evaluateJavascript(
-            "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : true; } catch(e) { return true; } })()"
-                  ) { result ->
-            if (result != "true") { super.onBackPressed() }
-                  }
-              }
-          
+
               private fun findBackWebView(group: android.view.ViewGroup?): android.webkit.WebView? {
                   if (group == null) return null
                   for (i in 0 until group.childCount) {
-            val child = group.getChildAt(i)
-            if (child is android.webkit.WebView) return child
-            if (child is android.view.ViewGroup) {
-                val found = findBackWebView(child)
-                if (found != null) return found
-            }
+                      val child = group.getChildAt(i)
+                      if (child is android.webkit.WebView) return child
+                      if (child is android.view.ViewGroup) {
+                          val found = findBackWebView(child)
+                          if (found != null) return found
+                      }
                   }
                   return null
               }
+
+              private fun dispatchAndroidBack(): Boolean {
+                  val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
+                  _backWebView = wv
+                  if (wv == null) return true
+                  var handled = true
+                  wv.evaluateJavascript(
+                      "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : true; } catch(e) { return true; } })()"
+                  ) { result -> handled = (result != "true") }
+                  return handled
+              }
           '''
           src = src[:brace + 1] + inject + src[brace + 1:]
+
+          # 2) 在 onCreate 末尾注册 onBackInvokedCallback（拦截侧滑手势）
+          m = re.search(r"fun onCreate\(.*?\)\s*\{", src, re.S)
+          if m:
+              ob = src.index("{", m.end())
+              # 找 onCreate 方法体的闭合大括号（简单配对）
+              depth = 0
+              i = ob
+              while i < len(src):
+                  if src[i] == "{": depth += 1
+                  elif src[i] == "}":
+                      depth -= 1
+                      if depth == 0:
+                          break
+                  i += 1
+              cb = '''
+                  if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                      onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                          android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
+                      ) {
+                          if (dispatchAndroidBack()) {
+                              // 页面未拦截（逐级返回到顶），交给系统默认退出
+                          }
+                      }
+                  }
+              '''
+              src = src[:i] + cb + src[i:]
+          else:
+              print("::warning::onCreate not found, back callback not registered")
+
           open(path, "w", encoding="utf-8").write(src)
-          print(f"Patched {path} with Android back-button → WebView dispatch")
+          print(f"Patched {path} with Android back-gesture → WebView dispatch")
           PYEOF
 
       - name: Sync Android launcher icon

@@ -90,7 +90,6 @@ function streamHeaders(url: string): Record<string, string> {
 
 export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
-  const [allChannels, setAllChannels] = useState<Channel[]>([]); // 合并所有源的频道（一级直显）
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [activeName, setActiveName] = useState('');
   const [playing, setPlaying] = useState<{ url: string; name: string } | null>(null);
@@ -208,21 +207,17 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     }
   };
 
-  // v2.5.1 直播分级返回（二级/三级）：
-  // 播放中 → 先退回频道列表；频道列表 → 退回源列表（一级）；其余放行。
+  // 问题 #8 修复（直播二级）：当处于频道列表态（channels 不为 null）且未在播放时，
+  // 系统返回手势应先退回源列表（setChannels(null)），而不是直接回主页。
   useEffect(() => {
     const prev = (window as any).__onAndroidBack;
     (window as any).__onAndroidBack = () => {
-      if (channels && playing) {
-        setPlaying(null); // 播放态 → 退回频道列表
-        return false;
-      }
       if (channels && !playing) {
-        setChannels(null); // 频道列表 → 退回到直播源列表（一级）
+        setChannels(null);
         setActiveName('');
         return false; // 已逐级退一层，拦截系统返回
       }
-      return true; // 无内部层级，放行给 VideoApp 外层分级
+      return prev ? !!prev() : true;
     };
     return () => {
       (window as any).__onAndroidBack = prev;
@@ -242,9 +237,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       .then((r) => {
         const flat = r.groups.flatMap((g) => g.channels.map((c) => ({ ...c, sourceName: g.sourceName })));
         setLives(flat);
-        // v2.5.1 一级直显：合并所有源频道，去掉中间的源列表层级
-        setAllChannels(r.groups.flatMap((g) => g.channels.map((c) => ({ name: c.name, url: c.url, logo: c.logo, group: c.group }))));
-        if (!flat.length) setError('未检测到可用直播源（需导入含 lives[] 的 tvbox 配置）');
+        if (!flat.length) setError('未检测到可用直播源（需导入含 lives[] 的 tvbox 配置，如影视仓 XC.json）');
       })
       .catch(() => setError('直播源加载失败'))
       .finally(() => setLivesLoading(false));
@@ -296,32 +289,28 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     }
   };
 
-  // 当前展示的频道列表：选中某源（channels）或合并全部（allChannels）
-  const viewChannels = channels ?? allChannels;
-  const liveSourceNames = useMemo(() => Array.from(new Set(lives.map((l) => l.sourceName))), [lives]);
-
   // 分类：从频道 group 去重，前置「推荐」
   const cats = useMemo(() => {
-    if (!viewChannels.length) return [ALL_CAT];
+    if (!channels) return [ALL_CAT];
     const set = new Set<string>();
-    for (const c of viewChannels) if (c.group) set.add(c.group);
+    for (const c of channels) if (c.group) set.add(c.group);
     return [ALL_CAT, ...Array.from(set)];
-  }, [viewChannels]);
+  }, [channels]);
 
   const visibleChannels = useMemo(() => {
-    if (!viewChannels.length) return [];
-    if (activeCat === ALL_CAT) return viewChannels;
-    return viewChannels.filter((c) => c.group === activeCat);
-  }, [viewChannels, activeCat]);
+    if (!channels) return [];
+    if (activeCat === ALL_CAT) return channels;
+    return channels.filter((c) => c.group === activeCat);
+  }, [channels, activeCat]);
 
   return (
     <div className="view live">
-      {/* 顶部标题栏：播放中显示「返回 + 直播频道」，否则显示「直播」 */}
+      {/* 顶部标题栏：一级显示"直播"，二级显示"返回 + 直播频道" */}
       <div className="live-header">
-        {playing ? (
-          <div className="live-back tap" onClick={() => setPlaying(null)}>
+        {channels ? (
+          <div className="live-back tap" onClick={() => { setChannels(null); setActiveName(''); }}>
             <Icon name="arrow-left" size={20} />
-            <span>返回直播频道</span>
+            <span>返回直播源</span>
           </div>
         ) : (
           <div className="live-title">
@@ -331,7 +320,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
         )}
       </div>
 
-      {(channels || allChannels.length) ? (
+      {channels ? (
         <>
           {/* 顶部播放器：去掉原生 controls，用自定义控制层 */}
           <div className="live-preview">
@@ -412,6 +401,21 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
           <h2>正在加载直播源…</h2>
           <p className="muted">正在从你导入的 tvbox 配置拉取直播线路，请稍候。</p>
         </div>
+      ) : lives.length ? (
+        <div className="live-list">
+          {lives.map((l, i) => (
+            <div key={i} className="settings-row tap" onClick={() => openLive(l)}>
+              <span className="ico">
+                <Icon name="cast" size={20} />
+              </span>
+              <span className="label">{l.name}</span>
+              <span className="value muted">{l.sourceName}</span>
+              <span className="chevron">
+                <Icon name="arrow-right" size={18} />
+              </span>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="blank-state">
           <div className="blank-art">
@@ -438,29 +442,16 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <span>切换直播源</span>
               <button className="cast-close" onClick={() => setSrcSheet(false)}>✕</button>
             </div>
-            <div
-              className={'cast-dev tap' + (!channels ? ' on' : '')}
-              onClick={() => { setSrcSheet(false); setChannels(null); setActiveName(''); }}
-            >
-              <Icon name="cast" size={18} />
-              <span>全部频道</span>
-              {!channels && <span className="cast-cur">当前</span>}
-            </div>
-            {liveSourceNames.map((name) => (
+            {lives.length === 0 && <div className="cast-empty">暂无可切换的直播源</div>}
+            {lives.map((l, i) => (
               <div
-                key={name}
-                className={'cast-dev tap' + (channels && activeName === name ? ' on' : '')}
-                onClick={() => {
-                  setSrcSheet(false);
-                  const ch = lives.filter((l) => l.sourceName === name).map((c) => ({ name: c.name, url: c.url, logo: c.logo, group: c.group }));
-                  setChannels(ch);
-                  setActiveName(name);
-                  setActiveCat(ALL_CAT);
-                }}
+                key={i}
+                className={'cast-dev tap' + (activeName === l.name ? ' on' : '')}
+                onClick={() => { setSrcSheet(false); openLive(l); }}
               >
                 <Icon name="cast" size={18} />
-                <span>{name}</span>
-                {channels && activeName === name && <span className="cast-cur">当前</span>}
+                <span>{l.name}</span>
+                {activeName === l.name && <span className="cast-cur">当前</span>}
               </div>
             ))}
           </div>

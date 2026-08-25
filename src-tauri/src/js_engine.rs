@@ -144,6 +144,24 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         globals.set("console", console_obj).map_err(|e| e.to_string())?;
 
+        // v2.5.2 防御性注入：drpy/CatVod 脚本常引用的其它全局 API（缺失会 ReferenceError）。
+        let timeout_fn = Function::new(ctx.clone(), |_cb: rquickjs::Function, _ms: i32| -> i32 { 0 })
+            .map_err(|e| e.to_string())?;
+        globals.set("setTimeout", timeout_fn).map_err(|e| e.to_string())?;
+        let clear_fn = Function::new(ctx.clone(), |_id: i32| {}).map_err(|e| e.to_string())?;
+        globals.set("clearTimeout", clear_fn).map_err(|e| e.to_string())?;
+        // atob/btoa（base64 字符串互转，部分 drpy 用作别名）
+        let atob_fn = Function::new(ctx.clone(), |s: String| -> String { B64.encode(s.as_bytes()) })
+            .map_err(|e| e.to_string())?;
+        globals.set("atob", atob_fn).map_err(|e| e.to_string())?;
+        let btoa_fn =
+            Function::new(ctx.clone(), |s: String| -> Result<String, rquickjs::Error> {
+                let bytes = B64.decode(s.trim()).map_err(|e| rquickjs::Error::new_into_js_message("btoa", "string", e.to_string()))?;
+                String::from_utf8(bytes).map_err(|e| rquickjs::Error::new_into_js_message("btoa", "string", e.to_string()))
+            })
+            .map_err(|e| e.to_string())?;
+        globals.set("btoa", btoa_fn).map_err(|e| e.to_string())?;
+
         // 执行 spider 代码（定义各函数，或定义 `spider` 类/对象）
         ctx.eval::<(), _>(payload.code.as_str()).map_err(|e| {
             // v2.5.1：eval 失败时 dump 脚本前 12 行到 stderr，便于在 CI/日志里定位报错行
@@ -196,9 +214,13 @@ JSON.stringify(__r === undefined ? null : __r);
             func = func_lit,
             args = args_lit,
         );
-        let out: String = ctx
-            .eval(expr.as_str())
-            .map_err(|e| format!("调用 {} 失败: {e}", payload.func))?;
+        let out: String = ctx.eval(expr.as_str()).map_err(|e| {
+            eprintln!("[spider-call-fail] func={} 错误={}", payload.func, e);
+            for (i, line) in payload.code.lines().take(12).enumerate() {
+                eprintln!("[spider-call-fail] L{}: {}", i + 1, line);
+            }
+            format!("调用 {} 失败: {e}", payload.func)
+        })?;
         println!(
             "[spider-debug] 调用 {} 返回长度={}",
             payload.func,

@@ -20,6 +20,9 @@ interface StoreState {
   sources: SourceConfig[];
 }
 
+// 注意：按用户要求（v2.5.9）不再内置任何默认源。首次启动若 localStorage 为空则返回空列表，
+// 由用户通过「导入 json 源 → 手动粘贴」自行导入（如量子单线路源）。
+
 const stores = new Map<string, { state: StoreState; listeners: Set<Listener> }>();
 
 function readPersisted(appKey: string): SourceConfig[] {
@@ -37,6 +40,7 @@ function readPersisted(appKey: string): SourceConfig[] {
   } catch {
     /* ignore */
   }
+  // 无已存源：按用户要求不内置默认源，返回空列表，由用户手动导入。
   return [];
 }
 

@@ -119,13 +119,26 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
   const [castMsg, setCastMsg] = useState('');
 
   // 直播播放器内换源（D 项：仅限直播播放器）：列出直播源切换
+  // 直播播放器内换源（D 项：仅限直播播放器）：列出直播源切换
   const [srcSheet, setSrcSheet] = useState(false);
+
+  // ⋮ 菜单（图3）：顶部三点菜单弹出的操作面板
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // 横屏换台：在可见频道列表里上/下一个
+  const changeChannel = (dir: 1 | -1) => {
+    if (!channels || !playing) return;
+    const list = visibleChannels;
+    const idx = list.findIndex((c) => c.url === playing.url);
+    const next = list[(idx + dir + list.length) % list.length];
+    if (next) setPlaying({ url: next.url, name: next.name });
+  };
 
   // 点击 video 或按钮切换播放/暂停
   const togglePlay = () => {
     const el = videoRef.current;
     if (!el) return;
-    if (el.paused) { el.play(); setPaused(false); }
+    if (el.paused) { el.play().catch(() => {}); setPaused(false); }
     else { el.pause(); setPaused(true); }
   };
 
@@ -224,7 +237,7 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
     };
   }, [channels, playing]);
 
-  useEffect(() => {
+  const reloadLives = () => {
     if (!sources.length) {
       setLives([]);
       setChannels(null);
@@ -233,7 +246,7 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
     }
     setError('');
     setLivesLoading(true);
-    aggregateLives(sources)
+    aggregateLives(sources, { force: true })
       .then((r) => {
         const flat = r.groups.flatMap((g) => g.channels.map((c) => ({ ...c, sourceName: g.sourceName })));
         setLives(flat);
@@ -241,6 +254,11 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
       })
       .catch(() => setError('直播源加载失败'))
       .finally(() => setLivesLoading(false));
+  };
+
+  useEffect(() => {
+    reloadLives();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
 
   // m3u8 在 Android WebView 原生 <video> 大多无法直接播放，统一用 hls.js 解封装；
@@ -305,7 +323,7 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
 
   return (
     <div className="view live">
-      {/* 顶部标题栏：一级显示"直播"，二级显示"返回 + 直播频道" */}
+      {/* 顶部标题栏：一级显示"直播"+⋮菜单，二级显示"返回 + 直播频道" */}
       <div className="live-header">
         {channels ? (
           <div className="live-back tap" onClick={() => { setChannels(null); setActiveName(''); }}>
@@ -318,14 +336,40 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
             <span>直播</span>
           </div>
         )}
-        {onDebug && (
-          <button className="live-debug" onClick={onDebug} title="调试面板"><Icon name="bug" size={18} /></button>
-        )}
+        <div className="live-header-right">
+          {onDebug && (
+            <button className="live-debug" onClick={onDebug} title="调试面板"><Icon name="bug" size={18} /></button>
+          )}
+          <button className="live-menu-btn" onClick={() => setMenuOpen((o) => !o)} title="更多">
+            <Icon name="more" size={20} />
+          </button>
+          {menuOpen && (
+            <>
+              <div className="live-menu-mask" onClick={() => setMenuOpen(false)} />
+              <div className="live-menu" onClick={(e) => e.stopPropagation()}>
+                <div className="lm-item" onClick={() => { setMenuOpen(false); setSrcSheet(true); }}>
+                  <Icon name="refresh" size={16} /><span>切换直播源</span>
+                </div>
+                <div className="lm-item" onClick={() => { setMenuOpen(false); handleCast(); }}>
+                  <Icon name="cast" size={16} /><span>投屏</span>
+                </div>
+                <div className="lm-item" onClick={() => { setMenuOpen(false); reloadLives(); }}>
+                  <Icon name="refresh" size={16} /><span>刷新源列表</span>
+                </div>
+                {onDebug && (
+                  <div className="lm-item" onClick={() => { setMenuOpen(false); onDebug(); }}>
+                    <Icon name="bug" size={16} /><span>调试面板</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {channels ? (
         <>
-          {/* 顶部播放器：去掉原生 controls，用自定义控制层 */}
+          {/* 顶部播放器：去掉原生 controls，用自定义控制层（图2：暂停/横屏/投屏） */}
           <div className="live-preview">
             {playing ? (
               <>
@@ -340,19 +384,23 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
                 />
                 {playing && <div className="lp-name">{playing.name}</div>}
                 <div className="lp-controls">
-                  <button onClick={togglePlay}>
+                  <button onClick={togglePlay} title={paused ? '播放' : '暂停'}>
                     <Icon name={paused ? 'play' : 'pause'} size={18} />
                   </button>
-                  <button onClick={toggleFullscreen}>
+                  <button onClick={toggleFullscreen} title="横屏">
                     <Icon name="maximize" size={18} />
-                  </button>
-                  <button className="lp-src" onClick={() => setSrcSheet(true)} title="换源">
-                    ⇄ 换源
                   </button>
                   <button onClick={handleCast} title="投屏">
                     <Icon name="cast" size={18} />
                   </button>
                 </div>
+                {/* 横屏态额外控制（图4）：换台 */}
+                {isFullscreen && (
+                  <div className="lp-ch-switch">
+                    <button onClick={() => changeChannel(-1)} title="上一个"><Icon name="chevron-left" size={18} /></button>
+                    <button onClick={() => changeChannel(1)} title="下一个"><Icon name="chevron-right" size={18} /></button>
+                  </div>
+                )}
               </>
             ) : (
               <div className="lp-empty">

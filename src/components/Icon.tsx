@@ -17,6 +17,10 @@ const P: Record<string, ReactNode> = {
   volume: <><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16 9a4 4 0 0 1 0 6" /></>,
   maximize: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
+  'chevron-left': <path d="M15 6l-6 6 6 6" />,
+  'chevron-right': <path d="M9 6l6 6-6 6" />,
+  // 竖排三点菜单（⋮）
+  more: <><circle cx="12" cy="5" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" /><circle cx="12" cy="19" r="1.4" fill="currentColor" stroke="none" /></>,
   'arrow-left': <><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></>,
   'arrow-right': <><path d="M5 12h14" /><path d="M12 5l7 7-7 7" /></>,
   'arrow-up': <><path d="M12 19V5" /><path d="M5 12l7-7 7 7" /></>,

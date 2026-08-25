@@ -78,6 +78,15 @@ function spiderField(v: any): { spider?: string; spiderUrl?: string } {
   return { spider: v };
 }
 
+// v2.5.9：判断是否"普通解析源"接口（苹果CMS 标准 api.php/provide/vod 风格，
+// 不依赖 spider / Java 引擎，直接 HTTP 请求即可）。用于让 tvbox 配置里
+// "无 spider、api 为标准 http 接口"的站点（及单线路裸接口）也能被幕海加载。
+function isNormalApi(api: any): boolean {
+  if (typeof api !== 'string') return false;
+  if (/\.js(\?|$)/i.test(api)) return false; // 远程 JS 蜘蛛脚本不在此列
+  return /^https?:\/\//i.test(api) && /provide\/vod|api\.php|(\/|\.)php(\?|$)/i.test(api);
+}
+
 // 从 tvbox 配置收集所有可执行的 spider 源（支持 TVBox csp 模型）
 async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   const text = await fetchText(cfg.baseUrl);
@@ -91,7 +100,8 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   }
 
   // 单线路（无 sites 数组）：顶层 spider 即唯一源；
-  // drpy2 单文件形态：顶层 api 直接是远程 .js 蜘蛛脚本
+  // drpy2 单文件形态：顶层 api 直接是远程 .js 蜘蛛脚本；
+  // v2.5.9：裸接口形态（顶层 api 是标准 provide/vod 接口，或响应即 TVBox 列表）→ 普通解析源
   if (!Array.isArray(data.sites)) {
     if (data.spider) {
       const sf = spiderField(data.spider);
@@ -99,6 +109,11 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
     }
     if (typeof data.api === 'string' && /\.js(\?|$)/i.test(data.api)) {
       return [{ ...cfg, type: 'js', name: cfg.name, spiderUrl: resolveUrl(stripMd5(data.api), cfg.baseUrl) } as SourceConfig];
+    }
+    // v2.5.9：普通解析单线路（如用户直接粘贴 api.php/provide/vod 裸接口）
+    const ep = typeof data.api === 'string' ? data.api : cfg.baseUrl;
+    if (isNormalApi(ep) || Array.isArray(data.list)) {
+      return [{ ...cfg, type: 'normal', name: cfg.name, api: ep.split('?')[0] } as SourceConfig];
     }
     return [];
   }
@@ -132,22 +147,36 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
     let spider = sf?.spider ?? null;
     const spiderUrl = sf?.spiderUrl ?? null;
     if (!spider && !spiderUrl && sharedCode) spider = sharedCode; // 继承共享蜘蛛
-    if (!spider && !spiderUrl) continue; // 既无自有也无共享蜘蛛，跳过
-    const subId = s.key ? `${cfg.id}::${s.key}` : `${cfg.id}::${out.length}`;
-    out.push({
-      ...cfg,
-      id: subId, // 子站唯一 id，供前端按子站过滤/标记
-      parentId: cfg.id, // 记录所属配置，便于错误归类
-      type: 'js',
-      name: s.name || s.key || cfg.name,
-      spider: spider ?? undefined,
-      spiderUrl: spiderUrl ?? undefined,
-      api: s.api,
-      // 仅序列化一次：直接传原始 ext（字符串/JSON 字符串），由 Rust 端 run_spider
-      // 统一用 serde_json::to_string 生成合法 JSON 字面量注入 QuickJS，避免双重序列化
-      // 导致 JSON.parse 抛错、drpy2/csp 站点（如 ext=douban.js）初始化失败（问题 #1/#2）。
-      ext: s.ext ?? undefined,
-    } as SourceConfig);
+    if (spider || spiderUrl) {
+      const subId = s.key ? `${cfg.id}::${s.key}` : `${cfg.id}::${out.length}`;
+      out.push({
+        ...cfg,
+        id: subId, // 子站唯一 id，供前端按子站过滤/标记
+        parentId: cfg.id, // 记录所属配置，便于错误归类
+        type: 'js',
+        name: s.name || s.key || cfg.name,
+        spider: spider ?? undefined,
+        spiderUrl: spiderUrl ?? undefined,
+        api: s.api,
+        // 仅序列化一次：直接传原始 ext（字符串/JSON 字符串），由 Rust 端 run_spider
+        // 统一用 serde_json::to_string 生成合法 JSON 字面量注入 QuickJS，避免双重序列化
+        // 导致 JSON.parse 抛错、drpy2/csp 站点（如 ext=douban.js）初始化失败（问题 #1/#2）。
+        ext: s.ext ?? undefined,
+      } as SourceConfig);
+      continue;
+    }
+    // v2.5.9：无 spider 但 api 是标准 provide/vod 接口的站点 → 普通解析源
+    if (isNormalApi(s.api)) {
+      const subId = s.key ? `${cfg.id}::${s.key}` : `${cfg.id}::${out.length}`;
+      out.push({
+        ...cfg,
+        id: subId,
+        parentId: cfg.id,
+        type: 'normal',
+        name: s.name || s.key || cfg.name,
+        api: String(s.api).split('?')[0],
+      } as SourceConfig);
+    }
   }
   return out;
 }

@@ -1,7 +1,7 @@
 // 统一媒体源引擎 —— 核心类型定义
 // 与《媒体源引擎接口规范 v1》保持一致
 
-export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js' | 'lives-direct';
+export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js' | 'normal' | 'lives-direct';
 
 export type MediaType = 'music' | 'video';
 
@@ -10,6 +10,7 @@ export interface SourceConfig {
   name: string;
   type: SourceType;
   baseUrl: string;
+  api?: string; // 普通解析源：标准接口地址（provide/vod）；缺省时回退 baseUrl
   token?: string;
   enabled: boolean;
   priority: number;
@@ -97,6 +98,7 @@ export const SOURCE_TYPES: { value: SourceType; label: string; desc: string }[] 
   { value: 'alist', label: '云盘(alist)', desc: '阿里云盘/夸克/UC/115 等统一网关' },
   { value: 'tvbox', label: '影视仓聚合', desc: '粘贴影视仓/饭太硬式配置地址，自动解析多站点（蜘蛛源走 JS 引擎）' },
   { value: 'js', label: 'JS 脚本源', desc: '粘贴 spider 脚本或远程脚本地址，引擎执行（支持蜘蛛源/加密源）' },
+  { value: 'normal', label: '影视解析源(普通)', desc: '粘贴标准 api.php/provide/vod 接口（苹果CMS 风格），无需 spider 引擎' },
 ];
 
 export function uuid(): string {

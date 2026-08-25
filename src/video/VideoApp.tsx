@@ -266,10 +266,11 @@ export default function VideoApp() {
             onOpenDetail={openDetail}
             onSearch={goSearch}
             onOpenSources={openSources}
+            onDebug={() => setShowDebug(true)}
           />
         )}
 
-        {tab === 'live' && <Live sources={store.sources} onOpenSources={openSources} />}
+        {tab === 'live' && <Live sources={store.sources} onOpenSources={openSources} onDebug={() => setShowDebug(true)} />}
 
         {tab === 'history' && (
           <VideoLibrary library={library} onOpen={openDetail} />

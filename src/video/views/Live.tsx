@@ -88,7 +88,7 @@ function streamHeaders(url: string): Record<string, string> {
   };
 }
 
-export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
+export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfig[]; onOpenSources: () => void; onDebug?: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
   const [channels, setChannels] = useState<Channel[] | null>(null);
   const [activeName, setActiveName] = useState('');
@@ -317,6 +317,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
             <Icon name="cast" size={20} />
             <span>直播</span>
           </div>
+        )}
+        {onDebug && (
+          <button className="live-debug" onClick={onDebug} title="调试面板"><Icon name="bug" size={18} /></button>
         )}
       </div>
 

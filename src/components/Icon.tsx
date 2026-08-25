@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, CSSProperties } from 'react';
 
 // 统一线性图标集（Lucide 风格，stroke=currentColor，随主题色与字号自适应）。
 // 用于替换界面原有 emoji，消除深色背景发虚、风格不统一的问题。
@@ -43,6 +43,15 @@ const P: Record<string, ReactNode> = {
   pip: <><rect x="3" y="4" width="18" height="16" rx="2.5" /><rect x="12" y="11" width="8" height="6" rx="1" fill="currentColor" stroke="none" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   sliders: <><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="12" r="2" /><circle cx="13" cy="17" r="2" /></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
+  'lock-open': <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0" /></>,
+  // 横屏 / 竖屏切换（rotate 设备方向）
+  rotate: <><path d="M4 8h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z" /><path d="M16 12h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-4" /></>,
+  'rotate-portrait': <><path d="M8 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="M4 8v8a2 2 0 0 0 2 2h2" /></>,
+  refresh: <><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 4v4h-4" /></>,
+  replay: <><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /></>,
+  sparkles: <><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z" /><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" /></>,
+  battery: <><rect x="2" y="8" width="17" height="9" rx="2" /><path d="M22 11v3" /></>,
   // 填充型（播放/暂停/上一首/下一首）：在小圆按钮里更醒目
   play: <path d="M7 4.5v15l13-7.5z" fill="currentColor" />,
   pause: <g fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2" /><rect x="14" y="5" width="4" height="14" rx="1.2" /></g>,
@@ -52,7 +61,7 @@ const P: Record<string, ReactNode> = {
 
 export type IconName = keyof typeof P;
 
-export function Icon({ name, size = 22, className, strokeWidth = 1.9 }: { name: IconName; size?: number; className?: string; strokeWidth?: number }) {
+export function Icon({ name, size = 22, className, strokeWidth = 1.9, style }: { name: IconName; size?: number; className?: string; strokeWidth?: number; style?: CSSProperties }) {
   return (
     <svg
       className={className}
@@ -66,6 +75,7 @@ export function Icon({ name, size = 22, className, strokeWidth = 1.9 }: { name: 
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
+      style={style}
     >
       {P[name]}
     </svg>

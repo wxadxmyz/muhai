@@ -52,7 +52,7 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
     ctx.with(|ctx| -> Result<String, String> {
         let globals = ctx.globals();
 
-        // fetch 桥接：同步 HTTP，返回响应体字符串。
+        // fetch 桥接：同步 HTTP，返回响应体字符串（保持原行为，CatVod req 垫片依赖字符串返回）。
         // 兼容 TVBox spider 习惯：fetch(url, headers_json?, data?)
         let fetch_fn = Function::new(ctx.clone(), |url: String, hd: Option<String>, data: Option<String>| -> Result<String, rquickjs::Error> {
             let client = reqwest::blocking::Client::builder()
@@ -143,6 +143,20 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
             .set("debug", mk_log("debug").map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         globals.set("console", console_obj).map_err(|e| e.to_string())?;
+
+        // v2.5.5 防御性注入：Buffer（base64 别名，部分 spider 用 Buffer.from().toString('base64')）。
+        let buffer_obj = rquickjs::Object::new(ctx.clone()).map_err(|e| e.to_string())?;
+        let buffer_from = Function::new(ctx.clone(), |s: String| -> String { B64.encode(s.as_bytes()) })
+            .map_err(|e| e.to_string())?;
+        buffer_obj.set("from", buffer_from).map_err(|e| e.to_string())?;
+        globals.set("Buffer", buffer_obj).map_err(|e| e.to_string())?;
+
+        // require：简易实现，仅透传（多数 spider 用 require 加载内置模块，这里避免 ReferenceError）。
+        let require_fn = Function::new(ctx.clone(), |_name: String| -> rquickjs::Object {
+            rquickjs::Object::new(ctx.clone()).unwrap_or(rquickjs::Object::new(ctx.clone()).unwrap())
+        })
+        .map_err(|e| e.to_string())?;
+        globals.set("require", require_fn).map_err(|e| e.to_string())?;
 
         // v2.5.2 防御性注入：drpy/CatVod 脚本常引用的其它全局 API（缺失会 ReferenceError）。
         let timeout_fn = Function::new(ctx.clone(), |_cb: rquickjs::Function, _ms: i32| -> i32 { 0 })

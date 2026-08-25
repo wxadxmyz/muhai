@@ -28,12 +28,14 @@ export function Home({
   onOpenDetail,
   onSearch,
   onOpenSources,
+  onDebug,
 }: {
   sources: SourceConfig[];
   library: ReturnType<typeof useLibrary>;
   onOpenDetail: (it: MediaItem) => void;
   onSearch: (q: string) => void;
   onOpenSources: () => void;
+  onDebug: () => void;
 }) {
   const [homeItems, setHomeItems] = useState<MediaItem[]>([]);
   const [homeLoading, setHomeLoading] = useState(false);
@@ -156,6 +158,7 @@ export function Home({
         <span className="name">{activeStationName}</span>
         <span className="caret">▼</span>
       </button>
+      <button className="ht-debug" onClick={onDebug} title="调试面板"><Icon name="bug" size={18} /></button>
     </div>
   );
 

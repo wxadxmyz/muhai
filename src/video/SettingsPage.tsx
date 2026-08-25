@@ -166,13 +166,6 @@ export function SettingsPage({
           <NavRow icon="play" label="播放" onClick={() => setSub('player')} />
         </div>
 
-        {/* 直播 */}
-        <div className="settings-group-title">直播</div>
-        <div className="settings-card">
-          <NavRow icon="clock" label="EPG 节目单" onClick={() => setSub('epg')} />
-          <NavRow icon="film" label="直播源分组" onClick={() => setSub('livetv')} />
-        </div>
-
         {/* 下载 */}
         <div className="settings-group-title">下载</div>
         <div className="settings-card">
@@ -277,18 +270,6 @@ export function SettingsPage({
               </div>
             );
           })()}
-        </SubPage>
-      )}
-
-      {sub === 'epg' && (
-        <SubPage title="EPG 节目单" onBack={() => setSub(null)}>
-          <p className="settings-note">直播节目单将在添加直播源后自动更新。当前未配置直播源。</p>
-        </SubPage>
-      )}
-
-      {sub === 'livetv' && (
-        <SubPage title="直播源分组" onBack={() => setSub(null)}>
-          <p className="settings-note">直播功能需配置相应的直播源（m3u / txt）。当前未配置。</p>
         </SubPage>
       )}
 

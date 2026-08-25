@@ -1,5 +1,5 @@
 import { MediaItem } from '../../engine';
-import { aggregateHome, aggregateSearch } from '../../engine';
+import { aggregateHome } from '../../engine';
 import { useLibrary } from '../../lib/library';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
@@ -12,7 +12,16 @@ import {
   takePendingDisclaimer,
 } from '../../lib/disclaimer';
 
-const CATEGORIES = ['电影', '电视剧', '动漫', '综艺', '电影筛选', '电视剧筛选', '动漫筛选'];
+// v2.5.0 首页板块：热播影视 → 电影 → 综艺（删除了原「为你推荐」分类切换）
+type SectionKey = 'hot' | 'movie' | 'variety';
+
+function classify(it: MediaItem): SectionKey | null {
+  const g = (it.genre ?? '').toLowerCase();
+  const t = it.title.toLowerCase();
+  if (/综艺|variety|真人秀|选秀|脱口秀|访谈/.test(g + t)) return 'variety';
+  if (/电影|movie|film/.test(g) || it.mediaType === 'video') return 'movie';
+  return 'movie';
+}
 
 export function Home({
   sources,
@@ -27,11 +36,9 @@ export function Home({
   onSearch: (q: string) => void;
   onOpenSources: () => void;
 }) {
-  // 有源时自动拉取各源首页推荐（添加源后无需手动刷新）
   const [homeItems, setHomeItems] = useState<MediaItem[]>([]);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeError, setHomeError] = useState('');
-  const [activeCat, setActiveCat] = useState<string | null>(null);
   const [disclaimerOn, setDisclaimerOn] = useState(false);
   const disclaimerTimer = useRef<number | null>(null);
 
@@ -49,7 +56,6 @@ export function Home({
       if (disclaimerTimer.current) window.clearTimeout(disclaimerTimer.current);
       disclaimerTimer.current = window.setTimeout(() => setDisclaimerOn(false), 2000);
     };
-    // 添加源时若主页尚未挂载监听，用 pending 标志补弹
     if (takePendingDisclaimer()) show();
     const off = onDisclaimerRequest(show);
     return () => {
@@ -66,11 +72,7 @@ export function Home({
     let cancelled = false;
     setHomeLoading(true);
     setHomeError('');
-    // 选中分类时按关键词取内容（留在首页，不跳搜索页）；
-    // 未选时拉取各源首页推荐作为"推荐"流。
-    const p = activeCat
-      ? aggregateSearch(sources, activeCat.replace('筛选', ''), { timeout: 60000, mediaType: 'video' })
-      : aggregateHome(sources, { timeout: 60000 });
+    const p = aggregateHome(sources, { timeout: 60000 });
     p.then((r) => {
       if (cancelled) return;
       setHomeItems(r.items);
@@ -87,29 +89,55 @@ export function Home({
     return () => {
       cancelled = true;
     };
-  }, [sources, activeCat]);
+  }, [sources]);
 
-  // 主页底部「使用须知」轻提示（添加源成功后弹一次）
+  // 板块切分：热播影视取混排前 6（无 genre 或评分高优先），电影/综艺按 genre 归类
+  const movies = homeItems.filter((it) => classify(it) === 'movie');
+  const variety = homeItems.filter((it) => classify(it) === 'variety');
+  const hot = homeItems.slice(0, 6);
 
-  const PosterCard = ({ it }: { it: MediaItem }) => {
-    return (
-      <div className="pcard" onClick={() => onOpenDetail(it)}>
-        <div className="pcover" style={{ background: it.cover ? undefined : gradientFor(it.title) }}>
-          {it.cover ? <img src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
-          {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
-        </div>
-        <div className="ptitle">{it.title}</div>
-        <div className="psub">{it.year ?? ''} {it.genre ? '· ' + it.genre : ''}</div>
+  const enabledCount = sources.filter((s) => s.enabled).length;
+  const siteName = enabledCount > 0 ? (sources.find((s) => s.enabled)?.name ?? '已开启源') : '未选择源';
+
+  const PosterCard = ({ it }: { it: MediaItem }) => (
+    <div className="pcard" onClick={() => onOpenDetail(it)}>
+      <div className="pcover" style={{ background: it.cover ? undefined : gradientFor(it.title) }}>
+        {it.cover ? <img src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
+        {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
+        {it.score ? <span className="pscore">{it.score}</span> : null}
       </div>
-    );
-  };
+      <div className="ptitle">{it.title}</div>
+      <div className="psub">{it.year ?? ''} {it.genre ? '· ' + it.genre : ''}</div>
+    </div>
+  );
+
+  const Section = ({ title, items }: { title: string; items: MediaItem[] }) => (
+    <section className="row-section">
+      <div className="row-head">
+        <h3>{title}</h3>
+      </div>
+      {items.length === 0 ? (
+        <div className="empty sm">{homeLoading ? '正在加载…' : '暂无内容'}</div>
+      ) : (
+        <div className="poster-grid">
+          {items.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
+        </div>
+      )}
+    </section>
+  );
 
   const homeTop = (
-    <div className="home-top">
-      <div className="ht-logo">幕<span className="dot">海</span></div>
-      <div className="ht-actions">
-        <button className="ht-ico" onClick={() => onSearch('')} title="搜索"><Icon name="search" size={22} /></button>
-      </div>
+    <div className="home-top v25">
+      <div className="ht-logo">🌊 幕海</div>
+      <button className="ht-search" onClick={() => onSearch('')}>
+        <Icon name="search" size={16} />
+        <span className="ht-search-ph">搜索电影/剧集/演员…</span>
+      </button>
+      <button className="ht-source" onClick={onOpenSources} title={siteName}>
+        <span className="dot" />
+        <span className="name">{siteName}</span>
+        <span className="caret">▼</span>
+      </button>
     </div>
   );
 
@@ -130,43 +158,16 @@ export function Home({
   }
 
   return (
-    <div className="view home">
+    <div className="view home v25">
       {homeTop}
 
-      <div className="chips" style={{ display: 'flex', overflowX: 'auto', flexWrap: 'nowrap', gap: 8, paddingBottom: 4 }}>
-        {CATEGORIES.map((c) => (
-          <button
-            key={c}
-            className={`chip${activeCat === c ? ' chip-rec' : ''}`}
-            style={{ whiteSpace: 'nowrap' }}
-            onClick={() => setActiveCat(activeCat === c ? null : c)}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
+      {homeError && !homeLoading ? (
+        <div className="empty sm" style={{ margin: '8px 14px' }}>{homeError}</div>
+      ) : null}
 
-      <section className="row-section">
-        <div className="row-head">
-          <h3>{activeCat ? activeCat : '推荐'}</h3>
-          {activeCat && <span className="row-more" onClick={() => setActiveCat(null)}>返回推荐 ›</span>}
-        </div>
-        {homeLoading ? (
-          <div className="empty sm">正在从已添加的来源加载…</div>
-        ) : homeItems.length === 0 ? (
-          <div className="empty sm">
-            {homeError
-              ? (homeError.toLowerCase().includes('timeout') || homeError.includes('超时') || homeError.toLowerCase().includes('timed out')
-                  ? '源响应超时，请检查网络或更换可用源。'
-                  : homeError)
-              : '该分类暂无内容，换个关键词或检查源。'}
-          </div>
-        ) : (
-          <div className="poster-grid">
-            {homeItems.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}
-          </div>
-        )}
-      </section>
+      <Section title="热播影视" items={hot} />
+      <Section title="电影 · 高分精选" items={movies} />
+      <Section title="综艺 · 热榜" items={variety} />
 
       {disclaimerOn && (
         <div className="home-disclaimer" onClick={() => setDisclaimerOn(false)}>

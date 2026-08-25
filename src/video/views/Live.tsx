@@ -118,6 +118,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [castLoading, setCastLoading] = useState(false);
   const [castMsg, setCastMsg] = useState('');
 
+  // 直播播放器内换源（D 项：仅限直播播放器）：列出直播源切换
+  const [srcSheet, setSrcSheet] = useState(false);
+
   // 点击 video 或按钮切换播放/暂停
   const togglePlay = () => {
     const el = videoRef.current;
@@ -340,6 +343,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                   <button onClick={toggleFullscreen}>
                     <Icon name="maximize" size={18} />
                   </button>
+                  <button className="lp-src" onClick={() => setSrcSheet(true)} title="换源">
+                    ⇄ 换源
+                  </button>
                   <button onClick={handleCast} title="投屏">
                     <Icon name="cast" size={18} />
                   </button>
@@ -427,6 +433,30 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       )}
 
       {loading && <div className="empty sm">正在加载直播频道…</div>}
+
+      {/* 直播播放器内换源浮层（D 项：仅限直播播放器） */}
+      {srcSheet && (
+        <div className="cast-mask" onClick={() => setSrcSheet(false)}>
+          <div className="cast-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="cast-head">
+              <span>切换直播源</span>
+              <button className="cast-close" onClick={() => setSrcSheet(false)}>✕</button>
+            </div>
+            {lives.length === 0 && <div className="cast-empty">暂无可切换的直播源</div>}
+            {lives.map((l, i) => (
+              <div
+                key={i}
+                className={'cast-dev tap' + (activeName === l.name ? ' on' : '')}
+                onClick={() => { setSrcSheet(false); openLive(l); }}
+              >
+                <Icon name="cast" size={18} />
+                <span>{l.name}</span>
+                {activeName === l.name && <span className="cast-cur">当前</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 投屏设备选择浮层 */}
       {castSheet && (

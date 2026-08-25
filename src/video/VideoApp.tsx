@@ -22,7 +22,6 @@ import SplashScreen from '../components/SplashScreen';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 type Tab = 'home' | 'live' | 'history' | 'settings';
-const ORDER: Tab[] = ['home', 'live', 'history', 'settings'];
 
 export default function VideoApp() {
   const store = useSources('video');
@@ -124,23 +123,6 @@ export default function VideoApp() {
     return () => unlisten?.();
   }, []);
 
-  // touchStart ref for swipe navigation
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => {
-    touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  };
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStart.current) return;
-    const dx = e.changedTouches[0].clientX - touchStart.current.x;
-    const dy = e.changedTouches[0].clientY - touchStart.current.y;
-    touchStart.current = null;
-    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
-      const i = ORDER.indexOf(tab);
-      if (dx < 0 && i < ORDER.length - 1) setTab(ORDER[i + 1]);
-      else if (dx > 0 && i > 0) setTab(ORDER[i - 1]);
-    }
-  };
-
   const playEpisode = (item: MediaItem, index = 0, line = 0, resume = false) => {
     const groups = (item.raw?.lineGroups as any[] | undefined) ?? [item.episodes ?? []];
     const eps = groups[line] ?? groups[0];
@@ -209,8 +191,6 @@ export default function VideoApp() {
       />
       <div
         className="app video-theme"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
         style={
           settings.wallpaper
             ? {

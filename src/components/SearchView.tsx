@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { aggregateSearch, expandSources, MediaItem, MediaType, SourceConfig } from '../engine';
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';

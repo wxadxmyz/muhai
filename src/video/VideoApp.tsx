@@ -9,6 +9,7 @@ import { MediaItem } from '../engine/types';
 import { alistClient } from '../lib/alistClient';
 import { SearchView } from '../components/SearchView';
 import { DebugPanel } from '../components/DebugPanel';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { VideoPlayer } from './VideoPlayer';
 import { DetailView } from './DetailView';
 import { Home } from './views/Home';
@@ -245,6 +246,7 @@ export default function VideoApp() {
 
       <main className="main">
         {playingVideo && detail && (
+          <ErrorBoundary name="播放器">
           <VideoPlayer
             detail={detail}
             episodeIndex={episodeIndex}
@@ -257,9 +259,11 @@ export default function VideoApp() {
             sources={store.sources}
             settings={settings}
           />
+          </ErrorBoundary>
         )}
 
         {tab === 'home' && (
+          <ErrorBoundary name="主页">
           <Home
             sources={store.sources}
             library={library}
@@ -268,18 +272,30 @@ export default function VideoApp() {
             onOpenSources={openSources}
             onDebug={() => setShowDebug(true)}
           />
+          </ErrorBoundary>
         )}
 
-        {tab === 'live' && <Live sources={store.sources} onOpenSources={openSources} onDebug={() => setShowDebug(true)} />}
+        {tab === 'live' && (
+          <ErrorBoundary name="直播">
+          <Live sources={store.sources} onOpenSources={onOpenSources} onDebug={() => setShowDebug(true)} />
+          </ErrorBoundary>
+        )}
 
         {tab === 'history' && (
+          <ErrorBoundary name="历史">
           <VideoLibrary library={library} onOpen={openDetail} />
+          </ErrorBoundary>
         )}
 
-        {tab === 'settings' && <SettingsPage sub={settingsSub} setSub={setSettingsSub} />}
+        {tab === 'settings' && (
+          <ErrorBoundary name="设置">
+          <SettingsPage sub={settingsSub} setSub={setSettingsSub} />
+          </ErrorBoundary>
+        )}
 
         {searchOpen && (
           <div className="fullpage">
+            <ErrorBoundary name="搜索">
             <SearchView
               onClose={() => setSearchOpen(false)}
               sources={store.sources}
@@ -290,16 +306,19 @@ export default function VideoApp() {
               enableQueue={false}
               initialQuery={searchQuery}
             />
+            </ErrorBoundary>
           </div>
         )}
 
         {detail && !playingVideo && (
+          <ErrorBoundary name="详情">
           <DetailView
             detail={detail}
             episodeIndex={episodeIndex}
             onSelectEpisode={(i) => playEpisode(detail, i)}
             onBack={() => setDetail(null)}
           />
+          </ErrorBoundary>
         )}
       </main>
 
@@ -345,7 +364,11 @@ export default function VideoApp() {
       )}
 
       <Disclaimer onAccept={() => {}} />
-      {showDebug && <DebugPanel onClose={() => setShowDebug(false)} />}
+      {showDebug && (
+        <ErrorBoundary name="调试面板">
+          <DebugPanel onClose={() => setShowDebug(false)} />
+        </ErrorBoundary>
+      )}
     </div>
     </>
   );

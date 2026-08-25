@@ -44,6 +44,24 @@ export function SearchView({
   const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
 
+  // v2.5.1 分级返回：搜索页二级态（正在看某个子站结果）→ 先退回「全部」；
+  // 否则放行（由 VideoApp 关闭整个搜索页）。页面钩子约定：false=已拦截逐级退，true=放行。
+  const activeSourceRef = useRef(activeSource);
+  activeSourceRef.current = activeSource;
+  useEffect(() => {
+    const prev = (window as any).__onAndroidBack;
+    (window as any).__onAndroidBack = () => {
+      if (activeSourceRef.current !== ALL_KEY) {
+        setActiveSource(ALL_KEY);
+        return false; // 已逐级退一层（子站 → 全部）
+      }
+      return true; // 无内部层级，放行给 VideoApp 外层分级
+    };
+    return () => {
+      (window as any).__onAndroidBack = prev;
+    };
+  }, []);
+
   // 子站 id <-> name 映射（供过滤）
   const nameOf = useMemo(() => {
     const m = new Map<string, string>();

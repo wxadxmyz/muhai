@@ -85,6 +85,15 @@ export default function VideoApp() {
         const un = await getCurrentWindow().onBackButton((event) => {
           const s = navRef.current;
           if ((window as any).__playerBack && (window as any).__playerBack()) { event.preventDefault(); return; }
+          // v2.5.1 修复：优先委托当前页面的逐级返回钩子（Live/SearchView 等的二级、三级态）。
+          // 钩子返回 false 表示已逐级退一层（拦截），true 表示无内部层级（放行）。
+          if (typeof (window as any).__onAndroidBack === 'function') {
+            try {
+              const handled = (window as any).__onAndroidBack();
+              if (handled === false) { event.preventDefault(); return; }
+            } catch { /* 钩子异常忽略，继续外层逻辑 */ }
+          }
+          // 外层分级：播放器 → 调试 → 网盘 → 搜索 → 详情 → 设置子页 → 切回主页
           if (s.playingVideo) {
             event.preventDefault();
             closeVideo();

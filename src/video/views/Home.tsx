@@ -1,5 +1,4 @@
-import { MediaItem } from '../../engine';
-import { aggregateHome } from '../../engine';
+import { MediaItem, aggregateHome, expandSources } from '../../engine';
 import { useLibrary } from '../../lib/library';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
@@ -42,6 +41,11 @@ export function Home({
   const [disclaimerOn, setDisclaimerOn] = useState(false);
   const disclaimerTimer = useRef<number | null>(null);
 
+  // v2.5.1 站点选择：列出 tvbox 源内的 spider 子站，单选用于首页聚合过滤
+  const [stations, setStations] = useState<SourceConfig[]>([]);
+  const [activeStation, setActiveStation] = useState<string>('all'); // 'all' 或子站 id
+  const [sheetOpen, setSheetOpen] = useState(false);
+
   // 「使用须知」提示：添加源成功后弹一次（2s 自动消失），localStorage 保证只弹一次。
   useEffect(() => {
     const show = () => {
@@ -64,6 +68,17 @@ export function Home({
     };
   }, []);
 
+  // 展开 tvbox 子站列表（供站点选择面板）
+  useEffect(() => {
+    if (sources.length === 0) {
+      setStations([]);
+      return;
+    }
+    expandSources(sources)
+      .then((ex) => setStations(ex))
+      .catch(() => setStations([]));
+  }, [sources]);
+
   useEffect(() => {
     if (sources.length === 0) {
       setHomeItems([]);
@@ -72,7 +87,9 @@ export function Home({
     let cancelled = false;
     setHomeLoading(true);
     setHomeError('');
-    const p = aggregateHome(sources, { timeout: 60000 });
+    // 选了具体站点 → 只聚合该子站；否则聚合全部源
+    const used = activeStation === 'all' ? sources : stations.filter((s) => s.id === activeStation);
+    const p = aggregateHome(used.length ? used : sources, { timeout: 60000 });
     p.then((r) => {
       if (cancelled) return;
       setHomeItems(r.items);
@@ -89,7 +106,7 @@ export function Home({
     return () => {
       cancelled = true;
     };
-  }, [sources]);
+  }, [sources, stations, activeStation]);
 
   // 板块切分：热播影视取混排前 6（无 genre 或评分高优先），电影/综艺按 genre 归类
   const movies = homeItems.filter((it) => classify(it) === 'movie');
@@ -97,7 +114,8 @@ export function Home({
   const hot = homeItems.slice(0, 6);
 
   const enabledCount = sources.filter((s) => s.enabled).length;
-  const siteName = enabledCount > 0 ? (sources.find((s) => s.enabled)?.name ?? '已开启源') : '未选择源';
+  const activeStationName =
+    activeStation === 'all' ? '全部站点' : (stations.find((s) => s.id === activeStation)?.name ?? '全部站点');
 
   const PosterCard = ({ it }: { it: MediaItem }) => (
     <div className="pcard" onClick={() => onOpenDetail(it)}>
@@ -133,9 +151,9 @@ export function Home({
         <Icon name="search" size={16} />
         <span className="ht-search-ph">搜索电影/剧集/演员…</span>
       </button>
-      <button className="ht-source" onClick={onOpenSources} title={siteName}>
+      <button className="ht-source" onClick={() => setSheetOpen(true)} title={activeStationName}>
         <span className="dot" />
-        <span className="name">{siteName}</span>
+        <span className="name">{activeStationName}</span>
         <span className="caret">▼</span>
       </button>
     </div>
@@ -185,6 +203,40 @@ export function Home({
           >
             ×
           </span>
+        </div>
+      )}
+
+      {/* 站点选择面板：列出 tvbox 源内的 spider 子站，单选；不内置任何资源，数据来自用户导入的源 */}
+      {sheetOpen && (
+        <div className="station-mask" onClick={() => setSheetOpen(false)}>
+          <div className="station-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="station-head">
+              <span>选择站点</span>
+              <button className="station-close" onClick={() => setSheetOpen(false)}>✕</button>
+            </div>
+            <div className="station-list">
+              <div
+                className={'station-item' + (activeStation === 'all' ? ' on' : '')}
+                onClick={() => { setActiveStation('all'); setSheetOpen(false); }}
+              >
+                <span className="si-name">全部站点</span>
+                <span className="si-sub">聚合所有已开启源</span>
+                {activeStation === 'all' && <span className="si-check">✓</span>}
+              </div>
+              {stations.map((st) => (
+                <div
+                  key={st.id}
+                  className={'station-item' + (activeStation === st.id ? ' on' : '')}
+                  onClick={() => { setActiveStation(st.id); setSheetOpen(false); }}
+                >
+                  <span className="si-name">{st.name}</span>
+                  <span className="si-sub">{((st as any).parentName ?? '') || '子站'}</span>
+                  {activeStation === st.id && <span className="si-check">✓</span>}
+                </div>
+              ))}
+            </div>
+            <p className="station-note">站点来自你导入的源配置，App 不提供任何影视资源。</p>
+          </div>
         </div>
       )}
     </div>

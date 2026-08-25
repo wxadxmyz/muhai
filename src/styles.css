@@ -781,21 +781,21 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   display: flex;
 }
 
-/* 左侧源栏 */
+/* 左侧源栏（v2.5.1 缩窄，贴近原型窄条状） */
 .search-sources {
-  flex: 0 0 132px;
+  flex: 0 0 84px;
   background: var(--panel);
   border-right: 1px solid var(--border);
   overflow-y: auto;
-  padding: 6px 6px 18px;
+  padding: 6px 5px 18px;
   -webkit-overflow-scrolling: touch;
 }
 .search-source {
   position: relative;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 9px 4px;
-  border-radius: 10px;
-  margin-bottom: 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 7px 2px;
+  border-radius: 9px;
+  margin-bottom: 3px;
   cursor: pointer;
   color: var(--muted);
   transition: background .15s, color .15s;
@@ -812,12 +812,12 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   cursor: not-allowed;
 }
 .search-source-badge {
-  width: 34px; height: 34px;
-  border-radius: 10px;
+  width: 28px; height: 28px;
+  border-radius: 8px;
   background: var(--panel2);
   display: grid; place-items: center;
   color: var(--text);
-  font-size: 13px; font-weight: 700;
+  font-size: 11px; font-weight: 700;
   flex: 0 0 auto;
 }
 .search-source.active .search-source-badge {
@@ -833,7 +833,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   color: #fff;
 }
 .search-source-name {
-  font-size: 11.5px;
+  font-size: 10px;
   max-width: 76px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -978,7 +978,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* ============ 媒体查询 · 搜索页在小屏微调 ============ */
 @media (max-width: 380px) {
   .search-sources { flex: 0 0 78px; }
-  .search-source-badge { width: 30px; height: 30px; font-size: 12px; }
+  .search-source-badge { width: 26px; height: 26px; font-size: 11px; }
   .search-source-name { font-size: 11px; }
 }
 
@@ -1029,12 +1029,12 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   display: grid; place-items: center;
   filter: drop-shadow(0 1px 3px rgba(0,0,0,.6));
 }
-/* 直播播放器内「⇄ 换源」按钮（D 项）：药丸文字按钮 */
+/* 直播播放器内「⇄ 换源」按钮（D 项）：小药丸文字按钮，与圆形控制按钮协调 */
 .live-preview .lp-controls .lp-src {
-  width: auto; height: 30px; padding: 0 12px; border-radius: 15px;
-  background: rgba(255,255,255,.16); font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  width: auto; height: 26px; padding: 0 10px; border-radius: 13px;
+  background: rgba(255,255,255,.16); font-size: 10px; font-weight: 700; letter-spacing: .3px;
 }
-.live-preview:fullscreen .lp-controls .lp-src { height: 40px; padding: 0 16px; font-size: 13px; border-radius: 20px; }
+.live-preview:fullscreen .lp-controls .lp-src { height: 34px; padding: 0 13px; font-size: 12px; border-radius: 17px; }
 /* 横屏全屏时控制条按钮放大，便于点击 */
 .live-preview:fullscreen .lp-controls { bottom: 28px; right: 28px; gap: 16px; }
 .live-preview:fullscreen .lp-controls button { width: 46px; height: 46px; }
@@ -1212,3 +1212,16 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   cursor: pointer;
 }
 .cast-share:hover { border-color: var(--accent); }
+
+/* ===== v2.5.1 首页站点选择面板（纯文字列表，不内置资源） ===== */
+.station-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:flex-end;}
+.station-sheet{width:100%;background:var(--card);border-radius:18px 18px 0 0;padding:8px 16px 22px;max-height:72%;display:flex;flex-direction:column;}
+.station-head{display:flex;align-items:center;justify-content:space-between;padding:10px 2px 12px;font-size:16px;font-weight:800;}
+.station-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--panel2);color:var(--text);font-size:16px;cursor:pointer;}
+.station-list{overflow-y:auto;display:flex;flex-direction:column;gap:8px;}
+.station-item{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:12px;background:var(--panel2);cursor:pointer;border:1px solid transparent;}
+.station-item.on{border-color:var(--accent);background:var(--accent-soft);}
+.station-item .si-name{font-size:15px;font-weight:700;color:var(--text);}
+.station-item .si-sub{font-size:12px;color:var(--muted);margin-left:4px;}
+.station-item .si-check{margin-left:auto;color:var(--accent);font-weight:800;font-size:16px;}
+.station-note{margin:12px 2px 0;font-size:11px;color:var(--muted);line-height:1.6;}

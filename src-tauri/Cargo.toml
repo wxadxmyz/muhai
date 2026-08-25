@@ -1,6 +1,6 @@
 [package]
 name = "muhai"
-version = "2.5.9"
+version = "2.6.0"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
 edition = "2021"

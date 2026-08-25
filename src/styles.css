@@ -132,7 +132,7 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* ============ 海报网格（影视）============ */
 .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
-.pcard { cursor: pointer; }
+.pcard { cursor: pointer; display: flex; flex-direction: column; }
 .pcover { position: relative; aspect-ratio: 2/3; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; }
 .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
@@ -511,6 +511,15 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 
 /* ============ 详情页（影视）============ */
 .detail-view { animation: fade .15s; }
+
+/* 播放器页 / 详情页：全屏覆盖层，层级高于搜索页（z90），保证逐级返回时正确叠放 */
+.player-page { z-index: 120; }
+.player-page .video-player {
+  flex: 1 1 auto; display: flex; flex-direction: column; height: auto; min-height: 0;
+  margin: 0; border-radius: 0; box-shadow: none; background: #000;
+}
+.player-page .video-player .vp-stage { flex: 1 1 auto; min-height: 0; }
+.detail-page { z-index: 100; }
 .detail-grid { display: flex; gap: 26px; margin: 16px 0 24px; }
 .detail-poster { width: 200px; height: 290px; border-radius: 14px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 70px; color: #fff; flex-shrink: 0; }
 .detail-poster img { width: 100%; height: 100%; object-fit: cover; }
@@ -828,32 +837,32 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .search-body {
   flex: 1; min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
 }
 
 /* 左侧源栏（v2.5.1 缩窄，贴近原型窄条状） */
 /* 搜索页子站：顶部横向紧凑 Tab 条（原为左侧竖排大卡片） */
 .search-sources {
-  flex: 0 0 auto;
+  flex: 0 0 92px;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 6px;
-  overflow-x: auto;
+  overflow-y: auto;
   background: var(--panel);
-  border-right: none;
-  border-bottom: 1px solid var(--border);
-  padding: 8px 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: none;
+  padding: 8px 6px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
 .search-sources::-webkit-scrollbar { display: none; }
 .search-source {
   position: relative;
-  display: flex; flex-direction: row; align-items: center; gap: 6px;
-  padding: 7px 12px;
-  border-radius: 999px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 4px;
+  border-radius: 10px;
   margin-bottom: 0;
-  white-space: nowrap;
+  text-align: center;
   cursor: pointer;
   color: var(--muted);
   background: var(--panel2);
@@ -893,8 +902,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   color: #fff;
 }
 .search-source-name {
-  font-size: 13px;
-  max-width: 140px;
+  font-size: 11px;
+  max-width: 80px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .search-source-count {
@@ -1044,7 +1053,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ============ 直播页 v2（迷你播放预览 + 左分类 + 右频道网格） ============ */
 /* 直播页：占满 .main 区域（绝对定位），内部独立滚动，避免被带 padding 的滚动容器挤压成白屏 */
-.live { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+.live { display: flex; flex-direction: column; min-height: 100%; background: var(--bg); }
 /* 无频道态（空白提示 / 直播源列表）占满并可滚动 */
 .live > .blank-state, .live > .live-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 

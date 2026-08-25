@@ -111,8 +111,8 @@ export function Home({
   }, [sources, stations, activeStation]);
 
   // 板块切分：热播影视取混排前 6（无 genre 或评分高优先），电影/综艺按 genre 归类
-  const movies = homeItems.filter((it) => classify(it) === 'movie');
-  const variety = homeItems.filter((it) => classify(it) === 'variety');
+  const movies = homeItems.filter((it) => classify(it) === 'movie').slice(0, 6);
+  const variety = homeItems.filter((it) => classify(it) === 'variety').slice(0, 6);
   const hot = homeItems.slice(0, 6);
 
   const enabledCount = sources.filter((s) => s.enabled).length;

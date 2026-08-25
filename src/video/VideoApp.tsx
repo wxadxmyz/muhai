@@ -177,8 +177,8 @@ export default function VideoApp() {
   };
 
   const closeVideo = () => {
+    // 仅清播放器，保留 detail：从播放器返回时逐级回到详情页，而非直接跳回主页
     player.clearQueue();
-    setDetail(null);
   };
 
   const goSearch = (q: string) => {
@@ -246,6 +246,7 @@ export default function VideoApp() {
 
       <main className="main">
         {playingVideo && detail && (
+          <div className="fullpage player-page">
           <ErrorBoundary name="播放器">
           <VideoPlayer
             detail={detail}
@@ -260,6 +261,7 @@ export default function VideoApp() {
             settings={settings}
           />
           </ErrorBoundary>
+          </div>
         )}
 
         {tab === 'home' && (
@@ -312,6 +314,7 @@ export default function VideoApp() {
         )}
 
         {detail && !playingVideo && (
+          <div className="fullpage detail-page">
           <ErrorBoundary name="详情">
           <DetailView
             detail={detail}
@@ -320,6 +323,7 @@ export default function VideoApp() {
             onBack={() => setDetail(null)}
           />
           </ErrorBoundary>
+          </div>
         )}
       </main>
 

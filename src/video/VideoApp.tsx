@@ -305,6 +305,7 @@ export default function VideoApp() {
               placeholder="搜索电影 / 剧集 / 演员…"
               enableQueue={false}
               initialQuery={searchQuery}
+              onDebug={() => setShowDebug(true)}
             />
             </ErrorBoundary>
           </div>

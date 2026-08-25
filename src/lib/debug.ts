@@ -15,13 +15,21 @@ let entries: DebugEntry[] = [];
 let seq = 0;
 const listeners = new Set<() => void>();
 
+// 缓存「倒序快照」：entries 不变时返回同一个引用，避免 useSyncExternalStore
+// 因每次 getSnapshot 返回新数组而触发 invariant #185（Minified React error #185）。
+let cachedSnapshot: DebugEntry[] | null = null;
+
 function emit() {
+  // entries 已变更，旧快照失效
+  cachedSnapshot = null;
   for (const l of listeners) l();
 }
 
 export const debugLog = {
+  // 返回稳定引用：仅在 entries 实际变化时重新生成倒序数组
   get(): DebugEntry[] {
-    return entries.slice().reverse();
+    if (cachedSnapshot === null) cachedSnapshot = entries.slice().reverse();
+    return cachedSnapshot;
   },
   record(e: Omit<DebugEntry, 'id' | 'ts'>): DebugEntry {
     const full: DebugEntry = { ...e, id: ++seq, ts: Date.now() };

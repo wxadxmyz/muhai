@@ -1,4 +1,5 @@
 import { Component, ReactNode } from 'react';
+import { debugLog } from '../lib/debug';
 
 interface Props {
   children: ReactNode;
@@ -23,6 +24,14 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: unknown) {
     // 同时打到 console，方便通过 WebView console / logcat 抓取真实报错
     console.error(`[ErrorBoundary${this.props.name ? ':' + this.props.name : ''}]`, error, info);
+    // 写入调试日志：即使该区域白屏点不到调试按钮，也能从主页调试面板看到具体崩溃原因
+    debugLog.record({
+      method: 'RENDER',
+      url: `[${this.props.name || '页面'}] 渲染崩溃`,
+      ok: false,
+      durationMs: 0,
+      error: (error?.message || String(error)) + (info ? ' · ' + String((info as any)?.componentStack || info) : ''),
+    });
   }
 
   reset = () => this.setState({ error: null });

@@ -25,6 +25,7 @@ export function SearchView({
   enableQueue = true,
   initialQuery,
   onClose,
+  onDebug,
 }: {
   sources: SourceConfig[];
   onPlay: (item: MediaItem) => void;

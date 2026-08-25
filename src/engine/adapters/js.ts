@@ -237,3 +237,9 @@ const lastRaw = new Map<string, string>();
 export function getSpiderRaw(id: string): string | undefined {
   return lastRaw.get(id);
 }
+// v2.5.3：导出全部 spider 原始错误，供调试面板一键复制（绕开 ADB/鸿蒙无法直接 logcat）
+export function getAllSpiderRaw(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of lastRaw) out[k] = v;
+  return out;
+}

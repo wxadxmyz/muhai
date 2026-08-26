@@ -6,7 +6,6 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-on-back-button",
     "dialog:default",
     "fs:default",
     "notification:default",

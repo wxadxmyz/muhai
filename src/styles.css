@@ -647,8 +647,6 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .home-top.v25 .ht-source .name{overflow:hidden;text-overflow:ellipsis;}
 .home-top.v25 .ht-source .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:0 0 auto;}
 .home-top.v25 .ht-source .caret{opacity:.55;font-size:9px;flex:0 0 auto;}
-.home-top.v25 .ht-debug{flex:0 0 auto;width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);display:grid;place-items:center;cursor:pointer;transition:.15s;}
-.home-top.v25 .ht-debug:hover{border-color:var(--accent);color:var(--accent);}
 
 .import-fab{margin-top:18px;height:48px;padding:0 22px;border:none;border-radius:24px;
   background:var(--accent);color:#fff;font-size:15px;font-weight:600;

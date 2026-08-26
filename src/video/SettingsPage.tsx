@@ -7,6 +7,7 @@ import { SourceListPage } from '../components/SourceListPage';
 import { Icon } from '../components/Icon';
 import { PlayerSettingsPage } from './PlayerSettingsPage';
 import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
 import { checkForUpdate } from '../lib/tauriBridge';
 import { useSkin, SKINS } from '../lib/theme';
 
@@ -99,6 +100,47 @@ export function SettingsPage({
     getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
   }, []);
 
+  // 清除缓存：调原生 clear_webview_cache，清掉 WebView 全部浏览数据（含前端资源缓存），
+  // 下次加载强制重新拉取 APK 内最新前端。这是根治"前端没更新"的自救按钮。
+  const [cacheBusy, setCacheBusy] = useState(false);
+  const [cacheMsg, setCacheMsg] = useState('');
+  const clearCache = async () => {
+    if (cacheBusy) return;
+    setCacheBusy(true);
+    setCacheMsg('正在清除…');
+    try {
+      await invoke('clear_webview_cache');
+      try { localStorage.clear(); } catch { /* ignore */ }
+      setCacheMsg('已清除，请重启 APP 生效');
+    } catch (e: any) {
+      setCacheMsg('清除失败：' + (e?.message ?? e));
+    } finally {
+      setCacheBusy(false);
+    }
+  };
+
+  // 重置 APP：清空全部本地存储（源/历史/设置/皮肤）+ 原生清缓存，回到初始状态。
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+  const resetApp = async () => {
+    if (resetBusy) return;
+    if (!window.confirm('确定重置 APP？将清空所有源、历史与设置，且不可恢复。')) return;
+    setResetBusy(true);
+    setResetMsg('正在重置…');
+    try {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch { /* ignore */ }
+      await invoke('clear_webview_cache');
+      setResetMsg('已重置，请重启 APP');
+    } catch (e: any) {
+      setResetMsg('重置失败：' + (e?.message ?? e));
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
   // 系统返回逐级：先关闭网盘编辑等内部子层，再交还外层（如关闭设置子页），避免直接回主页
   useEffect(() => {
     const prev = (window as any).__onAndroidBack;
@@ -190,6 +232,25 @@ export function SettingsPage({
             onClick={() => setSub('update')}
           />
           <NavRow icon="file-text" label="关于" onClick={() => setSub('about')} />
+        </div>
+
+        {/* 维护 */}
+        <div className="settings-group-title">维护</div>
+        <div className="settings-card">
+          <div className="settings-row danger-row" onClick={clearCache}>
+            <span className="ico"><Icon name="refresh" size={20} /></span>
+            <span className="label">清除缓存</span>
+            <span className="value muted">{cacheBusy ? '清除中…' : '清 WebView 缓存'}</span>
+            <span className="chevron"><Icon name="arrow-right" size={18} /></span>
+          </div>
+          <div className="settings-row danger-row" onClick={resetApp}>
+            <span className="ico"><Icon name="trash" size={20} /></span>
+            <span className="label">重置 APP</span>
+            <span className="value muted">{resetBusy ? '重置中…' : '清空所有数据'}</span>
+            <span className="chevron"><Icon name="arrow-right" size={18} /></span>
+          </div>
+          {cacheMsg && <p className="settings-note">{cacheMsg}</p>}
+          {resetMsg && <p className="settings-note danger">{resetMsg}</p>}
         </div>
       </div>
 

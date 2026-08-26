@@ -220,6 +220,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .settings-row .chevron { color: var(--muted); opacity: .55; flex-shrink: 0; }
 .settings-row.tap { cursor: pointer; transition: background .12s; }
 .settings-row.tap:active { background: var(--panel2); }
+.settings-row.danger-row { cursor: pointer; transition: background .12s; }
+.settings-row.danger-row:active { background: var(--panel2); }
+.settings-row.danger-row .ico, .settings-row.danger-row .label { color: var(--danger); }
 .settings-row input[type='text'], .settings-row input[type='number'], .settings-row select { margin-left: auto; max-width: 55%; }
 /* 开关 */
 .switch { position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--panel3); border: 1px solid var(--border); cursor: pointer; transition: .2s; flex-shrink: 0; }

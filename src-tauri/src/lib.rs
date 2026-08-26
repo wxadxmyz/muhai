@@ -38,13 +38,32 @@ pub fn run() {
             });
     }
 
+#[tauri::command]
+async fn clear_webview_cache(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        // 清 WebView 全部浏览数据（HTTP 缓存 / 本地存储 / 应用缓存等），
+        // 使下次加载强制重新拉取 APK 内打包的最新前端资源。
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            let _ = w.clear_all_browsing_data();
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let _ = w.eval("try{localStorage.clear();sessionStorage.clear();}catch(e){}");
+        }
+    }
+    Ok(())
+}
+
     builder
         .invoke_handler(tauri::generate_handler![
             fetchsource,
             fetchimage,
             spiderrun,
             dlnascan,
-            castvideo
+            castvideo,
+            clear_webview_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

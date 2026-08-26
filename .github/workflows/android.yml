@@ -74,6 +74,15 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # 强制重建前端：避免 CI runner 残留旧 dist 被打进 APK（导致"新版本号旧前端"）。
+      # 不依赖 tauri 自动触发的 beforeBuildCommand，这里显式 rm + build。
+      - name: Force rebuild frontend dist
+        run: |
+          rm -rf dist
+          pnpm build
+          echo "=== dist contents ==="
+          ls -la dist dist/assets
+
       - name: Initialize Tauri Android project
         id: init
         continue-on-error: true

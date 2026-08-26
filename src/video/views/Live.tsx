@@ -111,6 +111,12 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [pickSheet, setPickSheet] = useState(false); // 横屏选台浮层
   const [showCast, setShowCast] = useState(false); // 真实 DLNA 投屏浮层
   const videoRef = useRef<HTMLVideoElement>(null);
+  // 真实分辨率药丸（设计文件 [1920×1080]）+ 亮度/音量手势状态
+  const [resolution, setResolution] = useState('1920×1080');
+  const [brightness, setBrightness] = useState(1);
+  const brightnessRef = useRef(1);
+  const [hud, setHud] = useState<{ type: 'bright' | 'vol'; value: number } | null>(null);
+  const hudTimer = useRef<number | undefined>(undefined);
 
   // 当前频道对象（聚合后的）
   const curChannel = useMemo(() => channels?.find((c) => c.name === activeName) ?? null, [channels, activeName]);
@@ -144,6 +150,21 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     setShowCast(true);
   };
 
+  // 画中画（对齐设计文件横屏底部“源/画中画/播放/列表”）
+  const handlePip = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    try {
+      if (document.pictureInPictureElement) document.exitPictureInPicture();
+      else el.requestPictureInPicture().catch(() => {});
+    } catch { /* 不支持时静默 */ }
+  };
+  const showHud = (type: 'bright' | 'vol', value: number) => {
+    setHud({ type, value });
+    if (hudTimer.current) window.clearTimeout(hudTimer.current);
+    hudTimer.current = window.setTimeout(() => setHud(null), 800);
+  };
+
   // 横屏换台：可见频道里上/下一个
   const changeChannel = (dir: 1 | -1) => {
     if (!channels) return;
@@ -153,12 +174,13 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     if (next) pickChannel(next.name);
   };
 
-  // 直播横滑切台（方案 A：左滑上一台 / 右滑下一台）。竖屏小窗与横屏舞台通用。
+  // 手势：竖滑 左半=亮度 / 右半=音量；横滑=切台（左滑上一台 / 右滑下一台）
   const onStageTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
-    (e.currentTarget as any).__sx = t.clientX;
-    (e.currentTarget as any).__sy = t.clientY;
-    (e.currentTarget as any).__moved = false;
+    const el = e.currentTarget as any;
+    el.__sx = t.clientX; el.__sy = t.clientY; el.__moved = false;
+    el.__half = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
+    el.__accum = 0; el.__bStart = brightnessRef.current; el.__vStart = videoRef.current?.volume ?? 1;
   };
   const onStageTouchMove = (e: React.TouchEvent) => {
     const el = e.currentTarget as any;
@@ -166,7 +188,24 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     const t = e.touches[0];
     const dx = t.clientX - el.__sx;
     const dy = t.clientY - el.__sy;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) el.__moved = true;
+    if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;
+    if (Math.abs(dy) > Math.abs(dx)) {
+      const start = el.__half === 'left' ? el.__bStart : el.__vStart;
+      const val = Math.max(0, Math.min(1, start + (-dy) / 320));
+      if (el.__half === 'left') {
+        const b = Math.round(val * 100) / 100;
+        setBrightness(b); brightnessRef.current = b;
+        try { (window as any).MuHaiAndroid?.setBrightness?.(b); } catch { /* ignore */ }
+        if (videoRef.current) videoRef.current.style.filter = `brightness(${b})`;
+        showHud('bright', Math.round(val * 100));
+      } else {
+        if (videoRef.current) { videoRef.current.muted = false; videoRef.current.volume = val; }
+        showHud('vol', Math.round(val * 100));
+      }
+      el.__accum = dy;
+    } else {
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) el.__moved = true;
+    }
   };
   const onStageTouchEnd = (e: React.TouchEvent) => {
     const el = e.currentTarget as any;
@@ -332,9 +371,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               </button>
               <div className="lp-title">
                 <span className="lp-ch-name">{activeName || '未播放'}</span>
-                {curChannel && curChannel.sources.length > 1 && (
-                  <span className="lp-res">源 {activeSrc}/{curChannel.sources.length}</span>
-                )}
+                <span className="lp-res">[{resolution}]</span>
               </div>
               <button className="lp-tv" onClick={handleCast} title="投屏">
                 <Icon name="tv" size={18} />
@@ -346,15 +383,19 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               onTouchEnd={onStageTouchEnd}
             >
               {playing ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  className="live-video"
-                  onClick={togglePlay}
-                  onPlay={() => setPaused(false)}
-                  onPause={() => setPaused(true)}
-                />
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="live-video"
+                onClick={togglePlay}
+                onPlay={() => setPaused(false)}
+                onPause={() => setPaused(true)}
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget as HTMLVideoElement;
+                  if (v.videoWidth && v.videoHeight) setResolution(`${v.videoWidth}×${v.videoHeight}`);
+                }}
+              />
               ) : (
                 <div className="lp-empty">
                   <Icon name="play" size={28} />
@@ -369,6 +410,13 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <button className="lp-rotate" onClick={toggleFullscreen} title="横屏">
                 <Icon name="rotate" size={18} />
               </button>
+              {hud && (
+                <div className="vp-hud">
+                  <span className="vp-hud-ico"><Icon name={hud.type === 'bright' ? 'sun' : 'volume'} size={20} /></span>
+                  <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
+                  <span className="vp-hud-val">{hud.value}%</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -435,7 +483,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
             </button>
             <div className="land-title">
               <span>{activeName}</span>
-              {curChannel && curChannel.sources.length > 1 && <span className="lp-res">源 {activeSrc}/{curChannel.sources.length}</span>}
+              <span className="lp-res">[{resolution}]</span>
             </div>
             <button className="land-tv" onClick={handleCast} title="投屏">
               <Icon name="tv" size={18} />
@@ -448,10 +496,18 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
             </button>
             <button onClick={() => changeChannel(1)} title="下一个"><Icon name="skip-fwd" size={26} /></button>
           </div>
+          {hud && (
+            <div className="vp-hud">
+              <span className="vp-hud-ico"><Icon name={hud.type === 'bright' ? 'sun' : 'volume'} size={20} /></span>
+              <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
+              <span className="vp-hud-val">{hud.value}%</span>
+            </div>
+          )}
           <div className="land-bottom">
             <button className={'land-src' + (srcSheet ? ' on' : '')} onClick={() => setSrcSheet((s) => !s)} title="换源">
               源{activeSrc}
             </button>
+            <button className="land-pip" onClick={handlePip} title="画中画"><Icon name="pip" size={18} /></button>
             <button className="land-pbtn" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
               <Icon name={paused ? 'play' : 'pause'} size={18} />
             </button>

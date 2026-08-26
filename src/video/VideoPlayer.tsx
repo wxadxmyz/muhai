@@ -20,6 +20,8 @@ const DECODE_LABEL: Record<string, string> = { system: '系统', 'ijk-hard': '�
 const QUALITIES = ['480P', '720P', '1080P', '4K'];
 const SCALE_OPTS = ['默认', '16:9', '4:3', '填充', '原始', '裁剪'];
 const AUDIO_OPTS = ['关闭', '影院', '重低音', '环绕', 'HiFi', '人声'];
+// 线路命名：对齐设计文件“默认线路 / 备用线路 A / 备用线路 B / 海外线路”
+const LINE_NAMES = ['默认线路', '备用线路 A', '备用线路 B', '海外线路'];
 
 const speedLabel = (s: number) => (s === 1 ? '1.0x' : s + 'x');
 
@@ -108,6 +110,12 @@ export function VideoPlayer({
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
   const seekBubbleTimer = useRef<number | undefined>(undefined);
+  // 真实分辨率药丸（设计文件 [1920x804]）+ 亮度/音量手势状态
+  const [resText, setResText] = useState('');
+  const [brightness, setBrightness] = useState(1);
+  const brightnessRef = useRef(1);
+  const [hud, setHud] = useState<{ type: 'bright' | 'vol'; value: number } | null>(null);
+  const hudTimer = useRef<number | undefined>(undefined);
 
   // 播放器专属偏好（持久化）
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -368,9 +376,14 @@ export function VideoPlayer({
     });
   };
 
-  // 播放窗口左右滑动快进/快退（点播横滑）：累计位移映射到 ±10s 步进，松手 seek 并显示时间气泡
-  const SWIPE_STEP = 10; // 每次方向累计 80px 跳 10s
-  const SWIPE_EDGE = 40; // 左边缘 40px 内右滑 = 返回（与 seek 互斥）
+  // 手势：竖滑 左半=亮度 / 右半=音量；横滑=进度快进/快退（点播）。方向区分互不冲突。
+  const showHud = (type: 'bright' | 'vol', value: number) => {
+    setHud({ type, value });
+    if (hudTimer.current) window.clearTimeout(hudTimer.current);
+    hudTimer.current = window.setTimeout(() => setHud(null), 800);
+  };
+  const SWIPE_STEP = 10; // 每跨 80px 跳 10s
+  const SWIPE_EDGE = 40; // 左边缘 40px 内右滑 = 返回
   const onStageTouchStart = (e: React.TouchEvent) => {
     if (locked) return;
     const t = e.touches[0];
@@ -381,6 +394,9 @@ export function VideoPlayer({
     el.__accum = 0;
     el.__dir = 0;
     el.__backing = false;
+    el.__half = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
+    el.__bStart = brightnessRef.current;
+    el.__vStart = state.volume;
   };
   const onStageTouchMove = (e: React.TouchEvent) => {
     const el = stageRef.current as any;
@@ -388,34 +404,46 @@ export function VideoPlayer({
     const t = e.touches[0];
     const dx = t.clientX - el.__sx;
     const dy = t.clientY - el.__sy;
-    // 左边缘右滑 = 返回（仅在起始点贴近左边缘时判定，避免与 seek 冲突）
-    if (el.__sx <= SWIPE_EDGE && dx > 60 && Math.abs(dy) < 80) {
-      el.__backing = true;
-      return;
-    }
+    if (el.__sx <= SWIPE_EDGE && dx > 60 && Math.abs(dy) < 80) { el.__backing = true; return; }
     if (el.__backing) return;
-    if (Math.abs(dy) > 60 && Math.abs(dx) < Math.abs(dy)) return; // 竖滑让位（如系统手势）
-    const dir = dx < 0 ? 1 : dx > 0 ? -1 : el.__dir;
-    // 每跨越 STEP 像素触发一次 ±SWIPE_STEP 秒
-    const stepPx = 80;
-    const crossed = Math.floor(Math.abs(dx) / stepPx) - Math.floor(Math.abs(el.__accum) / stepPx);
-    if (crossed > 0 && dir !== 0) {
-      const d = state.duration || 0;
-      const target = Math.max(0, Math.min(d, state.progress + dir * SWIPE_STEP * crossed));
-      if (videoRef.current) videoRef.current.currentTime = target;
-      player.setProgress(target);
-      el.__accum = dx;
-      el.__dir = dir;
-      setSeekBubble({ dir: dir as 1 | -1, delta: Math.abs(dx), target });
-      if (seekBubbleTimer.current) window.clearTimeout(seekBubbleTimer.current);
-      seekBubbleTimer.current = window.setTimeout(() => setSeekBubble(null), 600);
+    if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return; // 死区
+    if (Math.abs(dy) > Math.abs(dx)) {
+      // 竖向：左半亮度 / 右半音量
+      const start = el.__half === 'left' ? el.__bStart : el.__vStart;
+      const val = Math.max(0, Math.min(1, start + (-dy) / 320));
+      if (el.__half === 'left') {
+        const b = Math.round(val * 100) / 100;
+        setBrightness(b);
+        brightnessRef.current = b;
+        try { (window as any).MuHaiAndroid?.setBrightness?.(b); } catch { /* ignore */ }
+        showHud('bright', Math.round(val * 100));
+      } else {
+        if (videoRef.current) { videoRef.current.muted = false; videoRef.current.volume = val; }
+        showHud('vol', Math.round(val * 100));
+      }
+      el.__accum = dy;
+    } else {
+      // 横向：点播进度快进/快退
+      const dir = dx > 0 ? 1 : dx < 0 ? -1 : el.__dir;
+      const stepPx = 80;
+      const crossed = Math.floor(Math.abs(dx) / stepPx) - Math.floor(Math.abs(el.__accum) / stepPx);
+      if (crossed > 0 && dir !== 0) {
+        const d = state.duration || 0;
+        const target = Math.max(0, Math.min(d, state.progress + dir * SWIPE_STEP * crossed));
+        if (videoRef.current) videoRef.current.currentTime = target;
+        player.setProgress(target);
+        el.__accum = dx;
+        el.__dir = dir;
+        setSeekBubble({ dir: dir as 1 | -1, delta: Math.abs(dx), target });
+        if (seekBubbleTimer.current) window.clearTimeout(seekBubbleTimer.current);
+        seekBubbleTimer.current = window.setTimeout(() => setSeekBubble(null), 600);
+      }
     }
   };
   const onStageTouchEnd = () => {
     const el = stageRef.current as any;
     if (el) {
       if (el.__backing) {
-        // 左边缘右滑返回：先退浮层/横屏，最后关播放器回上一级
         if (settingsOpen) setSettingsOpen(false);
         else if (showCast) setShowCast(false);
         else if (showSubStyle) setShowSubStyle(false);
@@ -423,7 +451,7 @@ export function VideoPlayer({
         else if (landscape) setLandscape(false);
         else onClose();
       }
-      el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false;
+      el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false; el.__half = null;
     }
   };
   // 播放开始即自动隐藏控件；锁屏时强制常显
@@ -447,12 +475,17 @@ export function VideoPlayer({
   const activeCue = (settings.enableSubtitle && danmaku === false) ? getActiveCue(cues, state.progress) : null;
   const videoStyle: React.CSSProperties = {
     objectFit: scaleMode === '填充' ? 'fill' : scaleMode === '裁剪' ? 'cover' : 'contain',
+    filter: brightness < 1 ? `brightness(${brightness})` : undefined,
   };
   const tags: string[] = Array.isArray(detail.raw?.tags)
     ? (detail.raw!.tags as string[]).slice(0, 5)
     : Array.isArray(detail.raw?.genres)
     ? (detail.raw!.genres as string[]).slice(0, 5)
     : [];
+  const vr = detail.raw as any;
+  const filmYear = vr?.vod_year || vr?.year;
+  const director = vr?.vod_director || vr?.director;
+  const actor = vr?.vod_actor || vr?.actor;
 
   const epName = detail.episodes?.[episodeIndex]?.name ?? `第${episodeIndex + 1}集`;
 
@@ -490,7 +523,11 @@ export function VideoPlayer({
               trySkipIntro();
               trySkipOutro();
             }}
-            onLoadedMetadata={(e) => player.setDuration((e.target as HTMLVideoElement).duration)}
+            onLoadedMetadata={(e) => {
+              const v = e.target as HTMLVideoElement;
+              player.setDuration(v.duration);
+              if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
+            }}
             onError={() => {
               if (videoRef.current) detachHls(videoRef.current);
               setResolving(false);
@@ -542,6 +579,15 @@ export function VideoPlayer({
             </div>
           )}
 
+          {/* 亮度/音量手势 HUD */}
+          {hud && (
+            <div className="vp-hud">
+              <span className="vp-hud-ico"><Icon name={hud.type === 'bright' ? 'sun' : 'volume'} size={20} /></span>
+              <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
+              <span className="vp-hud-val">{hud.value}%</span>
+            </div>
+          )}
+
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
           {!landscape && (
             <div className={'overlay' + (controlsVisible ? '' : ' hide')}>
@@ -549,7 +595,7 @@ export function VideoPlayer({
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
                   <span className="name">{detail.title} · {epName}</span>
-                  <span className="res">[{quality}]</span>
+                  <span className="res">[{resText || '1920x804'}]</span>
                 </div>
                 <div className="acts">
                   <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={16} /></button>
@@ -574,7 +620,7 @@ export function VideoPlayer({
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
                   <span className="name">{detail.title} · {epName}</span>
-                  <span className="res">[{quality}]</span>
+                  <span className="res">[{resText || '1920x804'}]</span>
                 </div>
                 <div className="status">
                   <Icon name="clock" size={15} />
@@ -638,7 +684,10 @@ export function VideoPlayer({
               <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
               <div className="info-meta">
                 {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
-                {detail.episodes && <><span className="label">集数</span> {detail.episodes.length} 集</>}
+                {filmYear && <><span className="label">年份</span> {filmYear}　</>}
+                <br />
+                {director && <><span className="label">导演</span> {director}　</>}
+                {actor && <><span className="label">主演</span> {actor}</>}
               </div>
               <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => setFaved((v) => !v)}>
                 <Icon name={faved ? 'heart-filled' : 'heart'} size={14} />{faved ? '已收藏' : '加入收藏'}
@@ -663,7 +712,7 @@ export function VideoPlayer({
               <div className="sec-head"><span className="sec-title">线路</span><span className="sec-more" onClick={() => {}}>自动选速 &gt;</span></div>
               <div className="line-row">
                 {Array.from({ length: lines }).map((_, i) => (
-                  <button key={i} className={i === line ? 'active' : ''} onClick={() => onLineChange(i)}>线路{i + 1}</button>
+                  <button key={i} className={i === line ? 'active' : ''} onClick={() => onLineChange(i)}>{LINE_NAMES[i] ?? `线路${i + 1}`}</button>
                 ))}
               </div>
             </div>
@@ -675,9 +724,12 @@ export function VideoPlayer({
               <div className="ep-grid">
                 {(() => {
                   const order = asc ? detail.episodes!.map((_, i) => i) : detail.episodes!.map((_, i) => detail.episodes!.length - 1 - i);
-                  return order.map((i) => (
-                    <button key={i} className={i === episodeIndex ? 'active' : ''} onClick={() => onSelectEpisode(i)}>{detail.episodes![i].name}</button>
-                  ));
+                  return order.map((i) => {
+                    const ep = detail.episodes![i];
+                    return (
+                      <button key={i} className={(i === episodeIndex ? 'active' : '') + (ep.locked ? ' locked' : '')} onClick={() => onSelectEpisode(i)}>{ep.locked ? '锁' : ep.name}</button>
+                    );
+                  });
                 })()}
               </div>
             </div>

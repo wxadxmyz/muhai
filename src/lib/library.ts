@@ -112,6 +112,10 @@ export function useLibrary(appKey: string) {
 
   const clearHistory = useCallback(() => setLib((l) => ({ ...l, history: [] })), []);
 
+  const removeFromHistory = useCallback((item: MediaItem) => {
+    setLib((l) => ({ ...l, history: l.history.filter((x) => keyOf(x) !== keyOf(item)) }));
+  }, []);
+
   const addLocalMusic = useCallback((items: MediaItem[]) => {
     setLib((l) => ({ ...l, localMusic: [...items, ...l.localMusic] }));
   }, []);
@@ -130,6 +134,7 @@ export function useLibrary(appKey: string) {
     removeFromPlaylist,
     setWatchProgress,
     clearHistory,
+    removeFromHistory,
     addLocalMusic,
   };
 }

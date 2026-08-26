@@ -15,11 +15,9 @@ const TYPE_LABEL: Record<string, string> = {
 export function SourceManager({
   store,
   onOpenSettings,
-  onOpenDebug,
 }: {
   store: ReturnType<typeof useSources>;
   onOpenSettings?: () => void;
-  onOpenDebug?: () => void;
 }) {
   const { sources, add, remove, toggle, move, importSources, exportSources, test } = store;
   const [showModal, setShowModal] = useState(false);
@@ -75,7 +73,6 @@ export function SourceManager({
           <button onClick={doImportShare}>导入分享码</button>
           <button onClick={doExportShare}>导出分享码</button>
           <button onClick={doExportJson}>导出JSON</button>
-          {onOpenDebug && <button onClick={onOpenDebug}><Icon name="bug" size={16} /> 调试</button>}
           {onOpenSettings && <button onClick={onOpenSettings}><Icon name="settings" size={16} /> 设置</button>}
         </div>
       </div>

@@ -230,9 +230,6 @@ export default function VideoApp() {
           </button>
         </nav>
         <div className="tb-right">
-          <button className="icon" onClick={() => setShowDebug(true)} title="调试">
-            <Icon name="bug" />
-          </button>
           <button
             className="icon settings-btn"
             onClick={() => setTab('settings')}
@@ -272,14 +269,13 @@ export default function VideoApp() {
             onOpenDetail={openDetail}
             onSearch={goSearch}
             onOpenSources={openSources}
-            onDebug={() => setShowDebug(true)}
           />
           </ErrorBoundary>
         )}
 
         {tab === 'live' && (
           <ErrorBoundary name="直播">
-          <Live sources={store.sources} onOpenSources={openSources} onDebug={() => setShowDebug(true)} />
+          <Live sources={store.sources} onOpenSources={openSources} />
           </ErrorBoundary>
         )}
 
@@ -307,7 +303,6 @@ export default function VideoApp() {
               placeholder="搜索电影 / 剧集 / 演员…"
               enableQueue={false}
               initialQuery={searchQuery}
-              onDebug={() => setShowDebug(true)}
             />
             </ErrorBoundary>
           </div>

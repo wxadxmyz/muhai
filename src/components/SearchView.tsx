@@ -26,7 +26,6 @@ export function SearchView({
   enableQueue = true,
   initialQuery,
   onClose,
-  onDebug,
 }: {
   sources: SourceConfig[];
   onPlay: (item: MediaItem) => void;
@@ -37,7 +36,6 @@ export function SearchView({
   enableQueue?: boolean;
   initialQuery?: string;
   onClose?: () => void;
-  onDebug?: () => void;
 }) {
   const [kw, setKw] = useState(initialQuery ?? '');
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -162,11 +160,6 @@ export function SearchView({
           {kw ? <span className="sclear" onClick={() => setKw('')}>×</span> : null}
         </div>
         <button className="primary" onClick={() => run()}>搜索</button>
-        {onDebug && (
-          <button className="icon" onClick={onDebug} title="调试面板" aria-label="调试面板">
-            <Icon name="bug" size={20} />
-          </button>
-        )}
       </div>
 
       {!showHints && (

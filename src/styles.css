@@ -143,9 +143,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .pbar-in { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
 .ptitle { font-size: 13px; font-weight: 600; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .psub { font-size: 12px; color: var(--muted); }
-.pc-actions { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; opacity: 0; transition: .15s; }
-.pcard:hover .pc-actions { opacity: 1; }
+.pc-actions { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; opacity: 1; transition: .15s; }
 .pc-actions .mini { background: rgba(0,0,0,.55); border: none; color: #fff; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+.pc-actions .mini.danger { background: var(--danger, #e5484d); color: #fff; }
 
 /* ============ 列表（音乐库/历史）============ */
 .track-list { display: flex; flex-direction: column; gap: 2px; }
@@ -942,7 +942,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .search-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 .search-card {
@@ -1128,6 +1128,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .land-srcbar-row .src.on { background: var(--accent); color: #04201a; border-color: var(--accent); font-weight: 700; }
 .land-srcbar-close { width: 30px; height: 30px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
+/* 直播页轻提示（投屏占位等） */
+.live .tip { position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px; z-index: 10001; opacity: 0; transition: .2s; pointer-events: none; }
+.live .tip.show { opacity: 1; }
+
 .live-grid > .empty { grid-column: 1 / -1; }
 
 /* ============ 主页底部「使用须知」轻提示（添加源后弹一次，2s 自动消失） ============ */
@@ -1229,3 +1233,132 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .station-item .si-sub{font-size:12px;color:var(--muted);margin-left:4px;}
 .station-item .si-check{margin-left:auto;color:var(--accent);font-weight:800;font-size:16px;}
 .station-note{margin:12px 2px 0;font-size:11px;color:var(--muted);line-height:1.6;}
+
+/* ============ 点播播放器 · 按 幕海视频播放器UI.html 设计文件 ============ */
+.player-root { background: var(--bg); min-height: 100%; }
+.player-card { margin: 0 16px 18px; background: var(--panel); border-radius: 20px; overflow: hidden; position: relative; aspect-ratio: 16 / 10.5; }
+.player-card.land { margin: 0; border-radius: 0; position: fixed; inset: 0; z-index: 100; aspect-ratio: auto; background: #000; display: flex; flex-direction: column; }
+.player-card .screen { position: absolute; inset: 0; background: linear-gradient(180deg, #1a2330 0%, #0f141d 100%); display: flex; flex-direction: column; }
+.player-card.land .screen { position: relative; flex: 1; }
+.player-card .poster { position: absolute; inset: 0; opacity: .35; background: radial-gradient(circle at 50% 40%, #1c3344, #0a1119); }
+.player-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; display: block; z-index: 1; }
+
+/* 控件层：点击显隐 */
+.overlay { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; transition: opacity .2s; }
+.overlay.hide { opacity: 0; pointer-events: none; }
+.player-card .top { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.player-card .top .back { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.08); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.player-card .top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.player-card .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.player-card .top .ttl .res { font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
+.player-card .top .acts { display: flex; gap: 10px; }
+.player-card .top .acts .icon { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.08); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; }
+.player-card .top .acts .icon.on { color: var(--accent); }
+.player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
+.player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
+.big-btn { width: 74px; height: 74px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid; place-items: center; backdrop-filter: blur(4px); cursor: pointer; }
+.player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
+.player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
+.player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
+.player-card .bottom .bar::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: var(--accent); border-radius: 3px; }
+.player-card .bottom .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; opacity: 0; cursor: pointer; }
+.player-card .bottom .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+
+/* 竖屏信息区 */
+.vp-body { padding-bottom: 30px; }
+.info-card { margin: 0 16px 18px; background: var(--panel); border-radius: 20px; padding: 16px; display: flex; gap: 14px; }
+.info-poster { width: 110px; height: 150px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
+.info-poster img { width: 100%; height: 100%; object-fit: cover; }
+.info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.info-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.info-score { font-size: 28px; font-weight: 800; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.stars { font-size: 14px; color: var(--accent); letter-spacing: 2px; }
+.stars .empty { color: var(--dim); }
+.info-meta { font-size: 13px; color: var(--muted); line-height: 1.7; }
+.info-meta .label { color: color-mix(in srgb, var(--muted) 70%, #fff); }
+.fav-btn { align-self: flex-start; margin-top: 10px; background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 7px 14px; border-radius: 999px; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.fav-btn.on { background: var(--accent); color: #04201a; border-color: var(--accent); }
+
+.tags { margin: 0 16px 18px; display: flex; gap: 8px; flex-wrap: wrap; }
+.tags span { background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 6px 13px; border-radius: 999px; font-size: 12px; }
+.tags span.hot { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--accent); }
+
+.actions { margin: 0 16px 22px; display: grid; grid-template-columns: repeat(4, 1fr); }
+.actions button { display: flex; flex-direction: column; align-items: center; gap: 8px; background: transparent; border: none; color: var(--muted); font-size: 12px; cursor: pointer; }
+.actions .circle { width: 54px; height: 54px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--border); display: grid; place-items: center; color: #fff; }
+.actions .circle svg { width: 24px; height: 24px; }
+.actions button.on .circle { background: color-mix(in srgb, var(--accent) 15%, var(--panel2)); border-color: var(--accent); color: var(--accent); }
+.actions button.on { color: var(--accent); }
+
+.section { margin: 0 16px 20px; }
+.sec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.sec-title { font-size: 16px; font-weight: 700; }
+.sec-more { color: var(--accent); font-size: 13px; display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.line-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.line-row::-webkit-scrollbar { display: none; }
+.line-row button { white-space: nowrap; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 8px 16px; border-radius: 999px; font-size: 13px; cursor: pointer; }
+.line-row button.active { background: var(--accent); color: #04201a; border-color: var(--accent); font-weight: 600; }
+.ep-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ep-grid button { aspect-ratio: 1.5; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: #fff; font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
+.ep-grid button.locked { color: var(--dim); }
+.intro { margin: 0 16px 30px; }
+.intro p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.8; }
+
+/* 横屏 */
+.landscape .stage { flex: 1; position: relative; background: #0b0e14; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.landscape .stage .bg { position: absolute; inset: 0; opacity: .4; }
+.landscape .top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 14px 16px; background: linear-gradient(rgba(0,0,0,.5), transparent); color: #fff; }
+.landscape .top .back { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
+.landscape .top .ttl { flex: 1; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.landscape .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.landscape .top .ttl .res { font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
+.landscape .top .status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #fff; }
+
+.landscape .side { position: absolute; top: 50%; transform: translateY(-50%); z-index: 3; display: flex; flex-direction: column; gap: 18px; }
+.landscape .side.left { left: 14px; }
+.landscape .side.right { right: 14px; }
+.landscape .side .icon { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.landscape .side .icon.on { color: var(--accent); border-color: var(--accent); }
+.landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 2; display: flex; align-items: center; gap: 20px; }
+.landscape .center .ctrl { width: 58px; height: 58px; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.landscape .center .ctrl.main { width: 76px; height: 76px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); color: #fff; }
+.landscape .bottom .prow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.landscape .bottom .prow .pi { color: #fff; cursor: pointer; display: grid; place-items: center; }
+.landscape .bottom .prow .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
+.landscape .bottom .prow .bar::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: var(--accent); border-radius: 3px; }
+.landscape .bottom .prow .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; opacity: 0; cursor: pointer; }
+.landscape .bottom .prow .t { font-size: 12px; min-width: 44px; }
+.landscape .bottom .prow .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.landscape .tools { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
+.landscape .tools::-webkit-scrollbar { display: none; }
+.landscape .tools .tool { white-space: nowrap; background: rgba(255,255,255,.1); border: none; color: #fff; padding: 8px 13px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.landscape .tools .tool svg { width: 15px; height: 15px; }
+.landscape .tools .tool.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+
+/* 设置抽屉（设计文件 .drawer） */
+.drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
+.drawer { width: 100%; max-width: 430px; background: var(--panel); border-radius: 22px 22px 0 0; padding: 10px 16px calc(24px + env(safe-area-inset-bottom)); max-height: 82vh; overflow: auto; }
+.drawer-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 4px auto 12px; }
+.drawer-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 14px; }
+.dg { margin-bottom: 16px; }
+.dg-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.dg-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.dg-row button { background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 8px 14px; border-radius: 10px; font-size: 13px; cursor: pointer; }
+.dg-row button.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: var(--accent); font-weight: 600; }
+.dg-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.dg-quick button { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--border); color: #fff; border-radius: 12px; padding: 12px 0; font-size: 12px; cursor: pointer; }
+.dg-quick button svg { width: 22px; height: 22px; }
+.dg-quick button.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+/* 复用既有浮层样式（加载/错误/字幕/投屏/面板） */
+.player-card .vp-loading, .player-card .vp-error { position: absolute; z-index: 7; color: #fff; }
+.player-card .vp-loading { inset: 0; background: rgba(0,0,0,.55); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+.player-card .vp-error { left: 50%; bottom: 56px; transform: translateX(-50%); max-width: 78%; padding: 9px 14px; border-radius: 10px; background: rgba(0,0,0,.72); text-align: center; backdrop-filter: blur(2px); }
+.player-card .vp-error p { margin: 0; font-size: 12px; line-height: 1.5; }
+.player-card .vp-error .mini { margin-top: 2px; padding: 5px 14px; border-radius: 14px; background: var(--accent); color: #04201a; border: none; font-size: 12px; cursor: pointer; }
+.player-card .vp-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: vpspin .8s linear infinite; }
+.player-card .vp-subtitle { position: absolute; left: 0; right: 0; bottom: 88px; z-index: 5; text-align: center; color: #fff; font-size: 17px; text-shadow: 0 2px 4px rgba(0,0,0,.9); padding: 0 16px; pointer-events: none; }
+.player-card .vp-cast-flag { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
+@keyframes vpspin { to { transform: rotate(360deg); } }

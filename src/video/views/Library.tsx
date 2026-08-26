@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
@@ -14,11 +14,27 @@ export function VideoLibrary({
   onOpen: (it: MediaItem) => void;
 }) {
   const [tab, setTab] = useState<'history' | 'fav'>('history');
+  const [delKey, setDelKey] = useState<string | null>(null); // 长按待删除项
+  const pressTimer = useRef<number | undefined>(undefined);
 
   const historyItems = library.lib.history.filter((i) => i.mediaType === 'video');
   const favItems = library.lib.favorites.filter((i) => i.mediaType === 'video');
 
   const list = tab === 'history' ? historyItems : favItems;
+
+  // 长按删除（触摸 + 鼠标都支持）
+  const startPress = (key: string) => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = window.setTimeout(() => setDelKey(key), 550);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+  };
+  const confirmDelete = (it: MediaItem) => {
+    library.removeFromHistory(it);
+    if (tab === 'fav') library.toggleFavorite(it);
+    setDelKey(null);
+  };
 
   return (
     <div className="view library">
@@ -42,12 +58,19 @@ export function VideoLibrary({
             const prog = library.lib.watchProgress[key] ?? 0;
             const pct = it.duration ? Math.round((prog / it.duration) * 100) : 0;
             const fav = library.isFavorite(it);
+            const asking = delKey === key;
             return (
               <div className="pcard" key={key} onDoubleClick={() => onOpen(it)}>
                 <div
                   className="pcover"
                   style={{ background: it.cover ? undefined : gradientFor(it.title) }}
                   onClick={() => onOpen(it)}
+                  onTouchStart={() => startPress(key)}
+                  onTouchEnd={cancelPress}
+                  onTouchMove={cancelPress}
+                  onMouseDown={() => startPress(key)}
+                  onMouseUp={cancelPress}
+                  onMouseLeave={cancelPress}
                 >
                   {it.cover ? <ProxiedImg src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
                   {it.episodes?.length ? <span className="eps">{it.episodes.length} 集</span> : null}
@@ -56,18 +79,29 @@ export function VideoLibrary({
                       <span className="pbar-in" style={{ width: pct + '%' }} />
                     </span>
                   )}
-                  <span className="pc-actions">
-                    <button className="mini" onClick={(e) => { e.stopPropagation(); onOpen(it); }} title="播放">
-                      <Icon name="play" size={16} />
-                    </button>
-                    <button
-                      className="mini"
-                      onClick={(e) => { e.stopPropagation(); library.toggleFavorite(it); }}
-                      title={fav ? '取消收藏' : '收藏'}
-                    >
-                      <Icon name={fav ? 'heart-filled' : 'heart'} size={16} />
-                    </button>
-                  </span>
+                  {asking ? (
+                    <span className="pc-actions">
+                      <button className="mini danger" onClick={(e) => { e.stopPropagation(); confirmDelete(it); }} title="确认删除">
+                        <Icon name="trash" size={16} />
+                      </button>
+                      <button className="mini" onClick={(e) => { e.stopPropagation(); setDelKey(null); }} title="取消">
+                        <Icon name="x" size={16} />
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="pc-actions">
+                      <button className="mini" onClick={(e) => { e.stopPropagation(); onOpen(it); }} title="播放">
+                        <Icon name="play" size={16} />
+                      </button>
+                      <button
+                        className="mini"
+                        onClick={(e) => { e.stopPropagation(); library.toggleFavorite(it); }}
+                        title={fav ? '取消收藏' : '收藏'}
+                      >
+                        <Icon name={fav ? 'heart-filled' : 'heart'} size={16} />
+                      </button>
+                    </span>
+                  )}
                 </div>
                 <div className="ptitle" onClick={() => onOpen(it)}>{it.title}</div>
                 <div className="psub">

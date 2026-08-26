@@ -93,7 +93,7 @@ function streamHeaders(url: string): Record<string, string> {
   };
 }
 
-export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfig[]; onOpenSources: () => void; onDebug?: () => void }) {
+export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
   const [channels, setChannels] = useState<ReturnType<typeof parseM3U> | null>(null);
   const [activeName, setActiveName] = useState('');
@@ -107,6 +107,8 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [srcSheet, setSrcSheet] = useState(false); // 横屏换源条
   const [pickSheet, setPickSheet] = useState(false); // 横屏选台浮层
+  const [castTip, setCastTip] = useState(false); // 投屏占位提示
+  const castTimer = useRef<number | undefined>(undefined);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // 当前频道对象（聚合后的）
@@ -133,6 +135,13 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
     if (!el) return;
     if (el.paused) { el.play().catch(() => {}); setPaused(false); }
     else { el.pause(); setPaused(true); }
+  };
+
+  // 投屏：占位（待确认是否接入 DLNA/系统投屏）
+  const handleCast = () => {
+    setCastTip(true);
+    if (castTimer.current) window.clearTimeout(castTimer.current);
+    castTimer.current = window.setTimeout(() => setCastTip(false), 1400);
   };
 
   // 横屏换台：可见频道里上/下一个
@@ -299,8 +308,8 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
                   <span className="lp-res">源 {activeSrc}/{curChannel.sources.length}</span>
                 )}
               </div>
-              <button className="lp-tv" onClick={onDebug} title="调试">
-                <Icon name="bug" size={18} />
+              <button className="lp-tv" onClick={handleCast} title="投屏">
+                <Icon name="tv" size={18} />
               </button>
             </div>
             <div className="lp-stage">
@@ -367,6 +376,8 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
 
       {loading && <div className="empty sm">正在加载直播频道…</div>}
 
+      <div className={'tip' + (castTip ? ' show' : '')}>投屏功能开发中</div>
+
       {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
       {isFullscreen && channels && (
         <div className="land-overlay">
@@ -378,8 +389,8 @@ export function Live({ sources, onOpenSources, onDebug }: { sources: SourceConfi
               <span>{activeName}</span>
               {curChannel && curChannel.sources.length > 1 && <span className="lp-res">源 {activeSrc}/{curChannel.sources.length}</span>}
             </div>
-            <button className="land-tv" onClick={onDebug} title="调试">
-              <Icon name="bug" size={18} />
+            <button className="land-tv" onClick={handleCast} title="投屏">
+              <Icon name="tv" size={18} />
             </button>
           </div>
           <div className="land-center">

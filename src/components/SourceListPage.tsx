@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import { useSources } from '../store';
 import { SubPage } from './SubPage';
 import { Icon } from './Icon';
 import { SourceConfig } from '../engine';
-import { fetchFromUrl } from '../lib/sourceFetch';
 
 // 「源列表 / 切换站点」全屏子页：纵向三行信息卡（名称+开关 / 地址 / 上移·下移·删除·调试）。
 export function SourceListPage({
@@ -16,19 +14,9 @@ export function SourceListPage({
   title?: string;
 }) {
   const store = useSources(mediaType);
-  const [debugMsg, setDebugMsg] = useState<{ type: 'info' | 'ok' | 'err'; msg: string } | null>(null);
-
-  const runDebug = async (s: SourceConfig) => {
-    setDebugMsg({ type: 'info', msg: `正在检测「${s.name}」连通性…` });
-    const res = await fetchFromUrl(s.baseUrl);
-    if (res.kind === 'sources') setDebugMsg({ type: 'ok', msg: `「${s.name}」连通，识别到 ${res.sources.length} 个源` });
-    else if (res.kind === 'links') setDebugMsg({ type: 'ok', msg: `「${s.name}」连通，识别到 ${res.links.length} 个链接` });
-    else setDebugMsg({ type: 'err', msg: `「${s.name}」检测失败：${res.message}` });
-  };
 
   return (
     <SubPage title={title} onBack={onClose}>
-      {debugMsg && <div className={`import-status ${debugMsg.type}`}>{debugMsg.msg}</div>}
 
       {store.sources.length === 0 ? (
         <div className="empty-hint">
@@ -72,12 +60,6 @@ export function SourceListPage({
                   onClick={() => store.remove(s.id)}
                 >
                   删除
-                </button>
-                <button
-                  className="action-chip"
-                  onClick={() => runDebug(s)}
-                >
-                  调试
                 </button>
               </div>
             </div>

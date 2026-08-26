@@ -101,6 +101,10 @@ export function VideoPlayer({
   const [faved, setFaved] = useState(false);
   const [locked, setLocked] = useState(false);
   const [danmaku, setDanmaku] = useState<boolean>(!!settings.enableDanmaku);
+  // 控件点击显隐（点画面 toggle；播放后自动隐藏；锁屏态常显不隐藏）
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [asc, setAsc] = useState(true);
+  const hideTimer = useRef<number | undefined>(undefined);
 
   // 播放器专属偏好（持久化）
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -347,6 +351,29 @@ export function VideoPlayer({
 
   const scrollToEpisodes = () => epRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
+  // 点击画面：toggle 控件显隐；播放态 3s 后自动隐藏
+  const scheduleHide = () => {
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    if (locked || !state.isPlaying) return;
+    hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
+  };
+  const toggleControls = () => {
+    setControlsVisible((v) => {
+      const next = !v;
+      if (next) scheduleHide();
+      return next;
+    });
+  };
+  // 播放开始即自动隐藏控件；锁屏时强制常显
+  useEffect(() => {
+    if (state.isPlaying && !locked) {
+      setControlsVisible(false);
+    } else {
+      setControlsVisible(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isPlaying, locked]);
+
   const toggleDanmaku = () => {
     const next = !danmaku;
     setDanmaku(next);
@@ -378,202 +405,204 @@ export function VideoPlayer({
   }
 
   return (
-    <div className={'video-player' + (landscape ? ' landscape' : '')}>
-      <div className="vp-stage" ref={stageRef}>
-        <video
-          ref={videoRef}
-          style={videoStyle}
-          controls={false}
-          onTimeUpdate={(e) => {
-            const v = e.target as HTMLVideoElement;
-            player.setProgress(v.currentTime);
-            library.setWatchProgress(progressKey, v.currentTime);
-            trySkipIntro();
-            trySkipOutro();
-          }}
-          onLoadedMetadata={(e) => player.setDuration((e.target as HTMLVideoElement).duration)}
-          onError={() => {
-            if (videoRef.current) detachHls(videoRef.current);
-            setResolving(false);
-            setErr('视频解码失败或地址无效，换个线路试试。');
-          }}
-          onEnded={() => {
-            if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
-            else player.onEnded();
-          }}
-        />
+    <div className={'player-root' + (landscape ? ' landscape' : '')}>
+      {/* ===== 播放器卡片（竖屏）/ 横屏舞台 ===== */}
+      <div className={'player-card' + (landscape ? ' land' : '')} ref={stageRef}>
+        <div className="screen">
+          <div className="poster" />
+          <video
+            ref={videoRef}
+            style={videoStyle}
+            controls={false}
+            onClick={toggleControls}
+            onTimeUpdate={(e) => {
+              const v = e.target as HTMLVideoElement;
+              player.setProgress(v.currentTime);
+              library.setWatchProgress(progressKey, v.currentTime);
+              trySkipIntro();
+              trySkipOutro();
+            }}
+            onLoadedMetadata={(e) => player.setDuration((e.target as HTMLVideoElement).duration)}
+            onError={() => {
+              if (videoRef.current) detachHls(videoRef.current);
+              setResolving(false);
+              setErr('视频解码失败或地址无效，换个线路试试。');
+            }}
+            onEnded={() => {
+              if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
+              else player.onEnded();
+            }}
+          />
 
-        {resolving && !err && (
-          <div className="vp-loading">
-            <div className="vp-spinner" />
-            <span>加载中…</span>
-          </div>
-        )}
-        {err && (
-          <div className="vp-error">
-            <p>{err}</p>
-            <button className="mini" onClick={retry}>重试</button>
-          </div>
-        )}
-
-        {/* 弹幕层：源提供真实弹幕且已开启时渲染 */}
-        {danmaku && detail.danmaku && detail.danmaku.length > 0 && (
-          <Danmaku active={state.isPlaying} seed={detail.id + episodeIndex} items={detail.danmaku} />
-        )}
-        {activeCue && (
-          <div
-            className={`vp-subtitle${ss.position === 'top' ? ' sub-top' : ''}${ss.outline ? ' sub-outline' : ''}${ss.bg ? ' sub-bg' : ''}`}
-            style={{ fontSize: ss.size + 'px', color: ss.color } as React.CSSProperties}
-          >
-            {activeCue}
-          </div>
-        )}
-        {castDevice && <div className="vp-cast-flag"><Icon name="cast" size={14} /> 投屏中：{castDevice}</div>}
-
-        {!state.isPlaying && !resolving && !err && (
-          <button className="vp-bigplay" onClick={() => player.toggle()} title="播放"><Icon name="play" size={34} /></button>
-        )}
-
-        {/* ============ 竖屏 ============ */}
-        {!landscape && (
-          <>
-            <div className="vp-top">
-              <button className="icon" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
-              <div className="vp-title">
-                <span className="vt-name">{detail.title} · {epName}</span>
-                <span className="vt-res">{quality}</span>
-              </div>
-              <div className="vp-o-right">
-                <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={16} /></button>
-                <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
-              </div>
+          {resolving && !err && (
+            <div className="vp-loading">
+              <div className="vp-spinner" />
+              <span>加载中…</span>
             </div>
-
-            <div className="vp-bottom">
-              <div className="vp-progress">
-                <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} />
-              </div>
-              <button className="icon land-btn" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
+          )}
+          {err && (
+            <div className="vp-error">
+              <p>{err}</p>
+              <button className="mini" onClick={retry}>重试</button>
             </div>
-          </>
-        )}
+          )}
 
-        {/* ============ 横屏（自有风格，非全抄影视仓） ============ */}
-        {landscape && (
-          <>
-            <div className="vp-top">
-              <button className="icon" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
-              <div className="vp-title">
-                <span className="vt-name">{detail.title} · {epName}</span>
-                <span className="vt-res">{quality}</span>
+          {/* 弹幕层 */}
+          {danmaku && detail.danmaku && detail.danmaku.length > 0 && (
+            <Danmaku active={state.isPlaying} seed={detail.id + episodeIndex} items={detail.danmaku} />
+          )}
+          {activeCue && (
+            <div
+              className={`vp-subtitle${ss.position === 'top' ? ' sub-top' : ''}${ss.outline ? ' sub-outline' : ''}${ss.bg ? ' sub-bg' : ''}`}
+              style={{ fontSize: ss.size + 'px', color: ss.color } as React.CSSProperties}
+            >
+              {activeCue}
+            </div>
+          )}
+          {castDevice && <div className="vp-cast-flag"><Icon name="cast" size={14} /> 投屏中：{castDevice}</div>}
+
+          {/* 中央大播放钮：暂停且无加载/错误时显示，点击播放 */}
+          {!state.isPlaying && !resolving && !err && (
+            <button className="big-btn" onClick={() => player.toggle()} title="播放"><Icon name="play" size={30} /></button>
+          )}
+
+          {/* ============ 竖屏：顶/中/底 三段 ============ */}
+          {!landscape && (
+            <div className={'overlay' + (controlsVisible ? '' : ' hide')}>
+              <div className="top">
+                <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
+                <div className="ttl">
+                  <span className="name">{detail.title} · {epName}</span>
+                  <span className="res">[{quality}]</span>
+                </div>
+                <div className="acts">
+                  <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={16} /></button>
+                  <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
+                </div>
               </div>
-              <div className="vp-o-right vp-status">
-                <Icon name="clock" size={15} />
-                <Icon name="battery" size={16} />
-                <span className="vt-clock">{clock}</span>
+              <div className="center"><button className="big-btn" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={30} /></button></div>
+              <div className="bottom">
+                <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                <div className="bar">
+                  <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} />
+                </div>
+                <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
               </div>
             </div>
+          )}
 
-            {/* 左侧：锁定 + 弹幕 */}
-            <div className="vp-side vp-side-left">
-              <button className={'side-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
-              <button className={'side-btn' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
-            </div>
-
-            {/* 右侧：投屏 + 画中画 */}
-            <div className="vp-side vp-side-right">
-              <button className="side-btn" onClick={() => setShowCast(true)} title="投屏"><Icon name="cast" size={20} /></button>
-              <button className="side-btn" onClick={onPip} title="画中画"><Icon name="pip" size={20} /></button>
-            </div>
-
-            {/* 中央三圆：上一集 / 暂停 / 下一集 */}
-            <div className="vp-center">
-              <button className="center-btn" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="skip-back" size={26} /></button>
-              <button className="center-btn main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={32} /></button>
-              <button className="center-btn" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="skip-forward" size={26} /></button>
-            </div>
-
-            {/* 底部：暂停 + 时间 + 进度 + 总时长 + 横屏切换 */}
-            <div className="vp-bottom landscape-bottom">
-              <button className="icon" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></button>
-              <span className="t">{fmtTime(state.progress)}</span>
-              <div className="vp-progress">
-                <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} />
+          {/* ============ 横屏：顶/侧/中/底 ======== */}
+          {landscape && (
+            <div className={'overlay' + (controlsVisible ? '' : ' hide')}>
+              <div className="top">
+                <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
+                <div className="ttl">
+                  <span className="name">{detail.title} · {epName}</span>
+                  <span className="res">[{quality}]</span>
+                </div>
+                <div className="status">
+                  <Icon name="clock" size={15} />
+                  <Icon name="battery" size={16} />
+                  <span>{clock}</span>
+                </div>
               </div>
-              <span className="t">{fmtTime(state.duration)}</span>
-              <button className="icon land-btn" onClick={toggleLandscape} title="竖屏"><Icon name="rotate-portrait" size={18} /></button>
-            </div>
 
-            {/* 工具行：10 按钮（解码/刷新/重播/字幕/片头/片尾/音效/画质/选集/设置） */}
-            <div className="vp-tools">
-              <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>{decodeLabel()}</span></button>
-              <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
-              <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
-              <button className='tool' onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
-              <button className="tool" onClick={() => setShowSkip(true)}><Icon name="fast-forward" size={15} /><span>片头</span></button>
-              <button className="tool" onClick={() => setShowSkip(true)}><Icon name="fast-forward" size={15} style={{ transform: 'scaleX(-1)' }} /><span>片尾</span></button>
-              <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>{audioMode === '关闭' ? '音效' : audioMode}</span></button>
-              <button className="tool" onClick={cycleQuality}><Icon name="sparkles" size={15} /><span>{quality}</span></button>
-              <button className="tool" onClick={scrollToEpisodes}><Icon name="list" size={15} /><span>选集</span></button>
-              <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
+              <div className="side left">
+                <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
+                <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
+              </div>
+              <div className="side right">
+                <button className="icon" onClick={() => setShowCast(true)} title="投屏"><Icon name="cast" size={20} /></button>
+                <button className="icon" onClick={onPip} title="画中画"><Icon name="pip" size={20} /></button>
+              </div>
+
+              <div className="center">
+                <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="skip-back" size={26} /></button>
+                <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={32} /></button>
+                <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="skip-forward" size={26} /></button>
+              </div>
+
+              <div className="bottom">
+                <div className="prow">
+                  <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                  <span className="t">{fmtTime(state.progress)}</span>
+                  <div className="bar">
+                    <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} />
+                  </div>
+                  <span className="t">{fmtTime(state.duration)}</span>
+                  <button className="land" onClick={toggleLandscape} title="竖屏"><Icon name="rotate-portrait" size={18} /></button>
+                </div>
+                <div className="tools">
+                  <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>{decodeLabel()}</span></button>
+                  <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
+                  <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
+                  <button className='tool' onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
+                  <button className="tool" onClick={() => setShowSkip(true)}><Icon name="fast-forward" size={15} /><span>片头</span></button>
+                  <button className="tool" onClick={() => setShowSkip(true)}><Icon name="fast-forward" size={15} style={{ transform: 'scaleX(-1)' }} /><span>片尾</span></button>
+                  <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>{audioMode === '关闭' ? '音效' : audioMode}</span></button>
+                  <button className="tool" onClick={cycleQuality}><Icon name="sparkles" size={15} /><span>{quality}</span></button>
+                  <button className="tool" onClick={scrollToEpisodes}><Icon name="list" size={15} /><span>选集</span></button>
+                  <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
+                </div>
+              </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* ===== 竖屏信息区 ===== */}
+      {/* ===== 竖屏信息区（按设计文件：info-card / tags / actions / section / intro） ===== */}
       {!landscape && (
-        <div className="vp-info">
-          <div className="vp-info-head">
-            <div className="vp-poster" style={{ background: gradientFor(detail.title) }}>
-              {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <Icon name="film" size={30} />}
+        <div className="vp-body">
+          <div className="info-card">
+            <div className="info-poster">
+              {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
             </div>
-            <div className="vp-meta">
-              <div className="vp-name">{detail.title}</div>
-              <div className="vp-sub">
-                {detail.episodes ? `共 ${detail.episodes.length} 集 · 第 ${episodeIndex + 1} 集` : '正在播放'}
+            <div className="info-body">
+              <div className="info-title">{detail.title}</div>
+              <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
+              <div className="info-meta">
+                {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
+                {detail.episodes && <><span className="label">集数</span> {detail.episodes.length} 集</>}
               </div>
-              {tags.length > 0 && (
-                <div className="vp-tags">
-                  {tags.map((t, i) => <span key={i} className={'tag' + (i === 0 ? ' hot' : '')}>{t}</span>)}
-                </div>
-              )}
+              <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => setFaved((v) => !v)}>
+                <Icon name={faved ? 'heart-filled' : 'heart'} size={14} />{faved ? '已收藏' : '加入收藏'}
+              </button>
             </div>
-            <button className={'vp-fav' + (faved ? ' on' : '')} onClick={() => setFaved((v) => !v)} title="收藏">
-              <Icon name={faved ? 'heart-filled' : 'heart'} size={20} />
-            </button>
           </div>
 
-          {/* 4 操作按钮（缓存/解码/投屏/设置） */}
-          <div className="vp-ops">
-            <button onClick={() => downloadStore.start(detail)} title="缓存"><Icon name="download" size={20} /><span>缓存</span></button>
-            <button className={DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? 'on' : ''} onClick={toggleDecode} title="解码（点击循环切换）">
-              <Icon name="sliders" size={20} /><span>{decodeLabel()}</span>
-            </button>
-            <button onClick={() => setShowCast(true)} title="投屏"><Icon name="cast" size={20} /><span>投屏</span></button>
-            <button onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={20} /><span>设置</span></button>
+          <div className="tags">
+            {tags.map((t, i) => <span key={i} className={i === 0 ? 'hot' : ''}>{t}</span>)}
+          </div>
+
+          {/* 4 操作按钮（缓存/解码/投屏/设置）— 占位展示，待用户确认哪些要接 */}
+          <div className="actions">
+            <button onClick={() => downloadStore.start(detail)} title="缓存"><span className="circle"><Icon name="download" size={24} /></span>缓存</button>
+            <button className={DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? 'on' : ''} onClick={toggleDecode} title="解码（点击循环切换）"><span className="circle"><Icon name="sliders" size={24} /></span>{decodeLabel()}</button>
+            <button onClick={() => setShowCast(true)} title="投屏"><span className="circle"><Icon name="cast" size={24} /></span>投屏</button>
+            <button onClick={() => setSettingsOpen(true)} title="播放器设置"><span className="circle"><Icon name="settings" size={24} /></span>设置</button>
           </div>
 
           {lines > 1 && (
-            <div className="vp-lines-row">
-              <span className="vp-sec">线路</span>
-              <div className="vp-lines">
+            <div className="section">
+              <div className="sec-head"><span className="sec-title">线路</span><span className="sec-more" onClick={() => {}}>自动选速 &gt;</span></div>
+              <div className="line-row">
                 {Array.from({ length: lines }).map((_, i) => (
-                  <button key={i} className={'mini' + (i === line ? ' active' : '')} onClick={() => onLineChange(i)}>线路{i + 1}</button>
+                  <button key={i} className={i === line ? 'active' : ''} onClick={() => onLineChange(i)}>线路{i + 1}</button>
                 ))}
               </div>
             </div>
           )}
 
           {detail.episodes && detail.episodes.length > 1 && (
-            <div className="vp-episodes" ref={epRef}>
-              <span className="vp-sec">选集</span>
+            <div className="section">
+              <div className="sec-head"><span className="sec-title">选集</span><span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span></div>
               <div className="ep-grid">
-                {detail.episodes.map((ep, i) => (
-                  <button key={i} className={'ep-btn' + (i === episodeIndex ? ' active' : '')} onClick={() => onSelectEpisode(i)}>
-                    {ep.name}
-                  </button>
-                ))}
+                {(() => {
+                  const order = asc ? detail.episodes!.map((_, i) => i) : detail.episodes!.map((_, i) => detail.episodes!.length - 1 - i);
+                  return order.map((i) => (
+                    <button key={i} className={i === episodeIndex ? 'active' : ''} onClick={() => onSelectEpisode(i)}>{detail.episodes![i].name}</button>
+                  ));
+                })()}
               </div>
             </div>
           )}
@@ -581,7 +610,7 @@ export function VideoPlayer({
           {(() => {
             const raw = detail.raw as any;
             const intro = raw?.vod_blurb || raw?.vod_content || raw?.desc;
-            return intro ? <p className="vp-desc">{String(intro)}</p> : null;
+            return intro ? <div className="intro"><div className="sec-head"><span className="sec-title">介绍</span></div><p>{String(intro)}</p></div> : null;
           })()}
         </div>
       )}
@@ -624,58 +653,43 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* 播放器设置抽屉（自有风格） */}
+      {/* 播放器设置抽屉（按设计文件 .drawer） */}
       {settingsOpen && (
-        <div className="vp-drawer-mask" onClick={() => setSettingsOpen(false)}>
-          <div className="vp-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="vp-drawer-handle" />
-            <div className="vp-drawer-title">播放器设置</div>
+        <div className="drawer-mask" onClick={() => setSettingsOpen(false)}>
+          <div className="drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-handle" />
+            <div className="drawer-title">播放器</div>
 
-            <div className="vp-group">
-              <div className="vp-group-label">解码器</div>
-              <div className="seg">
-                {DECODE_CYCLE.map((d) => (
-                  <button key={d} className={'seg-item' + (decodeMode === d ? ' on' : '')} onClick={() => setDecode(d)}>{DECODE_LABEL[d]}</button>
-                ))}
-              </div>
-            </div>
+            <div className="dg"><div className="dg-label">解码器</div><div className="dg-row">
+              {DECODE_CYCLE.map((d) => (
+                <button key={d} className={decodeMode === d ? 'on' : ''} onClick={() => setDecode(d)}>{DECODE_LABEL[d]}</button>
+              ))}
+            </div></div>
 
-            <div className="vp-group">
-              <div className="vp-group-label">画面缩放</div>
-              <div className="seg">
-                {SCALE_OPTS.map((s) => (
-                  <button key={s} className={'seg-item' + (scaleMode === s ? ' on' : '')} onClick={() => { setScaleMode(s); localStorage.setItem('rf_scale', s); }}>{s}</button>
-                ))}
-              </div>
-            </div>
+            <div className="dg"><div className="dg-label">画面缩放</div><div className="dg-row">
+              {SCALE_OPTS.map((s) => (
+                <button key={s} className={scaleMode === s ? 'on' : ''} onClick={() => { setScaleMode(s); localStorage.setItem('rf_scale', s); }}>{s}</button>
+              ))}
+            </div></div>
 
-            <div className="vp-group">
-              <div className="vp-group-label">倍速播放</div>
-              <div className="seg">
-                {SPEEDS.map((s) => (
-                  <button key={s} className={'seg-item' + (speed === s ? ' on' : '')} onClick={() => setSpeed(s)}>{speedLabel(s)}</button>
-                ))}
-              </div>
-            </div>
+            <div className="dg"><div className="dg-label">倍速播放</div><div className="dg-row">
+              {SPEEDS.map((s) => (
+                <button key={s} className={speed === s ? 'on' : ''} onClick={() => setSpeed(s)}>{speedLabel(s)}</button>
+              ))}
+            </div></div>
 
-            <div className="vp-group">
-              <div className="vp-group-label">音效模式</div>
-              <div className="seg">
-                {AUDIO_OPTS.map((a) => (
-                  <button key={a} className={'seg-item' + (audioMode === a ? ' on' : '')} onClick={() => { setAudioMode(a); localStorage.setItem('rf_audio', a); }}>{a}</button>
-                ))}
-              </div>
-            </div>
+            <div className="dg"><div className="dg-label">音效模式</div><div className="dg-row">
+              {AUDIO_OPTS.map((a) => (
+                <button key={a} className={audioMode === a ? 'on' : ''} onClick={() => { setAudioMode(a); localStorage.setItem('rf_audio', a); }}>{a}</button>
+              ))}
+            </div></div>
 
-            <div className="vp-group">
-              <div className="vp-group-label">快捷操作</div>
-              <div className="vp-quick">
-                <button className={'quick' + (introSec ? ' on' : '')} onClick={() => updateSettings({ skipIntro: introSec ? 0 : 12 })}><Icon name="fast-forward" size={20} /><span>片头</span></button>
-                <button className={'quick' + (outroSec ? ' on' : '')} onClick={() => updateSettings({ skipOutro: outroSec ? 0 : 15 })}><Icon name="fast-forward" size={20} style={{ transform: 'scaleX(-1)' }} /><span>片尾</span></button>
-                <button className={'quick' + (autoPlay ? ' on' : '')} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={20} /><span>连播</span></button>
-                <button className="quick" onClick={retry}><Icon name="refresh" size={20} /><span>刷新</span></button>
-              </div>
-            </div>
+            <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
+              <button className={introSec ? 'on' : ''} onClick={() => updateSettings({ skipIntro: introSec ? 0 : 12 })}><Icon name="fast-forward" size={22} /><span>片头</span></button>
+              <button className={outroSec ? 'on' : ''} onClick={() => updateSettings({ skipOutro: outroSec ? 0 : 15 })}><Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} /><span>片尾</span></button>
+              <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
+              <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
+            </div></div>
           </div>
         </div>
       )}

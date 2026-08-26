@@ -3,6 +3,7 @@ import { aggregateSearch, expandSources, MediaItem, MediaType, SourceConfig } fr
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
+import { ProxiedImg } from './ProxiedImg';
 
 type SourceState =
   | { kind: 'ok'; count: number }
@@ -261,7 +262,7 @@ export function SearchView({
                     >
                       <div className="search-poster">
                         {it.cover ? (
-                          <img src={it.cover} alt="" loading="lazy" />
+                          <ProxiedImg src={it.cover} alt="" />
                         ) : (
                           <div className="search-poster-fallback">
                             <Icon name={it.mediaType === 'music' ? 'music' : 'film'} size={32} />

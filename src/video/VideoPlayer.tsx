@@ -10,6 +10,7 @@ import { downloadStore } from '../lib/downloads';
 import { attachHls, detachHls } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { Icon } from '../components/Icon';
+import { ProxiedImg } from '../components/ProxiedImg';
 
 // ===== 播放器选项（持久化到 localStorage） =====
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -410,7 +411,6 @@ export function VideoPlayer({
         )}
         {err && (
           <div className="vp-error">
-            <Icon name="x-circle" size={30} />
             <p>{err}</p>
             <button className="mini" onClick={retry}>重试</button>
           </div>
@@ -526,7 +526,7 @@ export function VideoPlayer({
         <div className="vp-info">
           <div className="vp-info-head">
             <div className="vp-poster" style={{ background: gradientFor(detail.title) }}>
-              {detail.cover ? <img src={detail.cover} alt="" /> : <Icon name="film" size={30} />}
+              {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <Icon name="film" size={30} />}
             </div>
             <div className="vp-meta">
               <div className="vp-name">{detail.title}</div>

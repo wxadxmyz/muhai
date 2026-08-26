@@ -3,6 +3,7 @@ import { useLibrary } from '../../lib/library';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
+import { ProxiedImg } from '../../components/ProxiedImg';
 import { useEffect, useRef, useState } from 'react';
 import {
   hasShownDisclaimer,
@@ -122,7 +123,7 @@ export function Home({
   const PosterCard = ({ it }: { it: MediaItem }) => (
     <div className="pcard" onClick={() => onOpenDetail(it)}>
       <div className="pcover" style={{ background: it.cover ? undefined : gradientFor(it.title) }}>
-        {it.cover ? <img src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
+        {it.cover ? <ProxiedImg src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
         {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
         {it.score ? <span className="pscore">{it.score}</span> : null}
       </div>

@@ -3,6 +3,7 @@ import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
+import { ProxiedImg } from '../../components/ProxiedImg';
 
 // 影视仓风格：顶部 Tab 切换「观看历史 / 影视收藏」+ 海报卡片网格
 export function VideoLibrary({
@@ -48,7 +49,7 @@ export function VideoLibrary({
                   style={{ background: it.cover ? undefined : gradientFor(it.title) }}
                   onClick={() => onOpen(it)}
                 >
-                  {it.cover ? <img src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
+                  {it.cover ? <ProxiedImg src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
                   {it.episodes?.length ? <span className="eps">{it.episodes.length} 集</span> : null}
                   {pct > 0 && (
                     <span className="pbar">

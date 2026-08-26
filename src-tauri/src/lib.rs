@@ -41,6 +41,7 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             fetchsource,
+            fetchimage,
             spiderrun,
             dlnascan,
             castvideo
@@ -307,6 +308,40 @@ async fn fetchsource(url: String) -> Result<String, String> {
         return Err(format!("请求失败：HTTP {}", status));
     }
     Ok(text)
+}
+
+// v2.7.0 图片代理：CMS 源（如量子）图床对 webview 的 Chrome UA 可能拒防盗链，
+// 用 okhttp UA 拉图后返 base64 dataURL，前端 <img> 直接用 dataURL 显示，绕过
+// webview CORS/防盗链/UA 检测。
+#[tauri::command]
+async fn fetchimage(url: String) -> Result<String, String> {
+    use base64::Engine;
+    let ua = "okhttp/4.10.0";
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .header("User-Agent", ua)
+        .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+        .header("Referer", "https://cj.lziapi.com/")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("图片请求失败：HTTP {}", status));
+    }
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", ct, b64))
 }
 
 #[cfg(desktop)]

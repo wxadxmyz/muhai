@@ -72,6 +72,30 @@ function toEpisodes(playUrl: string): { name: string; url: string }[] {
   return out;
 }
 
+// v2.7.0 自解析：CMS 接口返回的播放地址常常是 HTML 分享页（量子/飞极速等），里面
+// 内嵌一段 JS：`var main = "/path/index.m3u8?sign=..."` 或同类变量名。
+// 通过抓分享页 → 提取 m3u8 → 用 URL 原域拼装成完整链接，回给播放器 HLS。
+// 已经直链（#EXTM3U / .mp4）的原样返回。
+async function resolvePlayUrl(url: string): Promise<string> {
+  if (!url) return url;
+  if (/\.(m3u8|mp4)(\?|$)/i.test(url)) return url; // 看起来已是直链，省一次请求
+  try {
+    const text = await fetchText(url);
+    if (!text) return url;
+    const t = text.trimStart();
+    if (t.startsWith('#EXTM3U')) return url; // 已经是 m3u8 文本
+    // 常见分享页变量名：main / url / m3u8 / play_url / video_url
+    const m =
+      text.match(/var\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      text.match(/var\s+(?:url|m3u8|play_url|video_url)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      text.match(/src\s*[:=]\s*["']([^"']+\.m3u8[^"']*)["']/i);
+    if (m) return new URL(m[1], url).href;
+    return url; // 解析不出，原样返回给播放器去尝试
+  } catch {
+    return url;
+  }
+}
+
 export function createNormalSource(cfg: SourceConfig): MediaSource {
   const endpoint = cleanEndpoint(cfg.api || cfg.baseUrl);
 
@@ -105,7 +129,9 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
       const v = (data?.list ?? [])[0];
       if (!v?.vod_play_url) return { url: '' };
       const eps = toEpisodes(v.vod_play_url);
-      return { url: eps[0]?.url ?? '' };
+      const raw = eps[0]?.url ?? '';
+      const url = await resolvePlayUrl(raw);
+      return { url };
     },
 
     async test() {

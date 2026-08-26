@@ -10,6 +10,7 @@
     "fs:default",
     "notification:default",
     "allow-fetchsource",
+    "allow-fetchimage",
     "allow-spiderrun",
     "allow-dlnascan",
     "allow-castvideo"

@@ -279,7 +279,7 @@ export default function VideoApp() {
 
         {tab === 'live' && (
           <ErrorBoundary name="直播">
-          <Live sources={store.sources} onOpenSources={onOpenSources} onDebug={() => setShowDebug(true)} />
+          <Live sources={store.sources} onOpenSources={openSources} onDebug={() => setShowDebug(true)} />
           </ErrorBoundary>
         )}
 

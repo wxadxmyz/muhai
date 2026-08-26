@@ -44,6 +44,8 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          # 强制失效旧缓存：避免 tauri-build 生成的权限清单（app-manifest）被旧 target 缓存污染
+          key: v2.8.3-clear-cache-cmd
 
       - name: Install Linux dependencies
         run: |

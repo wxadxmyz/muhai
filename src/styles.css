@@ -131,9 +131,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .mini.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
 
 /* ============ 海报网格（影视）============ */
-.poster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.pcard { cursor: pointer; display: flex; flex-direction: column; }
-.pcover { position: relative; aspect-ratio: 2/3; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; }
+.poster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; grid-auto-rows: 1fr; }
+.pcard { cursor: pointer; display: flex; flex-direction: column; height: 100%; }
+.pcover { position: relative; aspect-ratio: 2/3; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; }
 .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
 .ph-big { font-weight: 800; }
@@ -1259,7 +1259,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
 .player-card .bottom .bar::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: var(--accent); border-radius: 3px; }
-.player-card .bottom .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; opacity: 0; cursor: pointer; }
+.player-card .bottom .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: 31px; margin: 0; background: transparent; opacity: 0; cursor: pointer; touch-action: none; }
 .player-card .bottom .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
 /* 竖屏信息区 */
@@ -1326,7 +1326,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .bottom .prow .pi { color: #fff; cursor: pointer; display: grid; place-items: center; }
 .landscape .bottom .prow .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
 .landscape .bottom .prow .bar::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 34%; background: var(--accent); border-radius: 3px; }
-.landscape .bottom .prow .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; background: transparent; opacity: 0; cursor: pointer; }
+.landscape .bottom .prow .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: 31px; margin: 0; background: transparent; opacity: 0; cursor: pointer; touch-action: none; }
 .landscape .bottom .prow .t { font-size: 12px; min-width: 44px; }
 .landscape .bottom .prow .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .landscape .tools { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
@@ -1359,4 +1359,5 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .vp-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: vpspin .8s linear infinite; }
 .player-card .vp-subtitle { position: absolute; left: 0; right: 0; bottom: 88px; z-index: 5; text-align: center; color: #fff; font-size: 17px; text-shadow: 0 2px 4px rgba(0,0,0,.9); padding: 0 16px; pointer-events: none; }
 .player-card .vp-cast-flag { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
+.seek-bubble { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 8; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,.62); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 15px; font-variant-numeric: tabular-nums; pointer-events: none; }
 @keyframes vpspin { to { transform: rotate(360deg); } }

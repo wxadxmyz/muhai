@@ -105,6 +105,9 @@ export function VideoPlayer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const [asc, setAsc] = useState(true);
   const hideTimer = useRef<number | undefined>(undefined);
+  // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
+  const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
+  const seekBubbleTimer = useRef<number | undefined>(undefined);
 
   // 播放器专属偏好（持久化）
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -364,6 +367,65 @@ export function VideoPlayer({
       return next;
     });
   };
+
+  // 播放窗口左右滑动快进/快退（点播横滑）：累计位移映射到 ±10s 步进，松手 seek 并显示时间气泡
+  const SWIPE_STEP = 10; // 每次方向累计 80px 跳 10s
+  const SWIPE_EDGE = 40; // 左边缘 40px 内右滑 = 返回（与 seek 互斥）
+  const onStageTouchStart = (e: React.TouchEvent) => {
+    if (locked) return;
+    const t = e.touches[0];
+    const el = stageRef.current as any;
+    if (!el) return;
+    el.__sx = t.clientX;
+    el.__sy = t.clientY;
+    el.__accum = 0;
+    el.__dir = 0;
+    el.__backing = false;
+  };
+  const onStageTouchMove = (e: React.TouchEvent) => {
+    const el = stageRef.current as any;
+    if (el == null || el.__sx == null || locked) return;
+    const t = e.touches[0];
+    const dx = t.clientX - el.__sx;
+    const dy = t.clientY - el.__sy;
+    // 左边缘右滑 = 返回（仅在起始点贴近左边缘时判定，避免与 seek 冲突）
+    if (el.__sx <= SWIPE_EDGE && dx > 60 && Math.abs(dy) < 80) {
+      el.__backing = true;
+      return;
+    }
+    if (el.__backing) return;
+    if (Math.abs(dy) > 60 && Math.abs(dx) < Math.abs(dy)) return; // 竖滑让位（如系统手势）
+    const dir = dx < 0 ? 1 : dx > 0 ? -1 : el.__dir;
+    // 每跨越 STEP 像素触发一次 ±SWIPE_STEP 秒
+    const stepPx = 80;
+    const crossed = Math.floor(Math.abs(dx) / stepPx) - Math.floor(Math.abs(el.__accum) / stepPx);
+    if (crossed > 0 && dir !== 0) {
+      const d = state.duration || 0;
+      const target = Math.max(0, Math.min(d, state.progress + dir * SWIPE_STEP * crossed));
+      if (videoRef.current) videoRef.current.currentTime = target;
+      player.setProgress(target);
+      el.__accum = dx;
+      el.__dir = dir;
+      setSeekBubble({ dir: dir as 1 | -1, delta: Math.abs(dx), target });
+      if (seekBubbleTimer.current) window.clearTimeout(seekBubbleTimer.current);
+      seekBubbleTimer.current = window.setTimeout(() => setSeekBubble(null), 600);
+    }
+  };
+  const onStageTouchEnd = () => {
+    const el = stageRef.current as any;
+    if (el) {
+      if (el.__backing) {
+        // 左边缘右滑返回：先退浮层/横屏，最后关播放器回上一级
+        if (settingsOpen) setSettingsOpen(false);
+        else if (showCast) setShowCast(false);
+        else if (showSubStyle) setShowSubStyle(false);
+        else if (showSkip) setShowSkip(false);
+        else if (landscape) setLandscape(false);
+        else onClose();
+      }
+      el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false;
+    }
+  };
   // 播放开始即自动隐藏控件；锁屏时强制常显
   useEffect(() => {
     if (state.isPlaying && !locked) {
@@ -407,7 +469,13 @@ export function VideoPlayer({
   return (
     <div className={'player-root' + (landscape ? ' landscape' : '')}>
       {/* ===== 播放器卡片（竖屏）/ 横屏舞台 ===== */}
-      <div className={'player-card' + (landscape ? ' land' : '')} ref={stageRef}>
+      <div
+        className={'player-card' + (landscape ? ' land' : '')}
+        ref={stageRef}
+        onTouchStart={onStageTouchStart}
+        onTouchMove={onStageTouchMove}
+        onTouchEnd={onStageTouchEnd}
+      >
         <div className="screen">
           <div className="poster" />
           <video
@@ -464,6 +532,14 @@ export function VideoPlayer({
           {/* 中央大播放钮：暂停且无加载/错误时显示，点击播放 */}
           {!state.isPlaying && !resolving && !err && (
             <button className="big-btn" onClick={() => player.toggle()} title="播放"><Icon name="play" size={30} /></button>
+          )}
+
+          {/* 横滑快进/快退时间气泡 */}
+          {seekBubble && (
+            <div className="seek-bubble">
+              <Icon name={seekBubble.dir === 1 ? 'arrow-right' : 'arrow-left'} size={20} />
+              <span>{fmtTime(seekBubble.target)}</span>
+            </div>
           )}
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
@@ -694,9 +770,10 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* 投屏设备列表 */}
+      {/* 投屏设备列表（真实 DLNA） */}
       {showCast && (
         <CastOverlay
+          videoUrl={state.current?.playUrl}
           onClose={() => setShowCast(false)}
           onCast={(d) => setCastDevice(d)}
         />

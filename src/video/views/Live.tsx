@@ -4,6 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { aggregateLives } from '../../engine';
 import { SourceConfig, LiveChannelSource } from '../../engine/types';
 import { Icon } from '../../components/Icon';
+import { CastOverlay } from '../../components/CastOverlay';
+import { toast } from '../../lib/toast';
 
 interface Channel {
   name: string;
@@ -107,8 +109,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [srcSheet, setSrcSheet] = useState(false); // 横屏换源条
   const [pickSheet, setPickSheet] = useState(false); // 横屏选台浮层
-  const [castTip, setCastTip] = useState(false); // 投屏占位提示
-  const castTimer = useRef<number | undefined>(undefined);
+  const [showCast, setShowCast] = useState(false); // 真实 DLNA 投屏浮层
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // 当前频道对象（聚合后的）
@@ -137,11 +138,10 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     else { el.pause(); setPaused(true); }
   };
 
-  // 投屏：占位（待确认是否接入 DLNA/系统投屏）
+  // 投屏：打开真实 DLNA 设备列表（后端 dlnascan/castvideo），把当前频道 URL 推送到电视
   const handleCast = () => {
-    setCastTip(true);
-    if (castTimer.current) window.clearTimeout(castTimer.current);
-    castTimer.current = window.setTimeout(() => setCastTip(false), 1400);
+    if (!curUrl) { toast('当前没有可投屏的直播地址'); return; }
+    setShowCast(true);
   };
 
   // 横屏换台：可见频道里上/下一个
@@ -151,6 +151,34 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     const idx = list.findIndex((c) => c.name === activeName);
     const next = list[(idx + dir + list.length) % list.length];
     if (next) pickChannel(next.name);
+  };
+
+  // 直播横滑切台（方案 A：左滑上一台 / 右滑下一台）。竖屏小窗与横屏舞台通用。
+  const onStageTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    (e.currentTarget as any).__sx = t.clientX;
+    (e.currentTarget as any).__sy = t.clientY;
+    (e.currentTarget as any).__moved = false;
+  };
+  const onStageTouchMove = (e: React.TouchEvent) => {
+    const el = e.currentTarget as any;
+    if (el.__sx == null) return;
+    const t = e.touches[0];
+    const dx = t.clientX - el.__sx;
+    const dy = t.clientY - el.__sy;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) el.__moved = true;
+  };
+  const onStageTouchEnd = (e: React.TouchEvent) => {
+    const el = e.currentTarget as any;
+    if (el.__sx == null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - el.__sx;
+    const dy = t.clientY - el.__sy;
+    el.__sx = null; el.__sy = null;
+    // 左滑上一台 / 右滑下一台（横向位移 >50px 且明显大于纵向）
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      changeChannel(dx < 0 ? -1 : 1);
+    }
   };
 
   const reloadLives = () => {
@@ -312,7 +340,11 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                 <Icon name="tv" size={18} />
               </button>
             </div>
-            <div className="lp-stage">
+            <div className="lp-stage"
+              onTouchStart={onStageTouchStart}
+              onTouchMove={onStageTouchMove}
+              onTouchEnd={onStageTouchEnd}
+            >
               {playing ? (
                 <video
                   ref={videoRef}
@@ -376,11 +408,27 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
       {loading && <div className="empty sm">正在加载直播频道…</div>}
 
-      <div className={'tip' + (castTip ? ' show' : '')}>投屏功能开发中</div>
+      <div className={'tip' + (showCast ? ' show' : '')}>投屏功能开发中</div>
+
+      {/* 真实 DLNA 投屏浮层 */}
+      {showCast && (
+        <CastOverlay
+          videoUrl={curUrl}
+          onClose={() => setShowCast(false)}
+          onCast={() => {
+            setShowCast(false);
+            toast('已投屏到设备');
+          }}
+        />
+      )}
 
       {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
       {isFullscreen && channels && (
-        <div className="land-overlay">
+        <div className="land-overlay"
+          onTouchStart={onStageTouchStart}
+          onTouchMove={onStageTouchMove}
+          onTouchEnd={onStageTouchEnd}
+        >
           <div className="land-top">
             <button className="land-back" onClick={toggleFullscreen}>
               <Icon name="arrow-left" size={18} />

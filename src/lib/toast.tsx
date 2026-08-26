@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 
 interface Toast {
   id: number;
@@ -18,6 +18,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2600);
   }, []);
 
+  useEffect(() => { registerToast(push); return () => registerToast(() => {}); }, [push]);
+
   return (
     <Ctx.Provider value={{ push }}>
       {children}
@@ -33,3 +35,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 export const useToast = () => useContext(Ctx);
+
+// 全局 toast()：供非 hook 场景（事件回调、异步投屏结果等）直接调用。
+// 通过自定义事件派发给 ToastProvider 内的监听器；未挂载 Provider 时静默丢弃。
+let pushFn: ((text: string, type?: Toast['type']) => void) | null = null;
+export function toast(text: string, type: Toast['type'] = 'info') {
+  if (pushFn) pushFn(text, type);
+}
+
+// ToastProvider 挂载时注册全局推送函数（供 toast() 使用）。
+export function registerToast(fn: (text: string, type?: Toast['type']) => void) {
+  pushFn = fn;
+}

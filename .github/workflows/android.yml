@@ -108,23 +108,38 @@ jobs:
               sys.exit(0)
           idx = src.index("class MainActivity")
           brace = src.index("{", idx)
+          # 公共返回分发逻辑 + 旧版 onBackPressed + WebView 查找
           inject = '''
               private var _backWebView: android.webkit.WebView? = null
-          
-              override fun onBackPressed() {
+              private var _backDispatching = false
+
+              // 统一的返回分发：调用 WebView 里的 window.__onAndroidBack()；
+              // 若 JS 返回 true（已消费，例如关闭播放器/弹层/逐级返回），则拦截系统返回；
+              // 返回 false/异常则放行系统返回。
+              private fun dispatchBack(): Boolean {
+                  if (_backDispatching) return false
+                  _backDispatching = true
                   val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
                   _backWebView = wv
-                  if (wv == null) {
-            super.onBackPressed()
-            return
-                  }
+                  if (wv == null) { _backDispatching = false; return false }
                   wv.evaluateJavascript(
-            "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : true; } catch(e) { return true; } })()"
+            "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : false; } catch(e) { return false; } })()"
                   ) { result ->
-            if (result != "true") { super.onBackPressed() }
+            val consumed = (result == "true")
+            if (!consumed) runOnUiThread { super.onBackPressed() }
+            _backDispatching = false
                   }
+                  // evaluateJavascript 是异步的，这里先返回 true 表示我们已经接管，
+                  // 真正的放行在回调里通过 super.onBackPressed() 完成。
+                  return true
               }
-          
+
+              // Android < 13 兼容路径
+              @Suppress("DEPRECATION")
+              override fun onBackPressed() {
+                  if (!dispatchBack()) super.onBackPressed()
+              }
+
               private fun findBackWebView(group: android.view.ViewGroup?): android.webkit.WebView? {
                   if (group == null) return null
                   for (i in 0 until group.childCount) {
@@ -139,6 +154,23 @@ jobs:
               }
           '''
           src = src[:brace + 1] + inject + src[brace + 1:]
+          # Android 13+（API 33+）走 OnBackInvokedDispatcher，onBackPressed 不再回调；
+          # 仅当 MainActivity 自身未重写 onCreate 时才注入（避免 conflicting overloads）。
+          if "fun onCreate(" not in src:
+              oncreate = '''
+              override fun onCreate(savedInstanceState: android.os.Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  if (android.os.Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
+            ) { if (!dispatchBack()) super.onBackPressed() }
+                  }
+              }
+
+              '''
+              src = src[:brace + 1] + oncreate + src[brace + 1:]
+          else:
+              print("::warning::MainActivity 已自定义 onCreate，跳过注入（请手动注册 OnBackInvokedCallback）")
           open(path, "w", encoding="utf-8").write(src)
           print(f"Patched {path} with Android back-button → WebView dispatch")
           PYEOF

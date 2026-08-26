@@ -154,6 +154,25 @@ jobs:
               }
           '''
           src = src[:brace + 1] + inject + src[brace + 1:]
+          # 横屏真旋转桥：暴露 JS 可调用的 MuHaiAndroid.setOrientation('landscape'|'portrait')，
+          # 调用原生 Activity.requestedOrientation，使手机物理横置而非 CSS 旋转。
+          if "MuHaiAndroid" not in src:
+              bridge = '''
+              // 直播播放器真横屏桥：JS 通过 window.MuHaiAndroid.setOrientation 请求原生旋转
+              val MuHaiAndroid = object {
+                  @android.webkit.JavascriptInterface
+                  fun setOrientation(orientation: String) {
+                      try {
+                          requestedOrientation = if (orientation == "landscape")
+                              android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                          else
+                              android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                      } catch (e: Exception) { /* ignore */ }
+                  }
+              }
+
+              '''
+              src = src[:brace + 1] + bridge + src[brace + 1:]
           # Android 13+（API 33+）走 OnBackInvokedDispatcher，onBackPressed 不再回调；
           # 仅当 MainActivity 自身未重写 onCreate 时才注入（避免 conflicting overloads）。
           if "fun onCreate(" not in src:
@@ -165,6 +184,11 @@ jobs:
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) { if (!dispatchBack()) super.onBackPressed() }
                   }
+                  // 直播播放器真横屏桥：把 MuHaiAndroid 绑定到 WebView，使 JS 可调用 setOrientation
+                  try {
+                      val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
+                      wv?.addJavascriptInterface(MuHaiAndroid, "MuHaiAndroid")
+                  } catch (e: Exception) { /* 绑定失败忽略，横屏退化为 CSS 铺满 */ }
               }
 
               '''

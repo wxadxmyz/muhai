@@ -5,13 +5,13 @@ import { usePlayback } from '../lib/playback';
 import { usePlayer, player } from '../lib/playerStore';
 import { useSettings } from '../lib/settings';
 import { useGlobalShortcuts } from '../lib/shortcuts';
+import { useSwipeBack } from '../lib/swipeBack';
 import { MediaItem } from '../engine/types';
 import { alistClient } from '../lib/alistClient';
 import { SearchView } from '../components/SearchView';
 import { DebugPanel } from '../components/DebugPanel';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { VideoPlayer } from './VideoPlayer';
-import { DetailView } from './DetailView';
 import { Home } from './views/Home';
 import { CloudBrowse } from './views/CloudBrowse';
 import { VideoLibrary } from './views/Library';
@@ -31,6 +31,7 @@ export default function VideoApp() {
   const { settings } = useSettings();
   const state = usePlayer();
   useGlobalShortcuts();
+  useSwipeBack();
 
   const [tab, setTab] = useState<Tab>('home');
   const [detail, setDetail] = useState<MediaItem | null>(null);
@@ -170,15 +171,14 @@ export default function VideoApp() {
   };
 
   const openDetail = (it: MediaItem) => {
-    setDetail(it);
-    setEpisodeIndex(0);
-    setLine(0);
-    if (!it.episodes || it.episodes.length === 0) playEpisode(it, 0, 0, true);
+    // 直进播放页（无详情页中转）：点击影视/搜索结果立即播放，逐级返回时回到上一层列表
+    playEpisode(it, 0, 0, true);
   };
 
   const closeVideo = () => {
-    // 仅清播放器，保留 detail：从播放器返回时逐级回到详情页，而非直接跳回主页
+    // 清播放器并清 detail：从播放器逐级返回上层列表（主页/搜索结果），无详情页中转
     player.clearQueue();
+    setDetail(null);
   };
 
   const goSearch = (q: string) => {
@@ -313,18 +313,6 @@ export default function VideoApp() {
           </div>
         )}
 
-        {detail && !playingVideo && (
-          <div className="fullpage detail-page">
-          <ErrorBoundary name="详情">
-          <DetailView
-            detail={detail}
-            episodeIndex={episodeIndex}
-            onSelectEpisode={(i) => playEpisode(detail, i)}
-            onBack={() => setDetail(null)}
-          />
-          </ErrorBoundary>
-          </div>
-        )}
       </main>
 
       <nav className="bottom-nav">

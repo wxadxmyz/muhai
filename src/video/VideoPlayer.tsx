@@ -578,7 +578,11 @@ export function VideoPlayer({
             </div>
           )}
 
-          {detail.raw?.desc && <p className="vp-desc">{String(detail.raw.desc)}</p>}
+          {(() => {
+            const raw = detail.raw as any;
+            const intro = raw?.vod_blurb || raw?.vod_content || raw?.desc;
+            return intro ? <p className="vp-desc">{String(intro)}</p> : null;
+          })()}
         </div>
       )}
 

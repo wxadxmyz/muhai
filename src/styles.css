@@ -16,7 +16,7 @@
 .video-theme { flex-direction: column; }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; }
+html, body, #root { height: 100%; overflow-x: hidden; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -131,7 +131,7 @@ button.fav, .fav { color: var(--danger) !important; }
 .mini.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
 
 /* ============ 海报网格（影视）============ */
-.poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+.poster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .pcard { cursor: pointer; display: flex; flex-direction: column; }
 .pcover { position: relative; aspect-ratio: 2/3; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; }
 .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
@@ -1056,154 +1056,78 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* ============ 直播页 v2（迷你播放预览 + 左分类 + 右频道网格） ============ */
 /* 直播页：占满 .main 区域（绝对定位），内部独立滚动，避免被带 padding 的滚动容器挤压成白屏 */
 .live { display: flex; flex-direction: column; min-height: 100%; background: var(--bg); }
-/* 无频道态（空白提示 / 直播源列表）占满并可滚动 */
 .live > .blank-state, .live > .live-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.live-list { padding: 12px; }
+.live-list-head { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; padding: 8px 4px 12px; }
 
-/* 直播页顶部标题栏 */
-.live-header {
-  flex: 0 0 auto;
-  padding: 4px 14px 6px;
-  display: flex; align-items: center; gap: 10px;
-}
-.live-title {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 18px; font-weight: 700; color: var(--text);
-}
-.live-debug{margin-left:auto;width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);display:grid;place-items:center;cursor:pointer;transition:.15s;}
-.live-debug:hover{border-color:var(--accent);color:var(--accent);}
+/* 横屏全屏态：铺满视口，置于最顶层 */
+.live.lp-fullscreen { position: fixed; inset: 0; z-index: 9999; background: #000; }
 
-/* 顶部迷你播放预览 */
-.live-preview {
-  flex: 0 0 auto;
-  margin: 6px 12px 8px;
-  border-radius: 14px;
-  overflow: hidden;
-  background: linear-gradient(135deg, #2a3142, #1a2030);
-  position: relative;
-  aspect-ratio: 16 / 9;
-  box-shadow: var(--shadow);
-}
+/* 二级：直播房间整体 */
+.live-room { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* 顶栏 + 小窗 合并为同一卡片块（L1） */
+.lp-head-stage { background: var(--panel); padding: 10px 12px 12px; flex: 0 0 auto; }
+.lp-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.lp-back { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); border: none; color: var(--text); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.lp-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; }
+.lp-res { font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
+.lp-tv { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); border: none; color: var(--text); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+
+/* 小窗播放器（紧贴顶栏下方，无外边距分层） */
+.lp-stage { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: linear-gradient(135deg, #11202b, #0b1219); display: flex; align-items: center; justify-content: center; }
 .live-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
-.live-preview .lp-empty {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 8px; color: #cfd6e4; font-size: 14px;
-}
-.live-preview .lp-name {
-  position: absolute; top: 10px; left: 12px; right: 12px;
-  color: #fff; font-size: 15px; font-weight: 700;
-  text-shadow: 0 1px 4px rgba(0,0,0,.6);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  z-index: 2;
-}
-.live-preview .lp-controls {
-  position: absolute; bottom: 10px; right: 12px;
-  display: flex; gap: 10px; z-index: 3;
-}
-.live-preview .lp-controls button {
-  width: 34px; height: 34px; border-radius: 50%;
-  border: none; background: transparent; color: #fff;
-  display: grid; place-items: center;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,.6));
-}
-/* 直播播放器内「⇄ 换源」按钮（D 项）：小药丸文字按钮，与圆形控制按钮协调 */
-.live-preview .lp-controls .lp-src {
-  width: auto; height: 24px; padding: 0 9px; border-radius: 12px;
-  background: rgba(255,255,255,.16); font-size: 10px; font-weight: 700; letter-spacing: .2px;
-  display: inline-flex; align-items: center; gap: 3px;
-}
-.live-preview .lp-controls .lp-src :global(svg) { width: 13px; height: 13px; }
-.live-preview:fullscreen .lp-controls .lp-src { height: 32px; padding: 0 12px; font-size: 12px; border-radius: 16px; }
-.live-preview:fullscreen .lp-controls .lp-src :global(svg) { width: 15px; height: 15px; }
-/* 横屏全屏时控制条按钮放大，便于点击 */
-.live-preview:fullscreen .lp-controls { bottom: 28px; right: 28px; gap: 16px; }
-.live-preview:fullscreen .lp-controls button { width: 46px; height: 46px; }
-.live-preview:fullscreen .lp-controls button :global(svg) { width: 24px; height: 24px; }
-/* video 全屏时，把控制条用 fixed 强制浮在全屏 video 上方（Webview 对 video 全屏最稳） */
-.lp-controls.fs-fixed {
-  position: fixed;
-  bottom: calc(20px + var(--sab, 0px));
-  right: 20px;
-  z-index: 9999;
-}
-/* CSS 模拟横屏全屏：fixed 填满视口，绕开 WebView 对 HTML5 requestFullscreen 的支持差异 */
-.live-preview.css-fullscreen {
-  position: fixed; inset: 0; z-index: 9999;
-  width: 100vw; height: 100vh;
-  margin: 0; border-radius: 0; background: #000;
-}
-.live-preview.css-fullscreen .live-video { width: 100%; height: 100%; }
-.live-preview.css-fullscreen .lp-controls {
-  position: fixed; bottom: calc(24px + var(--sab, 0px)); right: 24px; z-index: 10000;
-  gap: 16px;
-}
-.live-preview.css-fullscreen .lp-controls button { width: 46px; height: 46px; }
+.lp-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #cfd6e4; font-size: 14px; }
+.lp-big { position: absolute; z-index: 2; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; }
+.lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; }
 
-/* 问题 #3 修复：二级频道列表返回条 */
-.live-back {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 15px; font-weight: 600; color: var(--text);
-  cursor: pointer; user-select: none;
-}
-.live-back:hover { color: var(--accent); }
+/* 两栏选台 */
+.lp-pick { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--border); }
+.lp-cats { width: 90px; flex: 0 0 auto; background: var(--panel); overflow-y: auto; padding: 6px 0; }
+.lp-cats::-webkit-scrollbar { display: none; }
+.cat { height: 44px; display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--muted); cursor: pointer; border-left: 3px solid transparent; flex: 0 0 auto; }
+.cat.on { color: var(--accent); background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
+.lp-chs { flex: 1; min-width: 0; overflow-y: auto; padding: 4px 0; background: var(--bg); }
+.lp-chs::-webkit-scrollbar { display: none; }
+/* 行高锁死不缩放（L2） */
+.ch { display: flex; align-items: center; gap: 10px; height: 54px; flex: 0 0 auto; padding: 0 16px; cursor: pointer; border-left: 3px solid transparent; }
+.ch.on { background: rgba(47,224,191,.08); border-left-color: var(--accent); }
+.ch-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: 0 0 auto; }
+.ch.on .ch-dot { background: var(--accent); }
+.ch-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; overflow: hidden; }
+.ch-name { font-size: 14px; line-height: 18px; color: #e7ecf3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch.on .ch-name { color: #fff; font-weight: 600; }
+.ch-src-hint { font-size: 11px; line-height: 14px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* 主体：左分类 + 右频道网格 */
-.live-main {
-  flex: 1; min-height: 0;
-  display: flex; gap: 12px;
-  padding: 4px 12px calc(8px + var(--sab,0px));
-}
-.live-cats {
-  flex: 0 0 92px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 10px 8px;
-  overflow-y: auto;
-  display: flex; flex-direction: column; gap: 6px;
-  -webkit-overflow-scrolling: touch;
-}
-.live-cat {
-  font-size: 14px; padding: 11px 6px; border-radius: 11px;
-  color: var(--muted); text-align: center; cursor: pointer; user-select: none;
-  transition: background .15s, color .15s;
-}
-.live-cat.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
-.live-cat:hover:not(.on) { color: var(--text); background: var(--panel2); }
+/* ===== 横屏浮层 ===== */
+.land-overlay { position: fixed; inset: 0; z-index: 10000; background: #000; display: flex; flex-direction: column; }
+.land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
+.land-back { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
+.land-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.land-tv { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
+.land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; align-items: center; gap: 28px; }
+.land-center button { width: 62px; height: 62px; border-radius: 50%; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.16); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.land-center button.main { width: 80px; height: 80px; color: var(--accent); border-color: rgba(47,224,191,.45); background: rgba(47,224,191,.12); }
+.land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 14px 18px 10px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; align-items: center; gap: 14px; }
+.land-src { width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; font-size: 12px; font-weight: 700; }
+.land-src.on { color: var(--accent); border: 1px solid var(--accent); }
+.land-pbtn { width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,.08); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.land-list { width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; margin-left: auto; }
+.land-list.on { color: var(--accent); border: 1px solid var(--accent); }
+.land-pick { position: absolute; top: 54px; right: 12px; bottom: 64px; width: 220px; z-index: 4; background: rgba(16,20,28,.94); border: 1px solid var(--border); border-radius: 14px; display: flex; overflow: hidden; }
+.land-pick .lp-cats { width: 64px; }
+.land-pick .cat { height: 40px; }
+.land-pick .lp-chs { flex: 1; }
+.land-pick .ch { height: 48px; padding: 0 10px; }
+.land-pick .ch-name { font-size: 13px; }
+.land-srcbar { position: absolute; left: 10px; right: 10px; bottom: 68px; z-index: 5; background: rgba(16,20,28,.94); border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: flex; align-items: center; gap: 10px; }
+.land-srcbar-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.land-srcbar-row { flex: 1; display: flex; gap: 8px; overflow-x: auto; }
+.land-srcbar-row::-webkit-scrollbar { display: none; }
+.land-srcbar-row .src { white-space: nowrap; flex: 0 0 auto; padding: 8px 16px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); font-size: 13px; cursor: pointer; }
+.land-srcbar-row .src.on { background: var(--accent); color: #04201a; border-color: var(--accent); font-weight: 700; }
+.land-srcbar-close { width: 30px; height: 30px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
-.live-grid {
-  flex: 1; min-width: 0;
-  overflow-y: auto;
-  /* 问题 #4 修复：直播频道列表改为单列（原为 1fr 1fr 双列） */
-  display: grid; grid-template-columns: 1fr; gap: 12px; align-content: start;
-  -webkit-overflow-scrolling: touch;
-}
-.live-ch {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  padding: 13px;
-  display: flex; align-items: center; gap: 12px;
-  cursor: pointer;
-  transition: border-color .15s, transform .15s, box-shadow .15s;
-}
-.live-ch:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow); }
-.live-ch .lc-logo {
-  width: 46px; height: 46px; border-radius: 11px;
-  display: grid; place-items: center; overflow: hidden;
-  color: #fff; font-size: 15px; font-weight: 700; flex: 0 0 auto;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-}
-.live-ch .lc-logo img { width: 100%; height: 100%; object-fit: cover; }
-.live-ch .lc-info { min-width: 0; }
-.live-ch .lc-name {
-  font-size: 15px; font-weight: 600; color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.live-ch .lc-prog {
-  font-size: 12px; color: var(--muted); margin-top: 3px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
 .live-grid > .empty { grid-column: 1 / -1; }
 
 /* ============ 主页底部「使用须知」轻提示（添加源后弹一次，2s 自动消失） ============ */

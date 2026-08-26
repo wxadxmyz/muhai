@@ -38,24 +38,6 @@ pub fn run() {
             });
     }
 
-#[tauri::command]
-async fn clear_webview_cache(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-    if let Some(w) = app.get_webview_window("main") {
-        // 清 WebView 全部浏览数据（HTTP 缓存 / 本地存储 / 应用缓存等），
-        // 使下次加载强制重新拉取 APK 内打包的最新前端资源。
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        {
-            let _ = w.clear_all_browsing_data();
-        }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            let _ = w.eval("try{localStorage.clear();sessionStorage.clear();}catch(e){}");
-        }
-    }
-    Ok(())
-}
-
     builder
         .invoke_handler(tauri::generate_handler![
             fetchsource,
@@ -327,6 +309,25 @@ async fn fetchsource(url: String) -> Result<String, String> {
         return Err(format!("请求失败：HTTP {}", status));
     }
     Ok(text)
+}
+
+// 清除 WebView 全部浏览数据（HTTP 缓存 / 本地存储 / 应用缓存等）。
+// 供前端"清除缓存 / 重置 APP"调用，使下次加载强制重新拉取 APK 内打包的最新前端资源，
+// 根治"APK 升了但前端还是旧壳"的问题。
+#[tauri::command]
+async fn clear_webview_cache(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window("main") {
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        {
+            let _ = w.clear_all_browsing_data();
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let _ = w.eval("try{localStorage.clear();sessionStorage.clear();}catch(e){}");
+        }
+    }
+    Ok(())
 }
 
 // v2.7.0 图片代理：CMS 源（如量子）图床对 webview 的 Chrome UA 可能拒防盗链，

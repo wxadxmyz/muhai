@@ -131,7 +131,7 @@ button.fav, .fav { color: var(--danger) !important; }
 .mini.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
 
 /* ============ 海报网格（影视）============ */
-.poster-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; grid-auto-rows: 1fr; }
+.poster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; grid-auto-rows: 1fr; max-width: 560px; margin: 0 auto; }
 .pcard { cursor: pointer; display: flex; flex-direction: column; height: 100%; }
 .pcover { position: relative; aspect-ratio: 2/3; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; }
 .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
@@ -615,7 +615,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   /* 网格变窄 */
   .cards { grid-template-columns: 1fr; }
   .row-cards { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); }
-  .poster-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 560px; margin: 0 auto; }
   .cloud-grid { grid-template-columns: 1fr; }
 
   /* 触控目标放大（避免手指误触） */
@@ -1237,8 +1237,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ============ 点播播放器 · 按 幕海视频播放器UI.html 设计文件 ============ */
 .player-root { background: var(--bg); min-height: 100%; }
-.player-card { margin: 0 16px 18px; background: var(--panel); border-radius: 20px; overflow: hidden; position: relative; aspect-ratio: 16 / 10.5; }
-.player-card.land { margin: 0; border-radius: 0; position: fixed; inset: 0; z-index: 100; aspect-ratio: auto; background: #000; display: flex; flex-direction: column; }
+.player-card { margin: var(--sat) 16px 18px; background: var(--panel); border-radius: 20px; overflow: hidden; position: relative; aspect-ratio: 16 / 10.5; }
+.player-card.land { margin: 0; border-radius: 0; position: fixed; inset: 0; z-index: 100; aspect-ratio: auto; background: #000; display: flex; flex-direction: column; padding-top: var(--sat); }
 .player-card .screen { position: absolute; inset: 0; background: linear-gradient(180deg, #1a2330 0%, #0f141d 100%); display: flex; flex-direction: column; }
 .player-card.land .screen { position: relative; flex: 1; }
 .player-card .poster { position: absolute; inset: 0; opacity: .35; background: radial-gradient(circle at 50% 40%, #1c3344, #0a1119); }

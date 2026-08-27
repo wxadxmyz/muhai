@@ -185,10 +185,11 @@ jobs:
                       runOnUiThread {
                           _muhaiBind()
                           try {
-                              requestedOrientation = if (orientation == "landscape")
-                                  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                              else
-                                  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                              requestedOrientation = when (orientation) {
+                                  "landscape" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                  "sensor" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                                  else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                              }
                           } catch (e: Exception) { /* ignore */ }
                       }
                   }

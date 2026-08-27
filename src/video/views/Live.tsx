@@ -111,6 +111,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [pickSheet, setPickSheet] = useState(false); // 横屏选台浮层
   const [showCast, setShowCast] = useState(false); // 真实 DLNA 投屏浮层
   const [landControls, setLandControls] = useState(true); // 横屏控件显隐（自动隐藏）
+  const [locked, setLocked] = useState(false); // 横屏锁屏：隐藏其余控件、禁手势、仅留锁按钮
   const landHideTimer = useRef<number | undefined>(undefined);
   const videoRef = useRef<HTMLVideoElement>(null);
   // 真实分辨率药丸（设计文件 [1920×1080]）+ 亮度/音量手势状态
@@ -137,11 +138,15 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const toggleFullscreen = useCallback(() => {
     if (!isFullscreen) {
       setIsFullscreen(true);
+      setLocked(false);
       showLandControls();
+      // 安卓原生真旋转（window.MuHaiAndroid.setOrientation，CI 注入）；未注入则前端 CSS 铺满
       try { (window as any).MuHaiAndroid?.setOrientation?.('landscape'); } catch { /* ignore */ }
     } else {
       setIsFullscreen(false);
-      try { (window as any).MuHaiAndroid?.setOrientation?.('portrait'); } catch { /* ignore */ }
+      setLocked(false);
+      // 退出横屏后恢复跟随系统重力感应（自动旋转）
+      try { (window as any).MuHaiAndroid?.setOrientation?.('sensor'); } catch { /* ignore */ }
     }
   }, [isFullscreen, showLandControls]);
 
@@ -495,10 +500,10 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
       {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
       {isFullscreen && channels && (
-        <div className={'land-overlay' + (landControls ? '' : ' hide')}
-          onTouchStart={(e) => { showLandControls(); onStageTouchStart(e); }}
-          onTouchMove={onStageTouchMove}
-          onTouchEnd={(e) => { showLandControls(); onStageTouchEnd(e); }}
+        <div className={'land-overlay' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}
+          onTouchStart={(e) => { if (locked) return; showLandControls(); onStageTouchStart(e); }}
+          onTouchMove={(e) => { if (locked) return; onStageTouchMove(e); }}
+          onTouchEnd={(e) => { if (locked) return; showLandControls(); onStageTouchEnd(e); }}
           onClick={(e) => { if (e.target === e.currentTarget) onLiveStageClick(); }}
         >
           <div className="land-top">
@@ -509,6 +514,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <span>{activeName}</span>
               <span className="lp-res">[{resolution}]</span>
             </div>
+            <button className={'land-lock' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}>
+              <Icon name="lock" size={18} />
+            </button>
             <button className="land-tv" onClick={handleCast} title="投屏">
               <Icon name="tv" size={18} />
             </button>

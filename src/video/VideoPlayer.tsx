@@ -169,14 +169,14 @@ export function VideoPlayer({
     return () => window.clearInterval(id);
   }, []);
 
-  // 主动请求系统横屏（Android 原生桥；不可用则退化为 CSS 铺满）
-  const requestOrientation = (ori: 'landscape' | 'portrait') => {
+  // 主动请求系统横屏/竖屏（Android 原生桥 window.MuHaiAndroid.setOrientation，由 CI 注入 MainActivity；未注入则退化为 CSS 铺满）
+  const requestOrientation = (ori: 'landscape' | 'portrait' | 'sensor') => {
     try { (window as any).MuHaiAndroid?.setOrientation?.(ori); } catch { /* ignore */ }
   };
 
-  // 横屏态兜底：万一 landscape 被外部置位（如逐级返回），同步一次原生方向
+  // 横屏态兜底：万一 landscape 被外部置位（如逐级返回），同步一次原生方向（退出后恢复重力感应自动旋转）
   useEffect(() => {
-    if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'portrait');
+    if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'sensor');
   }, [landscape, landBySensor]);
 
   // 返回手势衔接：先关最上层浮层
@@ -385,7 +385,8 @@ export function VideoPlayer({
     setLandscape((v) => {
       const next = !v;
       setLandBySensor(next);
-      requestOrientation(next ? 'landscape' : 'portrait');
+      // 进入横屏强制 landscape；退出后恢复跟随系统重力感应（自动旋转）
+      requestOrientation(next ? 'landscape' : 'sensor');
       return next;
     });
   };
@@ -651,11 +652,6 @@ export function VideoPlayer({
           )}
           {castDevice && <div className="vp-cast-flag"><Icon name="cast" size={14} /> 投屏中：{castDevice}</div>}
 
-          {/* 中央大播放钮：暂停且无加载/错误时显示，点击播放 */}
-          {!state.isPlaying && !resolving && !err && (
-            <button className="big-btn" onClick={() => player.toggle()} title="播放"><Icon name="play" size={30} /></button>
-          )}
-
           {/* 横滑快进/快退时间气泡 */}
           {seekBubble && (
             <div className="seek-bubble">
@@ -675,7 +671,7 @@ export function VideoPlayer({
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
           {!landscape && (
-            <div className={'overlay' + (controlsVisible ? '' : ' hide')}>
+            <div className={'overlay' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '')}>
               <div className="top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
@@ -683,7 +679,7 @@ export function VideoPlayer({
                   <span className="res">[{resText || '1920x804'}]</span>
                 </div>
                 <div className="acts">
-                  <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={16} /></button>
+                  <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={16} /></button>
                   <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
                 </div>
               </div>
@@ -705,7 +701,7 @@ export function VideoPlayer({
 
           {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
           {landscape && (
-            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide')} onClick={(e) => { if (e.target === e.currentTarget) toggleControls(); }}>
+            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '')} onClick={(e) => { if (locked) return; if (e.target === e.currentTarget) toggleControls(); }}>
               {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
@@ -722,7 +718,7 @@ export function VideoPlayer({
 
               {/* 左侧边栏：锁 / 弹幕 */}
               <div className="side left">
-                <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
+                <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
                 <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
               </div>
 

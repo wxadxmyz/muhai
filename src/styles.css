@@ -627,12 +627,16 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   /* 网格变窄 */
   .cards { grid-template-columns: 1fr; }
   .row-cards { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); }
-  .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
   .cloud-grid { grid-template-columns: 1fr; }
 
   /* 触控目标放大（避免手指误触） */
   button { padding: 11px 16px; }
   .card, .track-row, .mini-card, .pcard, .cloud-item { padding: 12px; }
+  /* 影视卡片：封面贴满、标题紧贴封面、卡片不留内边距（对齐截图三列窄缝） */
+  .poster-grid .pcard { padding: 0; }
+  .poster-grid .pcard .ptitle { margin-top: 5px; padding: 0 4px; }
+  .poster-grid .pcard .psub { padding: 0 4px; }
   .mini { width: 34px; height: 34px; }
   .icon { width: 42px; height: 42px; }
   input, select, textarea { font-size: 16px; } /* 防止 iOS 聚焦时页面缩放 */
@@ -696,6 +700,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .file-btn {
   display: inline-flex; align-items: center; gap: 8px; background: var(--panel2); border: 1px dashed var(--border);
   color: var(--text); border-radius: 10px; padding: 12px; font-size: 14px; cursor: pointer;
+  align-self: flex-start;
 }
 .file-btn:active { border-color: var(--accent); }
 .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; margin: 6px 0; }
@@ -1145,6 +1150,19 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .land-srcbar-row .src.on { background: var(--accent); color: #04201a; border-color: var(--accent); font-weight: 700; }
 .land-srcbar-close { width: 30px; height: 30px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
+/* 直播锁屏按钮 + 锁屏态：仅保留锁按钮，隐藏其余控件与手势 */
+.land-lock { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.land-lock.on { color: var(--accent); border: 1px solid var(--accent); }
+.land-overlay.locked .land-back,
+.land-overlay.locked .land-title,
+.land-overlay.locked .land-tv,
+.land-overlay.locked .land-center,
+.land-overlay.locked .land-bottom,
+.land-overlay.locked .land-pick,
+.land-overlay.locked .land-srcbar { display: none !important; }
+.land-overlay.locked .land-top { background: none; justify-content: flex-end; }
+.land-overlay.locked .land-lock { display: grid !important; pointer-events: auto; opacity: 1 !important; }
+
 /* 直播页轻提示（投屏占位等） */
 .live .tip { position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px; z-index: 10001; opacity: 0; transition: .2s; pointer-events: none; }
 .live .tip.show { opacity: 1; }
@@ -1400,3 +1418,26 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .vp-hud-bar > div { height: 100%; background: var(--accent); border-radius: 3px; transition: width .08s linear; }
 .vp-hud-val { font-size: 14px; font-variant-numeric: tabular-nums; }
 @keyframes vpspin { to { transform: rotate(360deg); } }
+
+/* ===== 锁屏：仅保留小锁按钮，隐藏其余全部控件与手势 ===== */
+/* 竖屏 */
+.player-card .overlay.locked .top .back,
+.player-card .overlay.locked .top .ttl,
+.player-card .overlay.locked .top .acts .icon:not(.lock-btn),
+.player-card .overlay.locked .center,
+.player-card .overlay.locked .bottom { display: none !important; }
+.player-card .overlay.locked .top { background: none; padding: 12px 14px; justify-content: flex-end; }
+.player-card .overlay.locked .top .acts { display: flex; }
+/* 横屏 */
+.landscape .overlay.land-h.locked .land-top .back,
+.landscape .overlay.land-h.locked .land-top .ttl,
+.landscape .overlay.land-h.locked .land-top .status,
+.landscape .overlay.land-h.locked .side.left .icon:not(.lock-btn),
+.landscape .overlay.land-h.locked .side.right,
+.landscape .overlay.land-h.locked .center,
+.landscape .overlay.land-h.locked .bottom { display: none !important; }
+.landscape .overlay.land-h.locked .land-top { background: none; padding: 14px 16px; justify-content: flex-end; }
+.landscape .overlay.land-h.locked .side.left { gap: 0; }
+/* 锁按钮在锁屏态常显、可点 */
+.player-card .overlay.locked .top .acts .lock-btn,
+.landscape .overlay.land-h.locked .side.left .lock-btn { display: grid !important; pointer-events: auto; opacity: 1 !important; }

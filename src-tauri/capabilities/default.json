@@ -14,6 +14,6 @@
     "allow-spiderrun",
     "allow-dlnascan",
     "allow-castvideo",
-    "allow-clear_webview_cache"
+    "allow-clear-webview-cache"
   ]
 }

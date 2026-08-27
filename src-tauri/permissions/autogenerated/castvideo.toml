@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-castvideo"
+description = "Enables the castvideo command without any pre-configured scope."
+commands.allow = ["castvideo"]
+
+[[permission]]
+identifier = "deny-castvideo"
+description = "Denies the castvideo command without any pre-configured scope."
+commands.deny = ["castvideo"]

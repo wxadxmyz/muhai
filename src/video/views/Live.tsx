@@ -397,7 +397,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                 <span className="lp-res">[{resolution}]</span>
               </div>
               <button className="lp-tv" onClick={handleCast} title="投屏">
-                <Icon name="cast" size={18} />
+                <Icon name="tv" size={18} />
               </button>
             </div>
             <div className="lp-stage"
@@ -510,7 +510,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <span className="lp-res">[{resolution}]</span>
             </div>
             <button className="land-tv" onClick={handleCast} title="投屏">
-              <Icon name="cast" size={18} />
+              <Icon name="tv" size={18} />
             </button>
           </div>
           <div className="land-center">

@@ -33,6 +33,8 @@ const P: Record<string, ReactNode> = {
   bug: <><rect x="8" y="6" width="8" height="14" rx="4" /><path d="M12 2v4M5 10h14M5 14h14M8 6l-2-2M16 6l2-2M6 18l-2 2M18 18l2 2" /></>,
   download: <><path d="M12 3v12" /><path d="M7 11l5 5 5-5" /><path d="M5 21h14" /></>,
   cast: <><path d="M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2" /><path d="M2 12a10 10 0 0 1 10 10" /><path d="M2 16a6 6 0 0 1 6 6" /></>,
+  // 投屏：电视图标（对齐设计文件 i-tv）
+  tv: <><rect x="3" y="5" width="18" height="13" rx="2" /><path d="M8 21h8M12 18v3" /></>,
   captions: <><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 12h3M14 12h3M7 15h2M13 15h4" /></>,
   'file-text': <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h6" /></>,
   palette: <><path d="M12 3a9 9 0 1 0 0 18 2 2 0 0 0 2-2 2 2 0 0 1 2-2h1a4 4 0 0 0 4-4 9 9 0 0 0-9-9z" /><circle cx="8" cy="11" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" /><circle cx="16" cy="11" r="1" fill="currentColor" stroke="none" /></>,
@@ -62,6 +64,9 @@ const P: Record<string, ReactNode> = {
   pause: <g fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2" /><rect x="14" y="5" width="4" height="14" rx="1.2" /></g>,
   'skip-back': <><path d="M19 5v14l-9-7z" fill="currentColor" /><rect x="5" y="5" width="2.4" height="14" fill="currentColor" rx="1" /></>,
   'skip-forward': <><path d="M5 5v14l9-7z" fill="currentColor" /><rect x="16.6" y="5" width="2.4" height="14" fill="currentColor" rx="1" /></>,
+  // 上一集 / 下一集（对齐设计文件 i-prev / i-next：竖线 + 三角）
+  prev: <><path d="M19 5v14" /><path d="M5 12l9-7v14z" fill="currentColor" stroke="none" /></>,
+  next: <><path d="M5 5v14" /><path d="M19 12l-9-7v14z" fill="currentColor" stroke="none" /></>,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof P;

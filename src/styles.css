@@ -91,10 +91,12 @@ button.fav, .fav { color: var(--danger) !important; }
 .chip.ghost { border-style: dashed; color: var(--muted); }
 
 /* ============ 行区块 ============ */
-/* 主页/历史：三列网格贴屏幕边（抵消 .main 的左右 padding，只留卡片间 gap） */
+/* 主页/历史：三列网格占满屏幕左右边，卡片之间仅留极细空白（像细线） */
 .view.home, .view.library { margin-left: -28px; margin-right: -28px; }
-.view.home .row-section, .view.library .row-section { padding-left: 14px; padding-right: 14px; }
-.view.home .poster-grid, .view.library .poster-grid { padding-left: 14px; padding-right: 14px; }
+.view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
+/* 标题仍留一点左缩进，卡片则贴屏幕左右边 */
+.view.home .row-head, .view.library .row-head { padding-left: 14px; }
+.view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; gap: 2px; }
 
 .row-section { margin-top: 26px; }
 .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -590,8 +592,9 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   .main { padding: calc(14px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
   /* 主页/历史移动端同样贴边（抵消 .main 左右 14px） */
   .view.home, .view.library { margin-left: -14px; margin-right: -14px; }
-  .view.home .row-section, .view.library .row-section,
-  .view.home .poster-grid, .view.library .poster-grid { padding-left: 12px; padding-right: 12px; }
+  .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
+  .view.home .row-head, .view.library .row-head { padding-left: 12px; }
+  .view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; gap: 2px; }
 
   /* 底部 Tab 导航 */
   .bottom-nav {
@@ -1088,7 +1091,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .lp-stage { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: linear-gradient(135deg, #11202b, #0b1219); display: flex; align-items: center; justify-content: center; touch-action: none; }
 .live-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
 .lp-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #cfd6e4; font-size: 14px; }
-.lp-big { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; }
+.lp-big { position: relative; z-index: 2; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; }
 .lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; }
 
 /* 两栏选台 */
@@ -1327,45 +1330,45 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .intro { margin: 0 16px 30px; }
 .intro p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.8; }
 
-/* 横屏（v2：左侧竖排工具 + 左侧垂直进度条 + 中央垂直播放控制） */
+/* 横屏（水平布局：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具，对齐视频播放器UI.html） */
 .landscape .stage { flex: 1; position: relative; background: #0b0e14; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .landscape .stage .bg { position: absolute; inset: 0; opacity: .4; }
-.landscape .land-v2 { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; color: #fff; }
-.landscape .land-v2.hide .land-top,
-.landscape .land-v2.hide .land-sidebar,
-.landscape .land-v2.hide .land-vbar,
-.landscape .land-v2.hide .land-center-v,
-.landscape .land-v2.hide .land-right,
-.landscape .land-v2.hide .land-bottom-right { opacity: 0; pointer-events: none; transition: opacity .25s; }
+.landscape .land-h { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; color: #fff; }
+.landscape .land-h.hide .land-top,
+.landscape .land-h.hide .side,
+.landscape .land-h.hide .center,
+.landscape .land-h.hide .bottom { opacity: 0; pointer-events: none; transition: opacity .25s; }
 
 .landscape .land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
 .landscape .land-top .back { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .landscape .land-top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .landscape .land-top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .landscape .land-top .ttl .res { font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
-.landscape .land-top .top-actions { display: flex; align-items: center; gap: 10px; }
-.landscape .land-top .icon { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
-.landscape .land-top .icon.on { color: var(--accent); }
+.landscape .land-top .status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #fff; flex: 0 0 auto; }
 
-.landscape .land-sidebar { position: absolute; left: 12px; top: 54px; bottom: 54px; z-index: 4; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
-.landscape .land-pill { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 48px; padding: 7px 0; border-radius: 10px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.12); color: #fff; font-size: 10px; cursor: pointer; }
-.landscape .land-pill.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
-.landscape .land-pill svg { width: 15px; height: 15px; }
+.landscape .side { position: absolute; top: 50%; transform: translateY(-50%); z-index: 4; display: flex; flex-direction: column; gap: 18px; }
+.landscape .side.left { left: 14px; }
+.landscape .side.right { right: 14px; }
+.landscape .side button { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
-.landscape .land-vbar { position: absolute; left: 66px; top: 54px; bottom: 54px; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
-.landscape .land-vbar .t { font-size: 11px; color: #fff; min-width: 38px; text-align: center; }
-.landscape .land-vbar .bar { flex: 1; width: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
-.landscape .land-vbar .bar .fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
-.landscape .land-vbar .bar input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+.landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; }
+.landscape .center button { width: 58px; height: 58px; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.landscape .center button.main { width: 76px; height: 76px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
-.landscape .land-center-v { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.landscape .land-center-v .ctrl { width: 58px; height: 58px; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
-.landscape .land-center-v .ctrl.main { width: 76px; height: 76px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-
-.landscape .land-right { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); z-index: 4; display: flex; flex-direction: column; gap: 18px; }
-.landscape .land-right .icon { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
-
-.landscape .land-bottom-right { position: absolute; right: 14px; bottom: 12px; z-index: 4; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #fff; }
+.landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+.landscape .bottom .prow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.landscape .bottom .prow .pi { color: #fff; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+.landscape .bottom .prow .t { font-size: 12px; color: #fff; min-width: 44px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.landscape .bottom .prow .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
+.landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
+.landscape .bottom .prow .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: 31px; margin: 0; background: transparent; opacity: 0; cursor: pointer; touch-action: none; }
+.landscape .bottom .prow .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.landscape .tools { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
+.landscape .tools::-webkit-scrollbar { display: none; }
+.landscape .tools button { white-space: nowrap; background: rgba(255,255,255,.1); border: none; color: #fff; padding: 8px 13px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; flex: 0 0 auto; }
+.landscape .tools button svg { width: 15px; height: 15px; }
+.landscape .tools button.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 
 /* 设置抽屉（设计文件 .drawer） */
 .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }

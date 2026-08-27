@@ -142,14 +142,16 @@ export function VideoPlayer({
   const introSec = perItem?.intro ?? settings.skipIntro;
   const outroSec = perItem?.outro ?? settings.skipOutro;
 
-  // 横屏（移动端）：仅窄屏横置进入沉浸布局
+  // 横屏由用户点「横屏」按钮主动进入（并请求原生真旋转），不再依赖系统传感器自动切换，
+  // 避免「点了按钮却不转」的问题。
+  const [landBySensor, setLandBySensor] = useState(false);
   useEffect(() => {
-    const mq = window.matchMedia('(orientation: landscape) and (max-width: 900px)');
-    const on = () => setLandscape(mq.matches);
-    on();
+    // 仅用于：用户物理转回竖屏时，若仍处于横屏布局则退出（原生旋转回竖屏的兜底）
+    const mq = window.matchMedia('(orientation: portrait)');
+    const on = () => { if (mq.matches && landBySensor) setLandscape(false); };
     mq.addEventListener('change', on);
     return () => mq.removeEventListener('change', on);
-  }, []);
+  }, [landBySensor]);
 
   // 时钟（横屏顶栏时间/电量展示）
   useEffect(() => {
@@ -167,10 +169,10 @@ export function VideoPlayer({
     try { (window as any).MuHaiAndroid?.setOrientation?.(ori); } catch { /* ignore */ }
   };
 
-  // 横屏自动旋转：进入横屏态时请求原生横屏；退出时恢复竖屏
+  // 横屏态兜底：万一 landscape 被外部置位（如逐级返回），同步一次原生方向
   useEffect(() => {
-    requestOrientation(landscape ? 'landscape' : 'portrait');
-  }, [landscape]);
+    if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'portrait');
+  }, [landscape, landBySensor]);
 
   // 返回手势衔接：先关最上层浮层
   useEffect(() => {
@@ -374,7 +376,14 @@ export function VideoPlayer({
     localStorage.setItem('rf_audio', n);
   };
 
-  const toggleLandscape = () => setLandscape((v) => !v);
+  const toggleLandscape = () => {
+    setLandscape((v) => {
+      const next = !v;
+      setLandBySensor(next);
+      requestOrientation(next ? 'landscape' : 'portrait');
+      return next;
+    });
+  };
 
   const toggleFullscreen = () => {
     const el = stageRef.current;
@@ -468,9 +477,14 @@ export function VideoPlayer({
       const stepPx = 40;
       const crossed = Math.floor(Math.abs(dx) / stepPx) - Math.floor(Math.abs(el.__accum) / stepPx);
       if (crossed > 0 && dir !== 0) {
-        const d = state.duration || 0;
-        const target = Math.max(0, Math.min(d, state.progress + dir * SWIPE_STEP * crossed));
-        if (videoRef.current) videoRef.current.currentTime = target;
+        // 用 <video> 真实 currentTime 做基准（避免闭包里 state.progress 滞后导致跳 0）；
+        // duration 未就绪（HLS 初期常 NaN/0）时直接跳过，避免 currentTime 被 clamp 到 0 重头播放。
+        const v = videoRef.current;
+        const cur = v ? v.currentTime : state.progress;
+        const d = v && isFinite(v.duration) && v.duration > 0 ? v.duration : (state.duration || 0);
+        if (d <= 0) return;
+        const target = Math.max(0, Math.min(d, cur + dir * SWIPE_STEP * crossed));
+        if (v) v.currentTime = target;
         player.seek(target); // 同时更新 state.duration/progress，驱动 .fill 实时变化
         el.__accum = dx;
         el.__dir = dir;
@@ -659,63 +673,69 @@ export function VideoPlayer({
             </div>
           )}
 
-          {/* ============ 横屏：左侧竖排工具 + 垂直进度条 + 中央垂直播放控制（1:1 截图） ======== */}
+          {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
           {landscape && (
-            <div className={'overlay land-v2' + (controlsVisible ? '' : ' hide')} onClick={(e) => { if (e.target === e.currentTarget) toggleControls(); }}>
+            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide')} onClick={(e) => { if (e.target === e.currentTarget) toggleControls(); }}>
+              {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
                   <span className="name">{detail.title}</span>
                   <span className="res">· 第{episodeIndex + 1}集 · [{resText || '1920x804'}]</span>
                 </div>
-                <div className="top-actions">
-                  <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
-                  <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
-                </div>
-              </div>
-
-              <div className="land-sidebar">
-                <button className={'land-pill' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={14} /><span>解码</span></button>
-                <button className="land-pill" onClick={retry}><Icon name="refresh" size={14} /><span>刷新</span></button>
-                <button className="land-pill" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={14} /><span>重播</span></button>
-                <button className="land-pill" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={14} /><span>字幕</span></button>
-                <button className="land-pill" onClick={() => setShowSkip(true)}><Icon name="skip-forward" size={14} /><span>片头</span></button>
-                <button className="land-pill" onClick={() => setShowSkip(true)}><Icon name="skip-back" size={14} /><span>片尾</span></button>
-                <button className={'land-pill' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={14} /><span>音效</span></button>
-                <button className="land-pill" onClick={cycleQuality}><Icon name="sparkles" size={14} /><span>画质</span></button>
-                <button className="land-pill" onClick={scrollToEpisodes}><Icon name="list" size={14} /><span>选集</span></button>
-                <button className="land-pill" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={14} /><span>设置</span></button>
-              </div>
-
-              <div className="land-vbar" onClick={(e) => {
-                const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                const ratio = (e.clientY - r.top) / r.height;
-                if (state.duration) player.seek(Math.max(0, Math.min(state.duration, ratio * state.duration)));
-              }}>
-                <span className="t">{fmtTime(state.progress)}</span>
-                <div className="bar">
-                  <div className="fill" style={{ height: `${state.duration ? (state.progress / state.duration) * 100 : 0}%` }} />
-                  <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} style={{ pointerEvents: 'none' }} />
-                </div>
-                <span className="t">{fmtTime(state.duration)}</span>
-              </div>
-
-              <div className="land-center-v">
-                <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="arrow-up" size={26} /></button>
-                <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={32} /></button>
-                <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="arrow-down" size={26} /></button>
-              </div>
-
-              <div className="land-right">
-                <button className="icon" onClick={() => setShowCast(true)} title="投屏"><Icon name="cast" size={20} /></button>
-                <button className="icon" onClick={onPip} title="画中画"><Icon name="pip" size={20} /></button>
-              </div>
-
-              <div className="land-bottom-right">
                 <div className="status">
                   <Icon name="clock" size={15} />
                   <Icon name="battery" size={16} />
                   <span>{clock}</span>
+                </div>
+              </div>
+
+              {/* 左侧边栏：锁 / 弹幕 */}
+              <div className="side left">
+                <button className={'icon' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
+                <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
+              </div>
+
+              {/* 右侧边栏：投屏 / 画中画 */}
+              <div className="side right">
+                <button className="icon" onClick={() => setShowCast(true)} title="投屏"><Icon name="tv" size={20} /></button>
+                <button className="icon" onClick={onPip} title="画中画"><Icon name="pip" size={20} /></button>
+              </div>
+
+              {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}
+              <div className="center">
+                <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={26} /></button>
+                <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={32} /></button>
+                <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={26} /></button>
+              </div>
+
+              {/* 底部：横向进度条 + 横排 10 工具按钮 */}
+              <div className="bottom">
+                <div className="prow">
+                  <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                  <span className="t">{fmtTime(state.progress)}</span>
+                  <div className="bar" onClick={(e) => {
+                    const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                    const ratio = (e.clientX - r.left) / r.width;
+                    if (state.duration) player.seek(Math.max(0, Math.min(state.duration, ratio * state.duration)));
+                  }}>
+                    <div className="fill" style={{ width: `${state.duration ? (state.progress / state.duration) * 100 : 0}%` }} />
+                    <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} style={{ pointerEvents: 'none' }} />
+                  </div>
+                  <span className="t">{fmtTime(state.duration)}</span>
+                  <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
+                </div>
+                <div className="tools">
+                  <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>解码</span></button>
+                  <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
+                  <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
+                  <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
+                  <button className="tool" onClick={() => setShowSkip(true)}><Icon name="skip-forward" size={15} /><span>片头</span></button>
+                  <button className="tool" onClick={() => setShowSkip(true)}><Icon name="skip-back" size={15} /><span>片尾</span></button>
+                  <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
+                  <button className="tool" onClick={cycleQuality}><Icon name="sparkles" size={15} /><span>画质</span></button>
+                  <button className="tool" onClick={scrollToEpisodes}><Icon name="list" size={15} /><span>选集</span></button>
+                  <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
                 </div>
               </div>
             </div>
@@ -757,14 +777,18 @@ export function VideoPlayer({
           </div>
 
           <div className="tags">
-            {tags.map((t, i) => <span key={i} className={i === 0 ? 'hot' : ''}>{t}</span>)}
+            {tags.map((t, i) => <span key={'g' + i} className={i === 0 ? 'hot' : ''}>{t}</span>)}
+            {quality === '4K' && <span className="hot">4K</span>}
+            {quality !== '4K' && <span>{quality}</span>}
+            {audioMode !== '关闭' && <span>{audioMode}</span>}
+            {LINE_NAMES[line] && <span>{LINE_NAMES[line]}</span>}
           </div>
 
           {/* 4 操作按钮（缓存/解码/投屏/设置）— 占位展示，待用户确认哪些要接 */}
           <div className="actions">
             <button onClick={() => downloadStore.start(detail)} title="缓存"><span className="circle"><Icon name="download" size={24} /></span>缓存</button>
             <button className={DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? 'on' : ''} onClick={toggleDecode} title="解码/音效"><span className="circle"><Icon name="sliders" size={24} /></span>系统</button>
-            <button onClick={() => setShowCast(true)} title="投屏"><span className="circle"><Icon name="cast" size={24} /></span>投屏</button>
+            <button onClick={() => setShowCast(true)} title="投屏"><span className="circle"><Icon name="tv" size={24} /></span>投屏</button>
             <button onClick={() => setSettingsOpen(true)} title="播放器设置"><span className="circle"><Icon name="sun" size={24} /></span>设置</button>
           </div>
 

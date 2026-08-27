@@ -186,7 +186,7 @@ jobs:
                           _muhaiBind()
                           try {
                               requestedOrientation = if (orientation == "landscape")
-                                  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                  android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                               else
                                   android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                           } catch (e: Exception) { /* ignore */ }

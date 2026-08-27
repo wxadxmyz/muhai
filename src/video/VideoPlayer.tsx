@@ -438,6 +438,8 @@ export function VideoPlayer({
   const SWIPE_EDGE = 40; // 左边缘 40px 内右滑 = 返回
   const onStageTouchStart = (e: React.TouchEvent) => {
     if (locked) return;
+    // 阻止默认行为，避免移动端 touch 后触发 ghost click（否则单击显隐会被 click 再触发一次抵消）
+    try { e.preventDefault(); } catch { /* ignore */ }
     const t = e.touches[0];
     const el = stageRef.current as any;
     if (!el) return;

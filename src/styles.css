@@ -1091,8 +1091,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .lp-stage { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: linear-gradient(135deg, #11202b, #0b1219); display: flex; align-items: center; justify-content: center; touch-action: none; }
 .live-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
 .lp-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #cfd6e4; font-size: 14px; }
-.lp-big { position: relative; z-index: 2; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; }
-.lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.lp-big { position: relative; z-index: 2; width: 64px; height: 64px; min-width: 64px; min-height: 64px; max-width: 64px; max-height: 64px; aspect-ratio: 1; flex: none; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
+.lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; aspect-ratio: 1; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 
 /* 两栏选台 */
 .lp-pick { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--border); }
@@ -1121,8 +1121,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .land-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .land-tv { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
 .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; align-items: center; gap: 28px; }
-.land-center button { width: 62px; height: 62px; border-radius: 50%; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.16); color: #fff; display: grid; place-items: center; cursor: pointer; }
-.land-center button.main { width: 80px; height: 80px; color: var(--accent); border-color: rgba(47,224,191,.45); background: rgba(47,224,191,.12); }
+.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; aspect-ratio: 1 !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.16); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
+.land-center button.main { width: 80px !important; height: 80px !important; min-width: 80px !important; min-height: 80px !important; max-width: 80px !important; max-height: 80px !important; color: var(--accent); border-color: rgba(47,224,191,.45); background: rgba(47,224,191,.12); }
 .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 14px 18px 10px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; align-items: center; gap: 14px; }
 .land-src { min-width: 44px; height: 32px; border-radius: 999px; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 0 10px; }
 .land-src.on { color: var(--accent); border: 1px solid var(--accent); }
@@ -1275,7 +1275,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
-.big-btn { width: 74px; height: 74px; aspect-ratio: 1; flex: none; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid; place-items: center; backdrop-filter: blur(4px); cursor: pointer; }
+.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; aspect-ratio: 1 !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid !important; place-items: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
 .player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
@@ -1353,8 +1353,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 .landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; }
-.landscape .center button { width: 58px; height: 58px; aspect-ratio: 1; flex: none; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
-.landscape .center button.main { width: 76px; height: 76px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; aspect-ratio: 1 !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
+.landscape .center button.main { width: 76px !important; height: 76px !important; min-width: 76px !important; min-height: 76px !important; max-width: 76px !important; max-height: 76px !important; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
 .landscape .bottom .prow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }

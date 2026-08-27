@@ -13,6 +13,7 @@
     "allow-fetchimage",
     "allow-spiderrun",
     "allow-dlnascan",
-    "allow-castvideo"
+    "allow-castvideo",
+    "allow-clear-webview-cache"
   ]
 }

@@ -494,7 +494,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
             <button className="main" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
               <Icon name={paused ? 'play' : 'pause'} size={32} />
             </button>
-            <button onClick={() => changeChannel(1)} title="下一个"><Icon name="skip-fwd" size={26} /></button>
+            <button onClick={() => changeChannel(1)} title="下一个"><Icon name="skip-forward" size={26} /></button>
           </div>
           {hud && (
             <div className="vp-hud">

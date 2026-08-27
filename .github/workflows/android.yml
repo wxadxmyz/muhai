@@ -136,7 +136,7 @@ jobs:
                   wv.evaluateJavascript(
             "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : false; } catch(e) { return false; } })()"
                   ) { result ->
-            val consumed = (result == "true")
+            val consumed = (result == "false")  // JS 约定："false"=已逐级拦截(不退出)，"true"=放行系统退出
             if (!consumed) runOnUiThread { super.onBackPressed() }
             _backDispatching = false
                   }
@@ -176,6 +176,7 @@ jobs:
               val MuHaiAndroid = object {
                   @android.webkit.JavascriptInterface
                   fun setOrientation(orientation: String) {
+                      runOnUiThread {
                       try {
                           if (!_muhaiBound) {
                               val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
@@ -187,6 +188,7 @@ jobs:
                           else
                               android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                       } catch (e: Exception) { /* ignore */ }
+                      }
                   }
               }
 

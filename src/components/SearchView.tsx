@@ -194,15 +194,14 @@ export function SearchView({
       ) : (
         <div className="search-body">
           <aside className="search-sources" aria-label="视频源">
-            <div
-              className={'search-source' + (activeSource === ALL_KEY ? ' active' : '')}
-              onClick={() => setActiveSource(ALL_KEY)}
-              role="button"
-            >
-              <div className="search-source-badge all">全</div>
-              <span className="search-source-name">全部</span>
-              <span className="search-source-count">{totalCount}</span>
-            </div>
+              <div
+                className={'search-source' + (activeSource === ALL_KEY ? ' active' : '')}
+                onClick={() => setActiveSource(ALL_KEY)}
+                role="button"
+              >
+                <span className="search-source-name">全部</span>
+                <span className="search-source-count">{totalCount}</span>
+              </div>
             {expanded.map((src) => {
               const st = sourceState.get(src.id);
               const isError = st?.kind === 'error';
@@ -219,7 +218,6 @@ export function SearchView({
                   role="button"
                   title={isError ? `该源未连通：${st?.kind === 'error' ? st.message : ''}` : src.name}
                 >
-                  <div className="search-source-badge">{src.name.slice(0, 1)}</div>
                   <span className="search-source-name">{src.name}</span>
                   {isError ? (
                     <span className="search-source-warn" aria-label="未连通">!</span>

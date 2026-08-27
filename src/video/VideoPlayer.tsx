@@ -106,6 +106,7 @@ export function VideoPlayer({
   // 控件点击显隐（点画面 toggle；播放后自动隐藏；锁屏态常显不隐藏）
   const [controlsVisible, setControlsVisible] = useState(true);
   const [asc, setAsc] = useState(true);
+  const [metaExpanded, setMetaExpanded] = useState(false);
   const hideTimer = useRef<number | undefined>(undefined);
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
@@ -179,6 +180,16 @@ export function VideoPlayer({
     };
     return () => { (window as any).__playerBack = undefined; };
   }, [settingsOpen, showCast, showSubStyle, showSkip]);
+
+  // 逐级返回：点播页优先退「横屏 → 竖屏」这一级，否则交还外层（VideoApp 的 closeVideo）
+  useEffect(() => {
+    const prev = (window as any).__onAndroidBack;
+    (window as any).__onAndroidBack = () => {
+      if (landscape) { setLandscape(false); return false; }
+      return typeof prev === 'function' ? prev() : true;
+    };
+    return () => { (window as any).__onAndroidBack = prev; };
+  }, [landscape]);
 
   useEffect(() => {
     player.attachVideo(videoRef.current);
@@ -606,6 +617,7 @@ export function VideoPlayer({
               <div className="bottom">
                 <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
                 <div className="bar">
+                  <div className="fill" style={{ width: `${state.duration ? (state.progress / state.duration) * 100 : 0}%` }} />
                   <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} />
                 </div>
                 <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
@@ -649,6 +661,7 @@ export function VideoPlayer({
                   <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
                   <span className="t">{fmtTime(state.progress)}</span>
                   <div className="bar">
+                    <div className="fill" style={{ width: `${state.duration ? (state.progress / state.duration) * 100 : 0}%` }} />
                     <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} />
                   </div>
                   <span className="t">{fmtTime(state.duration)}</span>
@@ -686,8 +699,13 @@ export function VideoPlayer({
                 {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
                 {filmYear && <><span className="label">年份</span> {filmYear}　</>}
                 <br />
-                {director && <><span className="label">导演</span> {director}　</>}
-                {actor && <><span className="label">主演</span> {actor}</>}
+                <div className={'meta-extra' + (metaExpanded ? ' open' : '')}>
+                  {director && <><span className="label">导演</span> {director}　</>}
+                  {actor && <><span className="label">主演</span> {actor}</>}
+                </div>
+                {(director || actor) && (
+                  <button className="meta-toggle" onClick={() => setMetaExpanded((v) => !v)}>{metaExpanded ? '收起 ▴' : '展开 ▾'}</button>
+                )}
               </div>
               <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => setFaved((v) => !v)}>
                 <Icon name={faved ? 'heart-filled' : 'heart'} size={14} />{faved ? '已收藏' : '加入收藏'}

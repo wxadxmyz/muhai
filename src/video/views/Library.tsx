@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
-import { Icon } from '../../components/Icon';
 import { ProxiedImg } from '../../components/ProxiedImg';
 
 // 影视仓风格：顶部 Tab 切换「观看历史 / 影视收藏」+ 海报卡片网格
@@ -14,7 +13,6 @@ export function VideoLibrary({
   onOpen: (it: MediaItem) => void;
 }) {
   const [tab, setTab] = useState<'history' | 'fav'>('history');
-  const [delKey, setDelKey] = useState<string | null>(null); // 长按待删除项
   const pressTimer = useRef<number | undefined>(undefined);
 
   const historyItems = library.lib.history.filter((i) => i.mediaType === 'video');
@@ -22,18 +20,16 @@ export function VideoLibrary({
 
   const list = tab === 'history' ? historyItems : favItems;
 
-  // 长按删除（触摸 + 鼠标都支持）
-  const startPress = (key: string) => {
+  // 长按直接删除（触摸 + 鼠标都支持）；点封面进播放器，不显示播放/收藏图标
+  const startPress = (it: MediaItem) => {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
-    pressTimer.current = window.setTimeout(() => setDelKey(key), 550);
+    pressTimer.current = window.setTimeout(() => {
+      library.removeFromHistory(it);
+      if (tab === 'fav') library.toggleFavorite(it);
+    }, 550);
   };
   const cancelPress = () => {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
-  };
-  const confirmDelete = (it: MediaItem) => {
-    library.removeFromHistory(it);
-    if (tab === 'fav') library.toggleFavorite(it);
-    setDelKey(null);
   };
 
   return (
@@ -57,18 +53,16 @@ export function VideoLibrary({
             const key = `${it.sourceId}:${it.id}`;
             const prog = library.lib.watchProgress[key] ?? 0;
             const pct = it.duration ? Math.round((prog / it.duration) * 100) : 0;
-            const fav = library.isFavorite(it);
-            const asking = delKey === key;
             return (
-              <div className="pcard" key={key} onDoubleClick={() => onOpen(it)}>
+              <div className="pcard" key={key}>
                 <div
                   className="pcover"
                   style={{ background: it.cover ? undefined : gradientFor(it.title) }}
                   onClick={() => onOpen(it)}
-                  onTouchStart={() => startPress(key)}
+                  onTouchStart={() => startPress(it)}
                   onTouchEnd={cancelPress}
                   onTouchMove={cancelPress}
-                  onMouseDown={() => startPress(key)}
+                  onMouseDown={() => startPress(it)}
                   onMouseUp={cancelPress}
                   onMouseLeave={cancelPress}
                 >
@@ -77,29 +71,6 @@ export function VideoLibrary({
                   {pct > 0 && (
                     <span className="pbar">
                       <span className="pbar-in" style={{ width: pct + '%' }} />
-                    </span>
-                  )}
-                  {asking ? (
-                    <span className="pc-actions">
-                      <button className="mini danger" onClick={(e) => { e.stopPropagation(); confirmDelete(it); }} title="确认删除">
-                        <Icon name="trash" size={16} />
-                      </button>
-                      <button className="mini" onClick={(e) => { e.stopPropagation(); setDelKey(null); }} title="取消">
-                        <Icon name="x" size={16} />
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="pc-actions">
-                      <button className="mini" onClick={(e) => { e.stopPropagation(); onOpen(it); }} title="播放">
-                        <Icon name="play" size={16} />
-                      </button>
-                      <button
-                        className="mini"
-                        onClick={(e) => { e.stopPropagation(); library.toggleFavorite(it); }}
-                        title={fav ? '取消收藏' : '收藏'}
-                      >
-                        <Icon name={fav ? 'heart-filled' : 'heart'} size={16} />
-                      </button>
                     </span>
                   )}
                 </div>

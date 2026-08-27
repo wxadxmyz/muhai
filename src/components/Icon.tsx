@@ -85,7 +85,7 @@ export function Icon({ name, size = 22, className, strokeWidth = 1.9, style }: {
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
-      style={style}
+      style={{ display: 'block', margin: 'auto', ...style }}
     >
       {P[name]}
     </svg>

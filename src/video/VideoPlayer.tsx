@@ -100,7 +100,9 @@ export function VideoPlayer({
   const [resolving, setResolving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
-  const [faved, setFaved] = useState(false);
+  // 收藏：直接写入library（设计文件 fav-btn 调 toggleFavorite），初始态从 library 派生
+  const [faved, setFaved] = useState<boolean>(() => library.isFavorite(detail));
+  useEffect(() => { setFaved(library.isFavorite(detail)); }, [library.lib.favorites, detail]);
   const [locked, setLocked] = useState(false);
   const [danmaku, setDanmaku] = useState<boolean>(!!settings.enableDanmaku);
   // 控件点击显隐（点画面 toggle；播放后自动隐藏；锁屏态常显不隐藏）
@@ -130,6 +132,9 @@ export function VideoPlayer({
   const [autoPlay, setAutoPlay] = useState<boolean>(() => localStorage.getItem('rf_autoplay') !== '0');
   const [landscape, setLandscape] = useState(false);
   const [clock, setClock] = useState('');
+  // 进度条真实镜像：直接读 <video>.currentTime/duration，不依赖 store 阈值（避免 HLS 下"假进度条"）
+  const [liveCur, setLiveCur] = useState(0);
+  const [liveDur, setLiveDur] = useState(0);
 
   const introDone = useRef(false);
   const appliedStartAt = useRef(false);
@@ -444,6 +449,8 @@ export function VideoPlayer({
     el.__half = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
     el.__bStart = brightnessRef.current;
     el.__vStart = state.volume;
+    el.__ts = Date.now();        // 轻触起始时间
+    el.__moved = false;          // 是否发生滑动
   };
   const onStageTouchMove = (e: React.TouchEvent) => {
     const el = stageRef.current as any;
@@ -453,6 +460,7 @@ export function VideoPlayer({
     const dy = t.clientY - el.__sy;
     if (el.__sx <= SWIPE_EDGE && dx > 60 && Math.abs(dy) < 80) { el.__backing = true; return; }
     if (el.__backing) return;
+    if (Math.abs(dx) >= 10 || Math.abs(dy) >= 10) el.__moved = true; // 标记发生滑动
     if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return; // 死区
     if (Math.abs(dy) > Math.abs(dx)) {
       // 竖向：左半亮度 / 右半音量
@@ -497,6 +505,21 @@ export function VideoPlayer({
   const onStageTouchEnd = () => {
     const el = stageRef.current as any;
     if (el) {
+      // 轻触判定：未发生滑动 + 时长 < 250ms = 一次轻触（用于单击显隐 / 双击暂停）
+      const dt = Date.now() - (el.__ts || 0);
+      const isTap = !el.__moved && !el.__backing && dt < 250 && el.__sx != null;
+      if (isTap) {
+        if (tapTimer.current) {
+          window.clearTimeout(tapTimer.current);
+          tapTimer.current = undefined;
+          player.toggle(); // 双击 = 播放/暂停
+        } else {
+          tapTimer.current = window.setTimeout(() => {
+            tapTimer.current = undefined;
+            toggleControls(); // 单击 = 控件显隐
+          }, 250);
+        }
+      }
       if (el.__backing) {
         if (settingsOpen) setSettingsOpen(false);
         else if (showCast) setShowCast(false);
@@ -505,9 +528,10 @@ export function VideoPlayer({
         else if (landscape) setLandscape(false);
         else onClose();
       }
-      el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false; el.__half = null;
+      el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false; el.__half = null; el.__moved = false; el.__ts = 0;
     }
   };
+  const tapTimer = useRef<number | undefined>(undefined);
   // 播放开始即显示控件，3s 后自动隐藏；锁屏时强制常显
   useEffect(() => {
     if (state.isPlaying && !locked) {
@@ -573,6 +597,8 @@ export function VideoPlayer({
             onClick={onStageClick}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
+              setLiveCur(v.currentTime);
+              setLiveDur(v.duration || 0);
               player.setProgress(v.currentTime);
               library.setWatchProgress(progressKey, v.currentTime);
               trySkipIntro();
@@ -580,9 +606,11 @@ export function VideoPlayer({
             }}
             onLoadedMetadata={(e) => {
               const v = e.target as HTMLVideoElement;
+              setLiveDur(v.duration || 0);
               player.setDuration(v.duration);
               if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
             }}
+            onDurationChange={(e) => { const v = e.target as HTMLVideoElement; setLiveDur(v.duration || 0); }}
             onError={() => {
               if (videoRef.current) detachHls(videoRef.current);
               setResolving(false);
@@ -661,12 +689,12 @@ export function VideoPlayer({
               <div className="bottom">
                 <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
                 <div className="bar" onClick={(e) => {
+                  const v = videoRef.current; if (!v || !liveDur) return;
                   const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                  const ratio = (e.clientX - r.left) / r.width;
-                  if (state.duration) player.seek(Math.max(0, Math.min(state.duration, ratio * state.duration)));
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                  v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
                 }}>
-                  <div className="fill" style={{ width: `${state.duration ? (state.progress / state.duration) * 100 : 0}%` }} />
-                  <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} style={{ pointerEvents: 'none' }} />
+                  <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                 </div>
                 <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
               </div>
@@ -713,16 +741,16 @@ export function VideoPlayer({
               <div className="bottom">
                 <div className="prow">
                   <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
-                  <span className="t">{fmtTime(state.progress)}</span>
+                  <span className="t">{fmtTime(liveCur)}</span>
                   <div className="bar" onClick={(e) => {
+                    const v = videoRef.current; if (!v || !liveDur) return;
                     const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                    const ratio = (e.clientX - r.left) / r.width;
-                    if (state.duration) player.seek(Math.max(0, Math.min(state.duration, ratio * state.duration)));
+                    const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                    v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
                   }}>
-                    <div className="fill" style={{ width: `${state.duration ? (state.progress / state.duration) * 100 : 0}%` }} />
-                    <input type="range" min={0} max={state.duration || 0} value={state.progress} onChange={(e) => player.seek(Number(e.target.value))} style={{ pointerEvents: 'none' }} />
+                    <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                   </div>
-                  <span className="t">{fmtTime(state.duration)}</span>
+                  <span className="t">{fmtTime(liveDur)}</span>
                   <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
                 </div>
                 <div className="tools">
@@ -770,7 +798,7 @@ export function VideoPlayer({
                   <button className="meta-toggle" onClick={() => setMetaExpanded((v) => !v)}>{metaExpanded ? '收起 ▴' : '展开 ▾'}</button>
                 )}
               </div>
-              <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => setFaved((v) => !v)}>
+              <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => { library.toggleFavorite(detail); setFaved(library.isFavorite(detail)); }}>
                 <Icon name={faved ? 'heart-filled' : 'heart'} size={14} />{faved ? '已收藏' : '加入收藏'}
               </button>
             </div>

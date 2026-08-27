@@ -1275,12 +1275,12 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
-.big-btn { width: 74px; height: 74px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid; place-items: center; backdrop-filter: blur(4px); cursor: pointer; }
+.big-btn { width: 74px; height: 74px; aspect-ratio: 1; flex: none; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid; place-items: center; backdrop-filter: blur(4px); cursor: pointer; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
 .player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
-.player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
-.player-card .bottom .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: 31px; margin: 0; background: transparent; opacity: 0; cursor: pointer; touch-action: none; }
+.player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
+/* 进度条可点：整条 bar 接收点击/触摸，不再覆盖透明 range 拦截 */
 .player-card .bottom .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
 /* 竖屏信息区 */
@@ -1353,7 +1353,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 .landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; }
-.landscape .center button { width: 58px; height: 58px; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.landscape .center button { width: 58px; height: 58px; aspect-ratio: 1; flex: none; border-radius: 50%; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .landscape .center button.main { width: 76px; height: 76px; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
@@ -1361,8 +1361,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .bottom .prow .pi { color: #fff; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
 .landscape .bottom .prow .t { font-size: 12px; color: #fff; min-width: 44px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .landscape .bottom .prow .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
-.landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
-.landscape .bottom .prow .bar input[type=range] { -webkit-appearance: none; appearance: none; position: absolute; left: 0; right: 0; top: -14px; width: 100%; height: 31px; margin: 0; background: transparent; opacity: 0; cursor: pointer; touch-action: none; }
+.landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 .landscape .bottom .prow .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .landscape .tools { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
 .landscape .tools::-webkit-scrollbar { display: none; }

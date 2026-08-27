@@ -26,7 +26,10 @@ let state: PlayerState = {
   isPlaying: false,
   progress: 0,
   duration: 0,
-  volume: 0.9,
+  volume: (() => {
+    const v = parseFloat(localStorage.getItem('rf_volume') || '');
+    return isNaN(v) ? 0.9 : Math.max(0, Math.min(1, v));
+  })(),
   muted: false,
   mode: 'list',
 };
@@ -177,6 +180,7 @@ export const player = {
     if (Math.abs(p - state.progress) > 0.25) setState({ progress: p });
   },
   setVolume(v: number) {
+    localStorage.setItem('rf_volume', String(v));
     setState({ volume: v, muted: v === 0 });
   },
   setMuted(m: boolean) {

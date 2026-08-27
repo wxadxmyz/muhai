@@ -56,7 +56,8 @@ export function SearchView({
         setActiveSource(ALL_KEY);
         return false; // 已逐级退一层（子站 → 全部）
       }
-      return true; // 无内部层级，放行给 VideoApp 外层分级
+      // 无内部层级：交还给外层（播放器/VideoApp），不要直接放行系统退出
+      return typeof prev === 'function' ? prev() : true;
     };
     return () => {
       (window as any).__onAndroidBack = prev;

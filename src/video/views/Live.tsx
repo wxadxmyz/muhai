@@ -110,6 +110,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [srcSheet, setSrcSheet] = useState(false); // 横屏换源条
   const [pickSheet, setPickSheet] = useState(false); // 横屏选台浮层
   const [showCast, setShowCast] = useState(false); // 真实 DLNA 投屏浮层
+  const [landControls, setLandControls] = useState(true); // 横屏控件显隐（自动隐藏）
+  const landHideTimer = useRef<number | undefined>(undefined);
   const videoRef = useRef<HTMLVideoElement>(null);
   // 真实分辨率药丸（设计文件 [1920×1080]）+ 亮度/音量手势状态
   const [resolution, setResolution] = useState('1920×1080');
@@ -126,15 +128,22 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   }, [curChannel, activeSrc, playing]);
 
   // 横屏方案：CSS 铺满视口 + 原生强制横屏（window.MuHaiAndroid.setOrientation）
+  const showLandControls = useCallback(() => {
+    setLandControls(true);
+    if (landHideTimer.current) window.clearTimeout(landHideTimer.current);
+    landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000);
+  }, []);
+
   const toggleFullscreen = useCallback(() => {
     if (!isFullscreen) {
       setIsFullscreen(true);
+      showLandControls();
       try { (window as any).MuHaiAndroid?.setOrientation?.('landscape'); } catch { /* ignore */ }
     } else {
       setIsFullscreen(false);
       try { (window as any).MuHaiAndroid?.setOrientation?.('portrait'); } catch { /* ignore */ }
     }
-  }, [isFullscreen]);
+  }, [isFullscreen, showLandControls]);
 
   // 点击 video 或按钮切换播放/暂停
   const togglePlay = () => {
@@ -142,6 +151,20 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     if (!el) return;
     if (el.paused) { el.play().catch(() => {}); setPaused(false); }
     else { el.pause(); setPaused(true); }
+  };
+  // 双击播放窗：暂停/播放（单击切控件显隐，双击切播放态）
+  const liveClickTimer = useRef<number | undefined>(undefined);
+  const onLiveStageClick = () => {
+    if (liveClickTimer.current) {
+      window.clearTimeout(liveClickTimer.current);
+      liveClickTimer.current = undefined;
+      togglePlay();
+    } else {
+      liveClickTimer.current = window.setTimeout(() => {
+        liveClickTimer.current = undefined;
+        setLandControls((v) => { if (v) { if (landHideTimer.current) window.clearTimeout(landHideTimer.current); landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000); } return v; });
+      }, 250);
+    }
   };
 
   // 投屏：打开真实 DLNA 设备列表（后端 dlnascan/castvideo），把当前频道 URL 推送到电视
@@ -374,7 +397,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                 <span className="lp-res">[{resolution}]</span>
               </div>
               <button className="lp-tv" onClick={handleCast} title="投屏">
-                <Icon name="tv" size={18} />
+                <Icon name="cast" size={18} />
               </button>
             </div>
             <div className="lp-stage"
@@ -388,7 +411,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                 autoPlay
                 playsInline
                 className="live-video"
-                onClick={togglePlay}
+                onClick={onLiveStageClick}
                 onPlay={() => setPaused(false)}
                 onPause={() => setPaused(true)}
                 onLoadedMetadata={(e) => {
@@ -444,7 +467,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                   <span className="ch-dot" />
                   <div className="ch-body">
                     <div className="ch-name">{c.name}</div>
-                    {c.sources.length > 1 && <div className="ch-src-hint">源 {c.sources.length} 个</div>}
+                    {c.sources.length > 0 && <div className="ch-src-hint">源 {c.sources.length} 个</div>}
                   </div>
                 </div>
               ))}
@@ -472,10 +495,11 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
       {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
       {isFullscreen && channels && (
-        <div className="land-overlay"
-          onTouchStart={onStageTouchStart}
+        <div className={'land-overlay' + (landControls ? '' : ' hide')}
+          onTouchStart={(e) => { showLandControls(); onStageTouchStart(e); }}
           onTouchMove={onStageTouchMove}
-          onTouchEnd={onStageTouchEnd}
+          onTouchEnd={(e) => { showLandControls(); onStageTouchEnd(e); }}
+          onClick={(e) => { if (e.target === e.currentTarget) onLiveStageClick(); }}
         >
           <div className="land-top">
             <button className="land-back" onClick={toggleFullscreen}>
@@ -486,7 +510,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <span className="lp-res">[{resolution}]</span>
             </div>
             <button className="land-tv" onClick={handleCast} title="投屏">
-              <Icon name="tv" size={18} />
+              <Icon name="cast" size={18} />
             </button>
           </div>
           <div className="land-center">
@@ -530,7 +554,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                     <span className="ch-dot" />
                     <div className="ch-body">
                       <div className="ch-name">{c.name}</div>
-                      {c.sources.length > 1 && <div className="ch-src-hint">源 {c.sources.length} 个</div>}
+                      {c.sources.length > 0 && <div className="ch-src-hint">源 {c.sources.length} 个</div>}
                     </div>
                   </div>
                 ))}

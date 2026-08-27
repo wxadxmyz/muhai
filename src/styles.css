@@ -1073,7 +1073,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ============ 直播页 v2（迷你播放预览 + 左分类 + 右频道网格） ============ */
 /* 直播页：占满 .main 区域（绝对定位），内部独立滚动，避免被带 padding 的滚动容器挤压成白屏 */
-.live { display: flex; flex-direction: column; min-height: 100%; background: var(--bg); }
+.live { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg); }
 .live > .blank-state, .live > .live-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .live-list { padding: 12px; }
 .live-list-head { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; padding: 8px 4px 12px; }
@@ -1270,8 +1270,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .station-note{margin:12px 2px 0;font-size:11px;color:var(--muted);line-height:1.6;}
 
 /* ============ 点播播放器 · 按 幕海视频播放器UI.html 设计文件 ============ */
-.player-root { background: var(--bg); min-height: 100%; }
-.player-card { margin: var(--sat) 16px 18px; background: var(--panel); border-radius: 20px; overflow: hidden; position: relative; aspect-ratio: 16 / 10.5; touch-action: none; }
+/* 点播竖屏：player-root 作为滚动容器，播放小窗 sticky 固定，下方信息区独立上下滑动 */
+.player-root { background: var(--bg); flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-x: hidden; }
+.player-card { margin: var(--sat) 16px 18px; background: var(--panel); border-radius: 20px; overflow: hidden; position: sticky; top: 0; z-index: 5; aspect-ratio: 16 / 10.5; touch-action: none; }
 .player-card.land { margin: 0; border-radius: 0; position: fixed; inset: 0; z-index: 100; aspect-ratio: auto; background: #000; display: flex; flex-direction: column; padding-top: var(--sat); touch-action: none; }
 .player-card .screen { position: absolute; inset: 0; background: linear-gradient(180deg, #1a2330 0%, #0f141d 100%); display: flex; flex-direction: column; }
 .player-card.land .screen { position: relative; flex: 1; }

@@ -129,10 +129,10 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   }, [curChannel, activeSrc, playing]);
 
   // 横屏方案：CSS 铺满视口 + 原生强制横屏（window.MuHaiAndroid.setOrientation）
+  // 横屏控件常显（不再自动隐藏 / 单击重置），满足"单击不显隐图标"
   const showLandControls = useCallback(() => {
     setLandControls(true);
     if (landHideTimer.current) window.clearTimeout(landHideTimer.current);
-    landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000);
   }, []);
 
   const toggleFullscreen = useCallback(() => {
@@ -504,7 +504,6 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
           onTouchStart={(e) => { if (locked) return; showLandControls(); onStageTouchStart(e); }}
           onTouchMove={(e) => { if (locked) return; onStageTouchMove(e); }}
           onTouchEnd={(e) => { if (locked) return; showLandControls(); onStageTouchEnd(e); }}
-          onClick={(e) => { if (e.target === e.currentTarget) onLiveStageClick(); }}
         >
           <div className="land-top">
             <button className="land-back" onClick={toggleFullscreen}>

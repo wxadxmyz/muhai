@@ -105,11 +105,10 @@ export function VideoPlayer({
   useEffect(() => { setFaved(library.isFavorite(detail)); }, [library.lib.favorites, detail]);
   const [locked, setLocked] = useState(false);
   const [danmaku, setDanmaku] = useState<boolean>(!!settings.enableDanmaku);
-  // 控件点击显隐（点画面 toggle；播放后自动隐藏；锁屏态常显不隐藏）
+  // 控件常显（不再显隐切换）
   const [controlsVisible, setControlsVisible] = useState(true);
   const [asc, setAsc] = useState(true);
   const [metaExpanded, setMetaExpanded] = useState(false);
-  const hideTimer = useRef<number | undefined>(undefined);
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
   const seekBubbleTimer = useRef<number | undefined>(undefined);
@@ -400,32 +399,15 @@ export function VideoPlayer({
 
   const scrollToEpisodes = () => epRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  // 点击画面：toggle 控件显隐；播放态 3s 后自动隐藏
-  const scheduleHide = () => {
-    if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    if (locked || !state.isPlaying) return;
-    hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
-  };
-  const toggleControls = () => {
-    setControlsVisible((v) => {
-      const next = !v;
-      if (next) scheduleHide();
-      return next;
-    });
-  };
-  // 双击画面：播放/暂停（单击只切控件显隐，双击切播放态，互不冲突）
+  // 双击画面：播放/暂停（单击不再切换控件显隐，双击切播放态）
   const clickTimer = useRef<number | undefined>(undefined);
+  // 单击只用于桌面双击判定，不再切换控件显隐（控件常显）；移动端双击播放/暂停走 touch 路径
   const onStageClick = () => {
     if (locked) return;
     if (clickTimer.current) {
       window.clearTimeout(clickTimer.current);
       clickTimer.current = undefined;
       player.toggle();
-    } else {
-      clickTimer.current = window.setTimeout(() => {
-        clickTimer.current = undefined;
-        toggleControls();
-      }, 250);
     }
   };
 
@@ -516,12 +498,8 @@ export function VideoPlayer({
           window.clearTimeout(tapTimer.current);
           tapTimer.current = undefined;
           player.toggle(); // 双击 = 播放/暂停
-        } else {
-          tapTimer.current = window.setTimeout(() => {
-            tapTimer.current = undefined;
-            toggleControls(); // 单击 = 控件显隐
-          }, 250);
         }
+        // 单击不再切换控件显隐（控件常显）
       }
       if (el.__backing) {
         if (settingsOpen) setSettingsOpen(false);
@@ -535,14 +513,9 @@ export function VideoPlayer({
     }
   };
   const tapTimer = useRef<number | undefined>(undefined);
-  // 播放开始即显示控件，3s 后自动隐藏；锁屏时强制常显
+  // 控件常显：不再自动隐藏，也不随单击切换显隐（满足"单击不显隐图标"）
   useEffect(() => {
-    if (state.isPlaying && !locked) {
-      setControlsVisible(true);
-      scheduleHide();
-    } else {
-      setControlsVisible(true);
-    }
+    setControlsVisible(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isPlaying, locked]);
 
@@ -701,7 +674,7 @@ export function VideoPlayer({
 
           {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
           {landscape && (
-            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '')} onClick={(e) => { if (locked) return; if (e.target === e.currentTarget) toggleControls(); }}>
+            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '')}>
               {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>

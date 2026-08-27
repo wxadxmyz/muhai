@@ -15,6 +15,7 @@
     "allow-fetchsource",
     "allow-spiderrun",
     "allow-dlnascan",
-    "allow-castvideo"
+    "allow-castvideo",
+    "allow-clear_webview_cache"
   ]
 }

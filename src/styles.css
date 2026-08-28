@@ -1079,7 +1079,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .live { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg); }
 .live > .blank-state, .live > .live-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .live-list { padding: 12px; }
-.live-list-head { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; padding: 8px 4px 12px; }
+/* Q15：直播源列表页顶部预留通知栏安全区（不顶到最顶） */
+.live-list-head { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; padding: calc(env(safe-area-inset-top) + 8px) 4px 12px; }
 
 /* 横屏全屏态：铺满视口，置于最顶层 */
 .live.lp-fullscreen { position: fixed; inset: 0; z-index: 9999; background: #000; }
@@ -1088,18 +1089,19 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .live-room { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
 /* 顶栏 + 小窗 合并为同一卡片块（L1） */
-.lp-head-stage { background: var(--panel); padding: 10px 12px 12px; flex: 0 0 auto; }
+/* Q9：直播竖屏顶栏预留通知栏安全区 */
+.lp-head-stage { background: var(--panel); padding: calc(10px + env(safe-area-inset-top)) 12px 12px; flex: 0 0 auto; }
 .lp-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.lp-back { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); border: none; color: var(--text); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.lp-back { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.45); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .lp-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; }
 .lp-res { font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
-.lp-tv { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); border: none; color: var(--text); display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.lp-tv { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.45); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
 /* 小窗播放器（紧贴顶栏下方，无外边距分层） */
 .lp-stage { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: linear-gradient(135deg, #11202b, #0b1219); display: flex; align-items: center; justify-content: center; touch-action: none; }
 .live-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
 .lp-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #cfd6e4; font-size: 14px; }
-.lp-big { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; width: 64px; height: 64px; min-width: 64px; min-height: 64px; max-width: 64px; max-height: 64px; flex: none; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
+.lp-big { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; width: 64px; height: 64px; min-width: 64px; min-height: 64px; max-width: 64px; max-height: 64px; flex: none; border-radius: 50%; border: 2px solid rgba(47,224,191,.5); background: rgba(0,0,0,.45); color: var(--accent); display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 .lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 
 /* 两栏选台 */
@@ -1124,12 +1126,13 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .land-overlay { position: fixed; inset: 0; z-index: 10000; background: #000; display: flex; flex-direction: column; touch-action: none; }
 .land-overlay.hide .land-top, .land-overlay.hide .land-center, .land-overlay.hide .land-bottom { opacity: 0; pointer-events: none; transition: opacity .25s; }
 .land-top, .land-center, .land-bottom { transition: opacity .25s; }
-.land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
-.land-back { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
+/* Q14：直播横屏顶部安全区 */
+.land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 14px) 16px 12px; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+.land-back { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .land-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.land-tv { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
-.land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; align-items: center; gap: 28px; }
-.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.16); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
+.land-tv { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; align-items: center; gap: 28px; flex-wrap: nowrap; }
+.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.4); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; }
 .land-center button.main { width: 80px !important; height: 80px !important; min-width: 80px !important; min-height: 80px !important; max-width: 80px !important; max-height: 80px !important; color: var(--accent); border-color: rgba(47,224,191,.45); background: rgba(47,224,191,.12); }
 .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 14px 18px 10px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; align-items: center; gap: 14px; }
 .land-src { min-width: 44px; height: 32px; border-radius: 999px; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 0 10px; }
@@ -1284,29 +1287,35 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* 控件层：点击显隐 */
 .overlay { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; transition: opacity .2s; }
-.overlay.hide { opacity: 0; pointer-events: none; }
-.player-card .top { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
-.player-card .top .back { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.08); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+/* Q16/Q17：隐藏时 overlay 本身继续接收单击/双击（显隐与双击暂停在隐藏态也生效），
+   仅让内部子控件（按钮/进度条）不拦截，避免误触播放操作 */
+.overlay.hide { opacity: 0; pointer-events: auto; }
+.overlay.hide .top,
+.overlay.hide .center,
+.overlay.hide .bottom,
+.overlay.hide .screen > *:not(video) { pointer-events: none; }
+.player-card .top { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
+.player-card .top .back { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 /* 圆形按钮内图标严格居中（消除 svg 默认基线对齐导致的视觉偏移） */
 .player-card .top .back svg, .player-card .top .acts .icon svg, .center .ctrl svg, .side .icon svg, .big-btn svg, .land svg, .actions .circle svg, .lp-big svg, .lp-rotate svg,
 .landscape .land-top .back svg, .landscape .side button svg, .landscape .center button svg, .landscape .bottom .prow .pi svg, .landscape .bottom .prow .land svg, .landscape .tools button svg,
 .land-back svg, .land-tv svg, .land-center button svg, .land-src svg, .land-pbtn svg, .land-list svg, .land-pip svg, .land-lock svg,
-.lp-back svg, .lp-tv svg, .player-card .bottom .land svg, .player-card .bottom .play-ico svg { display: block; width: 52%; height: 52%; margin: auto; }
-.player-card .top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-.player-card .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-back svg, .lp-tv svg, .player-card .bottom .land svg, .player-card .bottom .play-ico svg { display: block; width: 60%; height: 60%; margin: auto; }
+.player-card .top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+.player-card .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
 .player-card .top .ttl .res { font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
 .player-card .top .acts { display: flex; gap: 10px; }
-.player-card .top .acts .icon { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.08); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; }
+.player-card .top .acts .icon { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
-.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid !important; place-items: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
+.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.5); color: var(--accent); display: grid !important; place-items: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
 .player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 /* 进度条可点：整条 bar 接收点击/触摸，不再覆盖透明 range 拦截 */
-.player-card .bottom .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.player-card .bottom .land { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
 /* 竖屏信息区 */
 .vp-body { padding-bottom: 30px; }
@@ -1377,8 +1386,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .side button { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
-.landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; }
-.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
+.landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; flex-wrap: nowrap; }
+.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.4); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; }
 .landscape .center button.main { width: 76px !important; height: 76px !important; min-width: 76px !important; min-height: 76px !important; max-width: 76px !important; max-height: 76px !important; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }

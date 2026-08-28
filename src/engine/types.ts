@@ -32,6 +32,7 @@ export interface JsSourceConfig extends SourceConfig {
 export interface Episode {
   name: string;
   url: string;
+  locked?: boolean; // 付费/会员集（前端展示锁标记，来自源 raw）
 }
 
 export interface MediaItem {
@@ -47,6 +48,7 @@ export interface MediaItem {
   duration?: number;
   mediaType: MediaType;
   playUrl?: string;
+  score?: string; // 评分（来自源 raw，如 rating）
   episodes?: Episode[];
   lyric?: LyricLine[]; // 逐行歌词（含时间轴）
   danmaku?: string[]; // 弹幕文本（来自源 API；无则播放器不渲染弹幕）

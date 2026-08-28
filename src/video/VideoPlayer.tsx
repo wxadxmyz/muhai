@@ -179,6 +179,11 @@ export function VideoPlayer({
     if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'sensor');
   }, [landscape, landBySensor]);
 
+  // Q18：组件卸载（返回/切走/关页）时强制恢复重力感应自动旋转，避免遗留横屏状态
+  useEffect(() => {
+    return () => { requestOrientation('sensor'); };
+  }, []);
+
   // 返回手势衔接：先关最上层浮层
   useEffect(() => {
     (window as any).__playerBack = () => {
@@ -568,6 +573,9 @@ export function VideoPlayer({
   const director = vr?.vod_director || vr?.director;
   const actor = vr?.vod_actor || vr?.actor;
   const statusTag = /完结/.test(vr?.vod_remarks || '') ? '完结' : /连载/.test(vr?.vod_remarks || '') ? '连载中' : '';
+  // Q5：无数据时保底标签，避免该行空着（年份/类型占位 或 固定 HD）
+  const hasAnyTag = !!statusTag || tags.length > 0 || quality === '4K' || audioMode !== '关闭';
+  const fallbackTags: string[] = hasAnyTag ? [] : [(filmYear ? String(filmYear) : '影视'), 'HD'];
 
   const epName = detail.episodes?.[episodeIndex]?.name ?? `第${episodeIndex + 1}集`;
 
@@ -800,6 +808,7 @@ export function VideoPlayer({
           <div className="tags">
             {statusTag && <span className="hot">{statusTag}</span>}
             {tags.map((t, i) => <span key={'g' + i}>{t}</span>)}
+            {fallbackTags.map((t, i) => <span key={'fb' + i}>{t}</span>)}
             {quality === '4K' && <span className="hot">4K</span>}
             {audioMode !== '关闭' && <span>杜比音效</span>}
           </div>

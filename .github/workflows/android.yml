@@ -235,10 +235,12 @@ jobs:
               src = src[:brace + 1] + bridge + src[brace + 1:]
           # 绑桥时机：onStart 内 postDelayed 重试（WebView 在 onCreate 后才挂进 decorView），
           # onResume 再兜底一次，确保 window.MuHaiAndroid 一定存在。不新增 onCreate，避免与 Tauri 自带 onCreate 冲突。
+          # Q20：更长的重试序列（600/1500/3000ms），确保任意时机进入播放器桥都已挂上
           bind_code = '''
                   _muhaiBind()
                   window.decorView.postDelayed({ _muhaiBind() }, 600)
                   window.decorView.postDelayed({ _muhaiBind() }, 1500)
+                  window.decorView.postDelayed({ _muhaiBind() }, 3000)
 
           '''
           if "fun onStart(" not in src:
@@ -268,6 +270,17 @@ jobs:
           else:
               import re
               src = re.sub(r'(super\.onResume\(\)\s*\n)', r'\1' + bind_code, src, count=1)
+          # Q20：onWindowFocusChanged 兜底——App 从后台回前台（清后台重开/切回）时再绑一次，
+          # 解决"清后台重开不能横"的桥丢失问题
+          if "fun onWindowFocusChanged(" not in src:
+              onfocus = '''
+              override fun onWindowFocusChanged(hasFocus: Boolean) {
+                  super.onWindowFocusChanged(hasFocus)
+                  if (hasFocus) _muhaiBind()
+              }
+
+              '''
+              src = src[:brace + 1] + onfocus + src[brace + 1:]
           open(path, "w", encoding="utf-8").write(src)
           print(f"Patched {path} with Android back-button + MuHaiAndroid bridge")
           PYEOF

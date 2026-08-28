@@ -126,6 +126,55 @@ export async function aggregateHome(
   return { items: Array.from(map.values()), errors };
 }
 
+// v3.0.2 Q26/Q27：首页缓存——模块级内存缓存 + localStorage 带有效期(10min)。
+const HOME_CACHE_TTL = 10 * 60 * 1000;
+let _homeCache: { key: string; ts: number; data: { items: MediaItem[]; errors: any[] } } | null = null;
+function homeCacheKey(sources: SourceConfig[]): string {
+  return sources
+    .filter((s) => s.enabled)
+    .sort((a, b) => a.priority - b.priority)
+    .map((s) => s.id)
+    .join('|');
+}
+function homeReadLocal(key: string): { items: MediaItem[]; errors: any[] } | null {
+  try {
+    const raw = localStorage.getItem('muhai_home_cache');
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (obj?.key === key && Date.now() - obj.ts < HOME_CACHE_TTL) return obj.data;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+function homeWriteLocal(key: string, data: { items: MediaItem[]; errors: any[] }) {
+  try {
+    localStorage.setItem('muhai_home_cache', JSON.stringify({ key, ts: Date.now(), data }));
+  } catch {
+    /* ignore */
+  }
+}
+export async function aggregateHomeCached(
+  sources: SourceConfig[],
+  opts: { timeout?: number; limit?: number; force?: boolean } = {}
+): Promise<{ items: MediaItem[]; errors: any[]; fromCache: boolean }> {
+  const key = homeCacheKey(sources);
+  if (!opts.force && _homeCache && _homeCache.key === key && Date.now() - _homeCache.ts < HOME_CACHE_TTL) {
+    return { ..._homeCache.data, fromCache: true };
+  }
+  if (!opts.force) {
+    const local = homeReadLocal(key);
+    if (local) {
+      _homeCache = { key, ts: Date.now(), data: local };
+      return { ...local, fromCache: true };
+    }
+  }
+  const r = await aggregateHome(sources, opts);
+  _homeCache = { key, ts: Date.now(), data: { items: r.items, errors: r.errors } };
+  homeWriteLocal(key, { items: r.items, errors: r.errors });
+  return { ...r, fromCache: false };
+}
+
 // 直播源聚合：收集所有启用 tvbox 源的 lives[]
 // 问题 #3 修复：直播源聚合结果模块级缓存，避免 Live 组件每次 mount 重复拉取
 // （切 Tab 出去再回来会重新挂载，无缓存则又要等几秒才出源列表）。

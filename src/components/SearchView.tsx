@@ -231,6 +231,15 @@ export function SearchView({
           </aside>
 
           <main className="search-grid-wrap">
+            {/* Q21：部分源（如索尼）搜索接口返回非 JSON 错误页，给出友好提示而非崩溃 */}
+            {errors.some((e) => /非 JSON|接口返回|HTML|解析/.test(e.message)) && visibleItems.length === 0 && (
+              <div className="search-grid-error">
+                <div className="search-grid-error-title">部分源暂不支持搜索</div>
+                <div className="search-grid-error-msg">
+                  有源返回了非标准数据（可能是该源搜索接口暂不可用）。可换其他源，或在浏览器打开该源站点搜索后回 App 播放。
+                </div>
+              </div>
+            )}
             {activeSource !== ALL_KEY &&
               sourceState.get(activeSource)?.kind === 'error' && (
                 <div className="search-grid-error">

@@ -1,4 +1,4 @@
-import { MediaItem, aggregateHome, expandSources } from '../../engine';
+import { MediaItem, aggregateHomeCached, expandSources } from '../../engine';
 import { useLibrary } from '../../lib/library';
 import { SourceConfig } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
@@ -12,13 +12,43 @@ import {
   takePendingDisclaimer,
 } from '../../lib/disclaimer';
 
-// v2.5.0 首页板块：热播影视 → 电影 → 综艺（删除了原「为你推荐」分类切换）
+// v3.0.2 首页板块：热播影视(国产电视剧) → 电影(国产) → 综艺(国产)，互不串门
 type SectionKey = 'hot' | 'movie' | 'variety';
+
+// 国产判定：地区含 国产/大陆/内地/华语/中/CN 等；源未给地区时按标题是否含中文字符兜底
+function isDomestic(it: MediaItem): boolean {
+  const raw: any = it.raw ?? {};
+  const area = String(raw.vod_area ?? raw.area ?? raw.region ?? '').toLowerCase();
+  if (area) {
+    if (/国产|大陆|内地|华语|中国|中剧|国产剧|cn|china/.test(area)) return true;
+    if (/美|韩|日|泰|英|法|欧|印度|台|港|澳|欧美|日韩|海外/.test(area)) return false;
+    return true; // 地区字段存在但非明确海外，按国产保留
+  }
+  // 无地区字段：标题含中文字符则视为国产
+  return /[一-龥]/.test(it.title);
+}
+
+// 更新时间（用于"最新"排序）：优先 raw 里的各类时间字段
+function updateTimeOf(it: MediaItem): number {
+  const raw: any = it.raw ?? {};
+  const t = String(raw.vod_time ?? raw.update_time ?? raw.pubdate ?? raw.time ?? raw.vod_year ?? '');
+  const m = t.match(/(\d{4})[-/]?(\d{2})?[-/]?(\d{2})?/);
+  if (m) {
+    const y = +m[1];
+    if (y > 1970 && y < 2100) return y * 10000 + (+m[2] || 0) * 100 + (+m[3] || 0);
+  }
+  return 0;
+}
 
 function classify(it: MediaItem): SectionKey | null {
   const g = (it.genre ?? '').toLowerCase();
+  const raw: any = it.raw ?? {};
+  const remarks = String(raw.vod_remarks ?? raw.type_name ?? it.artist ?? '').toLowerCase();
   const t = it.title.toLowerCase();
-  if (/综艺|variety|真人秀|选秀|脱口秀|访谈/.test(g + t)) return 'variety';
+  const blob = g + ' ' + remarks + ' ' + t;
+  if (/综艺|variety|真人秀|选秀|脱口秀|访谈|脱口/.test(blob)) return 'variety';
+  if (/电视剧|剧集|连续剧|电视连续剧|国产剧|台剧|港剧|drama|tvb|tv series|tvshow|tv/.test(blob)
+      || /集$/.test(remarks) || (raw.vod_total && +raw.vod_total > 1)) return 'hot';
   if (/电影|movie|film/.test(g) || it.mediaType === 'video') return 'movie';
   return 'movie';
 }
@@ -90,29 +120,38 @@ export function Home({
     setHomeError('');
     // 选了具体站点 → 只聚合该子站；否则聚合全部源
     const used = activeStation === 'all' ? sources : stations.filter((s) => s.id === activeStation);
-    const p = aggregateHome(used.length ? used : sources, { timeout: 60000 });
-    p.then((r) => {
+    const srcs = used.length ? used : sources;
+    // Q26/Q27：先读缓存秒显（切 Tab / 重开不白等），再后台静默刷新
+    aggregateHomeCached(srcs, { timeout: 60000 }).then((r) => {
       if (cancelled) return;
       setHomeItems(r.items);
       if (!r.items.length && r.errors.length) {
         setHomeError(r.errors[0]?.message ?? '源暂未返回内容');
+      } else {
+        setHomeError('');
       }
-    })
-      .catch((e) => {
-        if (!cancelled) setHomeError(e?.message ?? '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setHomeLoading(false);
-      });
+      setHomeLoading(false);
+    }).catch((e) => {
+      if (!cancelled) setHomeError(e?.message ?? '加载失败');
+      setHomeLoading(false);
+    });
     return () => {
       cancelled = true;
     };
   }, [sources, stations, activeStation]);
 
-  // 板块切分：热播影视取混排前 6（无 genre 或评分高优先），电影/综艺按 genre 归类
-  const movies = homeItems.filter((it) => classify(it) === 'movie').slice(0, 6);
-  const variety = homeItems.filter((it) => classify(it) === 'variety').slice(0, 6);
-  const hot = homeItems.slice(0, 6);
+  // v3.0.2：三块各自按"国产 + 类型"过滤，并按下更新时间倒序（方案A 近似"豆瓣最新"）
+  const domestic = homeItems.filter(isDomestic);
+  const sorted = [...domestic].sort((a, b) => updateTimeOf(b) - updateTimeOf(a));
+  const hot = sorted.filter((it) => classify(it) === 'hot').slice(0, 6);
+  const movies = sorted.filter((it) => classify(it) === 'movie').slice(0, 6);
+  const variety = sorted.filter((it) => classify(it) === 'variety').slice(0, 6);
+  // 降级：某块国产为空时，从全量（不过国产过滤）按同类型补，避免板块空白
+  const fallback = (arr: MediaItem[], key: SectionKey) =>
+    arr.length ? arr : homeItems.filter((it) => classify(it) === key).slice(0, 6);
+  const hotFinal = fallback(hot, 'hot');
+  const moviesFinal = fallback(movies, 'movie');
+  const varietyFinal = fallback(variety, 'variety');
 
   const enabledCount = sources.filter((s) => s.enabled).length;
   const activeStationName =
@@ -184,9 +223,9 @@ export function Home({
         <div className="empty sm" style={{ margin: '8px 14px' }}>{homeError}</div>
       ) : null}
 
-      <Section title="热播影视" items={hot} />
-      <Section title="电影 · 高分精选" items={movies} />
-      <Section title="综艺 · 热榜" items={variety} />
+      <Section title="热播影视" items={hotFinal} />
+      <Section title="电影 · 国产精选" items={moviesFinal} />
+      <Section title="综艺 · 热榜" items={varietyFinal} />
 
       {disclaimerOn && (
         <div className="home-disclaimer" onClick={() => setDisclaimerOn(false)}>

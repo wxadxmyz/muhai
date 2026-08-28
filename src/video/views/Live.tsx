@@ -113,6 +113,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [landControls, setLandControls] = useState(true); // 横屏控件显隐（自动隐藏）
   const [locked, setLocked] = useState(false); // 横屏锁屏：隐藏其余控件、禁手势、仅留锁按钮
   const landHideTimer = useRef<number | undefined>(undefined);
+  const landClickTimer = useRef<number | undefined>(undefined);
   const videoRef = useRef<HTMLVideoElement>(null);
   // 真实分辨率药丸（设计文件 [1920×1080]）+ 亮度/音量手势状态
   const [resolution, setResolution] = useState('1920×1080');
@@ -129,11 +130,22 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   }, [curChannel, activeSrc, playing]);
 
   // 横屏方案：CSS 铺满视口 + 原生强制横屏（window.MuHaiAndroid.setOrientation）
-  // 横屏控件常显（不再自动隐藏 / 单击重置），满足"单击不显隐图标"
+  // 单击切换控件显隐；播放态 3s 自动隐藏；锁屏强制常显（满足"单击显隐 / 双击暂停 / 自动隐藏"）
+  const scheduleLandHide = useCallback(() => {
+    if (landHideTimer.current) window.clearTimeout(landHideTimer.current);
+    if (locked || paused) return;
+    landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000);
+  }, [locked, paused]);
   const showLandControls = useCallback(() => {
     setLandControls(true);
-    if (landHideTimer.current) window.clearTimeout(landHideTimer.current);
-  }, []);
+    scheduleLandHide();
+  }, [scheduleLandHide]);
+
+  // 进入横屏 / 播放 / 解锁后：控件出现，播放态 3s 后自动隐藏
+  useEffect(() => {
+    if (isFullscreen && !locked) showLandControls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen, paused, locked]);
 
   const toggleFullscreen = useCallback(() => {
     if (!isFullscreen) {
@@ -160,15 +172,16 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   // 双击播放窗：暂停/播放（单击切控件显隐，双击切播放态）
   const liveClickTimer = useRef<number | undefined>(undefined);
   const onLiveStageClick = () => {
+    if (locked) return;
     if (liveClickTimer.current) {
       window.clearTimeout(liveClickTimer.current);
       liveClickTimer.current = undefined;
-      togglePlay();
+      togglePlay(); // 双击 = 播放/暂停
     } else {
       liveClickTimer.current = window.setTimeout(() => {
         liveClickTimer.current = undefined;
-        setLandControls((v) => { if (v) { if (landHideTimer.current) window.clearTimeout(landHideTimer.current); landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000); } return v; });
-      }, 250);
+        setLandControls((v) => { const next = !v; if (next) scheduleLandHide(); return next; }); // 单击 = 控件显隐
+      }, 280);
     }
   };
 
@@ -242,6 +255,20 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     const dx = t.clientX - el.__sx;
     const dy = t.clientY - el.__sy;
     el.__sx = null; el.__sy = null;
+    // 轻触（位移很小）：单击切换横屏控件显隐；双击播放/暂停（竖屏无控件层，toggle 等效无效）
+    if (Math.abs(dx) < 16 && Math.abs(dy) < 16) {
+      if (landClickTimer.current) {
+        window.clearTimeout(landClickTimer.current);
+        landClickTimer.current = undefined;
+        if (!locked) togglePlay();
+      } else {
+        landClickTimer.current = window.setTimeout(() => {
+          landClickTimer.current = undefined;
+          if (!locked) setLandControls((v) => { const next = !v; if (next) scheduleLandHide(); return next; });
+        }, 280);
+      }
+      return;
+    }
     // 左滑上一台 / 右滑下一台（横向位移 >50px 且明显大于纵向）
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
       changeChannel(dx < 0 ? -1 : 1);
@@ -501,9 +528,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
       {isFullscreen && channels && (
         <div className={'land-overlay' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}
-          onTouchStart={(e) => { if (locked) return; showLandControls(); onStageTouchStart(e); }}
+          onTouchStart={(e) => { if (locked) return; onStageTouchStart(e); }}
           onTouchMove={(e) => { if (locked) return; onStageTouchMove(e); }}
-          onTouchEnd={(e) => { if (locked) return; showLandControls(); onStageTouchEnd(e); }}
+          onTouchEnd={(e) => { if (locked) return; onStageTouchEnd(e); }}
         >
           <div className="land-top">
             <button className="land-back" onClick={toggleFullscreen}>

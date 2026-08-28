@@ -6,7 +6,7 @@ import { usePlayer, player } from '../lib/playerStore';
 import { useSettings } from '../lib/settings';
 import { useGlobalShortcuts } from '../lib/shortcuts';
 import { useSwipeBack } from '../lib/swipeBack';
-import { MediaItem } from '../engine/types';
+import { MediaItem, createSource } from '../engine';
 import { alistClient } from '../lib/alistClient';
 import { SearchView } from '../components/SearchView';
 import { DebugPanel } from '../components/DebugPanel';
@@ -170,9 +170,23 @@ export default function VideoApp() {
     setStartAt(0);
   };
 
-  const openDetail = (it: MediaItem) => {
+  const openDetail = async (it: MediaItem) => {
     // 直进播放页（无详情页中转）：点击影视/搜索结果立即播放，逐级返回时回到上一层列表
-    playEpisode(it, 0, 0, true);
+    // F1：列表接口（如量子源 ac=list）不含 vod_pic / vod_play_url，打开前先补一次详情，
+    //     拿到封面 + 完整选集，否则会出现"无封面 / 无选集 / 不连播 / 上下集失效"。
+    let full = it;
+    const cfg = store.sources.find((s) => s.id === it.sourceId);
+    if (cfg) {
+      try {
+        const d = await createSource(cfg).getDetail(it.id);
+        if (d && d.id && (d.episodes?.length || (d as any).cover || ((d as any).raw?.vod_pic))) {
+          full = { ...it, ...d, raw: { ...it.raw, ...(d as any).raw } };
+        }
+      } catch {
+        // 详情拉取失败：退回列表项（仍可直接播放首集）
+      }
+    }
+    playEpisode(full, 0, 0, true);
   };
 
   const closeVideo = () => {

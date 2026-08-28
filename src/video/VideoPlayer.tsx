@@ -567,6 +567,7 @@ export function VideoPlayer({
   const filmYear = vr?.vod_year || vr?.year;
   const director = vr?.vod_director || vr?.director;
   const actor = vr?.vod_actor || vr?.actor;
+  const statusTag = /完结/.test(vr?.vod_remarks || '') ? '完结' : /连载/.test(vr?.vod_remarks || '') ? '连载中' : '';
 
   const epName = detail.episodes?.[episodeIndex]?.name ?? `第${episodeIndex + 1}集`;
 
@@ -778,11 +779,6 @@ export function VideoPlayer({
             <div className="info-body">
               <div className="info-title">{detail.title}</div>
               <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
-              <div className="info-badges">
-                {QUALITIES.map((q) => <span key={q} className={q === quality ? 'on' : ''}>{q}</span>)}
-                <span className={audioMode !== '关闭' ? 'on' : ''}>{audioMode === '关闭' ? '默认音效' : audioMode}</span>
-                {LINE_NAMES[line] && <span className="on">{LINE_NAMES[line]}</span>}
-              </div>
               <div className="info-meta">
                 {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
                 {filmYear && <><span className="label">年份</span> {filmYear}　</>}
@@ -802,11 +798,10 @@ export function VideoPlayer({
           </div>
 
           <div className="tags">
-            {tags.map((t, i) => <span key={'g' + i} className={i === 0 ? 'hot' : ''}>{t}</span>)}
+            {statusTag && <span className="hot">{statusTag}</span>}
+            {tags.map((t, i) => <span key={'g' + i}>{t}</span>)}
             {quality === '4K' && <span className="hot">4K</span>}
-            {quality !== '4K' && <span>{quality}</span>}
-            {audioMode !== '关闭' && <span>{audioMode}</span>}
-            {LINE_NAMES[line] && <span>{LINE_NAMES[line]}</span>}
+            {audioMode !== '关闭' && <span>杜比音效</span>}
           </div>
 
           {/* 4 操作按钮（缓存/解码/投屏/设置）— 占位展示，待用户确认哪些要接 */}
@@ -817,7 +812,7 @@ export function VideoPlayer({
             <button onClick={() => setSettingsOpen(true)} title="播放器设置"><span className="circle"><Icon name="settings" size={24} /></span>设置</button>
           </div>
 
-          {lines > 1 && (
+          {lines > 0 && (
             <div className="section">
               <div className="sec-head"><span className="sec-title">线路</span><span className="sec-more" onClick={() => {}}>自动选速 &gt;</span></div>
               <div className="line-row">

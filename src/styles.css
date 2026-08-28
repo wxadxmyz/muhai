@@ -35,6 +35,9 @@ button:focus:not(:focus-visible) { outline: none; }
 /* ============ 布局 ============ */
 .app { display: flex; height: 100vh; }
 .main { flex: 1; overflow: auto; padding: 22px 28px 110px; position: relative; }
+/* 直播视图：锁满屏、整页不滚，仅内部选台列表独立滚（小窗固定） */
+.main:has(.view.live) { overflow: hidden; height: 100%; padding: 0; }
+.view.live { height: 100%; display: flex; flex-direction: column; }
 
 /* 侧边栏（音乐） */
 .sidebar { width: 224px; background: var(--panel); border-right: 1px solid var(--border); padding: 20px 14px; display: flex; flex-direction: column; }
@@ -454,7 +457,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-loading { inset: 0; background: rgba(0,0,0,.55); }
 .vp-error { left: 50%; bottom: 56px; transform: translateX(-50%); max-width: 78%; padding: 9px 14px; border-radius: 10px; background: rgba(0,0,0,.72); text-align: center; backdrop-filter: blur(2px); }
 .vp-error p { margin: 0; font-size: 12px; line-height: 1.5; color: #fff; }
-.vp-error .mini { margin-top: 2px; padding: 5px 14px; border-radius: 14px; background: var(--accent); color: #fff; border: none; font-size: 12px; }
+.vp-error .mini { margin-top: 10px; width: 58px; height: 58px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 13px; display: grid; place-items: center; cursor: pointer; flex: none; }
 .vp-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: vpspin .8s linear infinite; }
 @keyframes vpspin { to { transform: rotate(360deg); } }
 
@@ -1096,8 +1099,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .lp-stage { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: linear-gradient(135deg, #11202b, #0b1219); display: flex; align-items: center; justify-content: center; touch-action: none; }
 .live-video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
 .lp-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #cfd6e4; font-size: 14px; }
-.lp-big { position: relative; z-index: 2; width: 64px; height: 64px; min-width: 64px; min-height: 64px; max-width: 64px; max-height: 64px; aspect-ratio: 1; flex: none; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
-.lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; aspect-ratio: 1; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
+.lp-big { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; width: 64px; height: 64px; min-width: 64px; min-height: 64px; max-width: 64px; max-height: 64px; flex: none; border-radius: 50%; border: 2px solid rgba(47,224,191,.4); background: rgba(47,224,191,.12); color: var(--accent); display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
+.lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 
 /* 两栏选台 */
 .lp-pick { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--border); }
@@ -1126,7 +1129,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .land-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .land-tv { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
 .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; align-items: center; gap: 28px; }
-.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; aspect-ratio: 1 !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.16); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
+.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.16); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
 .land-center button.main { width: 80px !important; height: 80px !important; min-width: 80px !important; min-height: 80px !important; max-width: 80px !important; max-height: 80px !important; color: var(--accent); border-color: rgba(47,224,191,.45); background: rgba(47,224,191,.12); }
 .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 14px 18px 10px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; align-items: center; gap: 14px; }
 .land-src { min-width: 44px; height: 32px; border-radius: 999px; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 0 10px; }
@@ -1285,7 +1288,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
 .player-card .top .back { width: 32px; height: 32px; border-radius: 50%; background: rgba(255,255,255,.08); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 /* 圆形按钮内图标严格居中（消除 svg 默认基线对齐导致的视觉偏移） */
-.player-card .top .back svg, .player-card .top .acts .icon svg, .center .ctrl svg, .side .icon svg, .big-btn svg, .land svg, .actions .circle svg, .lp-big svg, .lp-rotate svg { display: block; margin: auto; }
+.player-card .top .back svg, .player-card .top .acts .icon svg, .center .ctrl svg, .side .icon svg, .big-btn svg, .land svg, .actions .circle svg, .lp-big svg, .lp-rotate svg,
+.landscape .land-top .back svg, .landscape .side button svg, .landscape .center button svg, .landscape .bottom .prow .pi svg, .landscape .bottom .prow .land svg, .landscape .tools button svg,
+.land-back svg, .land-tv svg, .land-center button svg, .land-src svg, .land-pbtn svg, .land-list svg, .land-pip svg, .land-lock svg,
+.lp-back svg, .lp-tv svg, .player-card .bottom .land svg, .player-card .bottom .play-ico svg { display: block; width: 52%; height: 52%; margin: auto; }
 .player-card .top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .player-card .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-card .top .ttl .res { font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
@@ -1294,7 +1300,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
-.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; aspect-ratio: 1 !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid !important; place-items: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
+.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); display: grid !important; place-items: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
 .player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
@@ -1372,20 +1378,20 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 .landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; }
-.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; aspect-ratio: 1 !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
+.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; flex: none !important; border-radius: 50% !important; background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; }
 .landscape .center button.main { width: 76px !important; height: 76px !important; min-width: 76px !important; min-height: 76px !important; max-width: 76px !important; max-height: 76px !important; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
-.landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
-.landscape .bottom .prow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.landscape .bottom .prow { display: flex; align-items: center; gap: 10px; }
 .landscape .bottom .prow .pi { color: #fff; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
 .landscape .bottom .prow .t { font-size: 12px; color: #fff; min-width: 44px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-.landscape .bottom .prow .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
+.landscape .bottom .prow .bar { flex: 1; height: 4px; background: rgba(255,255,255,.3); border-radius: 3px; position: relative; overflow: hidden; }
 .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 .landscape .bottom .prow .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
-.landscape .tools { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
+.landscape .tools { display: flex; gap: 6px; padding: 2px 0 6px; flex-wrap: nowrap; overflow: visible; }
 .landscape .tools::-webkit-scrollbar { display: none; }
-.landscape .tools button { white-space: nowrap; background: rgba(255,255,255,.1); border: none; color: #fff; padding: 8px 13px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; flex: 0 0 auto; }
-.landscape .tools button svg { width: 15px; height: 15px; }
+.landscape .tools button { flex: 1 1 0; min-width: 0; justify-content: center; white-space: nowrap; background: rgba(255,255,255,.1); border: none; color: #fff; padding: 8px 6px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.landscape .tools button svg { width: 15px; height: 15px; flex: 0 0 auto; }
 .landscape .tools button.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 
 /* 设置抽屉（设计文件 .drawer） */
@@ -1399,7 +1405,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .dg-row button { background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 8px 14px; border-radius: 10px; font-size: 13px; cursor: pointer; }
 .dg-row button.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .dg-quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.dg-quick button { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--border); color: #fff; border-radius: 12px; padding: 12px 0; font-size: 12px; cursor: pointer; }
+.dg-quick button { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 12px 0; font-size: 12px; cursor: pointer; }
 .dg-quick button svg { width: 22px; height: 22px; }
 .dg-quick button.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 

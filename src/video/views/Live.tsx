@@ -6,6 +6,7 @@ import { SourceConfig, LiveChannelSource } from '../../engine/types';
 import { Icon } from '../../components/Icon';
 import { CastOverlay } from '../../components/CastOverlay';
 import { toast } from '../../lib/toast';
+import { requestOrientation } from '../../lib/orientation';
 
 interface Channel {
   name: string;
@@ -152,13 +153,13 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       setIsFullscreen(true);
       setLocked(false);
       showLandControls();
-      // 安卓原生真旋转（window.MuHaiAndroid.setOrientation，CI 注入）；未注入则前端 CSS 铺满
-      try { (window as any).MuHaiAndroid?.setOrientation?.('landscape'); } catch { /* ignore */ }
+      // 安卓原生真旋转（X1：桥未就绪时自动等待，避免"有时不横"）；未注入则前端 CSS 铺满
+      requestOrientation('landscape');
     } else {
       setIsFullscreen(false);
       setLocked(false);
       // 退出横屏后恢复跟随系统重力感应（自动旋转）
-      try { (window as any).MuHaiAndroid?.setOrientation?.('sensor'); } catch { /* ignore */ }
+      requestOrientation('sensor');
     }
   }, [isFullscreen, showLandControls]);
 
@@ -169,21 +170,10 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     if (el.paused) { el.play().catch(() => {}); setPaused(false); }
     else { el.pause(); setPaused(true); }
   };
-  // 双击播放窗：暂停/播放（单击切控件显隐，双击切播放态）
-  const liveClickTimer = useRef<number | undefined>(undefined);
-  const onLiveStageClick = () => {
-    if (locked) return;
-    if (liveClickTimer.current) {
-      window.clearTimeout(liveClickTimer.current);
-      liveClickTimer.current = undefined;
-      togglePlay(); // 双击 = 播放/暂停
-    } else {
-      liveClickTimer.current = window.setTimeout(() => {
-        liveClickTimer.current = undefined;
-        setLandControls((v) => { const next = !v; if (next) scheduleLandHide(); return next; }); // 单击 = 控件显隐
-      }, 280);
-    }
-  };
+  // V5/V6：删除了原先绑在 <video onClick> 的第二套定时器（onLiveStageClick + liveClickTimer）。
+  // 之前它与 stage 的 onTouchEnd(landClickTimer) 各自独立计数，点一下会同时触发两套逻辑，
+  // 导致单击被误判成双击、双击被吞掉。现在统一只走 onStageTouchEnd 一套分发：
+  // 单击 = 控件显隐，双击 = 播放/暂停。
 
   // 投屏：打开真实 DLNA 设备列表（后端 dlnascan/castvideo），把当前频道 URL 推送到电视
   const handleCast = () => {
@@ -443,7 +433,6 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                 autoPlay
                 playsInline
                 className="live-video"
-                onClick={onLiveStageClick}
                 onPlay={() => setPaused(false)}
                 onPause={() => setPaused(true)}
                 onLoadedMetadata={(e) => {

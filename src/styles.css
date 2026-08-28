@@ -2,8 +2,9 @@
 :root {
   color-scheme: dark;
   /* 安全区：状态栏/底部导航条高度，由 viewport-fit=cover 下的 env() 提供。
-     若部分机型 env() 返回 0，可改由 JS 把真实值注入到 documentElement 覆盖这里。 */
-  --sat: env(safe-area-inset-top, 0px);
+     A4：部分国产 ROM / WebView 在 edge-to-edge 下 env() 返回 0，导致顶部被通知栏压住，
+     故统一用 max(..., 26px) 兜底，保证任何机型都留出至少 26px。 */
+  --sat: max(env(safe-area-inset-top, 0px), 26px);
   /* 问题 #5 修复：部分国产 ROM / Android WebView 在 edge-to-edge 下不报告底部 inset（返回 0），
      导致底部 Tab 被系统手势条压住。用 max(..., 12px) 兜底，确保至少留出 12px 安全间距。 */
   --sab: max(env(safe-area-inset-bottom, 0px), 12px);
@@ -177,6 +178,8 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* ============ Tabs ============ */
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+/* A2：历史/收藏页顶部 tab 区预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
+.view.library .tabs { padding-top: max(0px, calc(var(--sat) - 22px)); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -219,7 +222,8 @@ button.fav, .fav { color: var(--danger) !important; }
 .skin-name { font-size: 12px; color: var(--text); }
 
 /* ============ 设置页 · iOS 风分组卡片（两个 App 共用）============ */
-.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: 4px 2px 8px; }
+/* A3：设置页顶部预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
+.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(4px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
@@ -660,7 +664,9 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 }
 
 /* ===== v2.5.0 首页顶栏：品牌 + 短搜索胶囊 + 站点 pill ===== */
-.home-top.v25{display:flex;align-items:center;gap:10px;padding:10px 14px 10px;}
+/* A1：主页顶部预留通知栏安全区。
+   .main 已有 22px 顶部 padding，这里只补齐 (--sat - 22px) 的差值，避免双重留白。 */
+.home-top.v25{display:flex;align-items:center;gap:10px;padding:calc(10px + max(0px, calc(var(--sat) - 22px))) 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -1082,7 +1088,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .live > .blank-state, .live > .live-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .live-list { padding: 12px; }
 /* Q15：直播源列表页顶部预留通知栏安全区（不顶到最顶） */
-.live-list-head { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; padding: calc(env(safe-area-inset-top) + 8px) 4px 12px; }
+/* A5：顶部图标左边距 4→16px，与下方列表项图标(左侧 padding 16px)左对齐；--sat 含 26px 兜底 */
+.live-list-head { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; padding: calc(var(--sat) + 8px) 16px 12px; }
 
 /* 横屏全屏态：铺满视口，置于最顶层 */
 .live.lp-fullscreen { position: fixed; inset: 0; z-index: 9999; background: #000; }
@@ -1094,10 +1101,11 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* Q9：直播竖屏顶栏预留通知栏安全区 */
 .lp-head-stage { background: var(--panel); padding: calc(10px + env(safe-area-inset-top)) 12px 12px; flex: 0 0 auto; }
 .lp-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.lp-back { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+/* V1/V2：直播竖屏顶栏返回+投屏 36→40px（图标随之放大） */
+.lp-back { width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .lp-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 8px; }
 .lp-res { font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
-.lp-tv { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.lp-tv { width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 
 /* 小窗播放器（紧贴顶栏下方，无外边距分层） */
 .lp-stage { position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: linear-gradient(135deg, #11202b, #0b1219); display: flex; align-items: center; justify-content: center; touch-action: none; }
@@ -1109,7 +1117,6 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .lp-ctl .lp-big, .lp-ctl .lp-rotate { pointer-events: auto; }
 .lp-ctl.hide { opacity: 0; transition: opacity .2s; }
 .lp-ctl.hide .lp-big, .lp-ctl.hide .lp-rotate { pointer-events: none; }
-.lp-big svg { width: 56% !important; height: 56% !important; }
 .lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 
 /* 两栏选台 */
@@ -1135,14 +1142,14 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .land-overlay.hide .land-top, .land-overlay.hide .land-center, .land-overlay.hide .land-bottom { opacity: 0; pointer-events: none; transition: opacity .25s; }
 .land-top, .land-center, .land-bottom { transition: opacity .25s; }
 /* Q14：直播横屏顶部安全区 */
-.land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 14px) 16px 12px; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+.land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top) + 14px) 16px 12px; background: linear-gradient(rgba(0,0,0,.8), rgba(0,0,0,.35) 60%, transparent); }
 .land-back { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; display: grid; place-items: center; cursor: pointer; }
-.land-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* H1：直播横屏标题文字加粗+投影+顶栏渐变加深，浅色画面也看得清 */
+.land-title { flex: 1; min-width: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.95), 0 0 2px rgba(0,0,0,.8); }
 .land-tv { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; display: grid; place-items: center; cursor: pointer; }
 .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; display: flex; align-items: center; gap: 28px; flex-wrap: nowrap; }
-.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(0,0,0,.68); border: 1px solid rgba(255,255,255,.45); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; }
+.land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(0,0,0,.68); border: 1px solid rgba(255,255,255,.45); color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; }
 .land-center button.main { width: 80px !important; height: 80px !important; min-width: 80px !important; min-height: 80px !important; max-width: 80px !important; max-height: 80px !important; aspect-ratio: 1 !important; color: var(--accent); border-color: rgba(47,224,191,.45); background: rgba(47,224,191,.12); }
-.land-center button.main svg { width: 56% !important; height: 56% !important; }
 .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; padding: 14px 18px 10px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; align-items: center; gap: 14px; }
 .land-src { min-width: 44px; height: 32px; border-radius: 999px; background: rgba(255,255,255,.1); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 0 10px; }
 .land-src.on { color: var(--accent); border: 1px solid var(--accent); }
@@ -1305,13 +1312,51 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .overlay.hide .screen > *:not(video) { pointer-events: none; }
 .player-card .top { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
 .player-card .top .back { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
-/* 圆形按钮内图标严格居中（消除 svg 默认基线对齐导致的视觉偏移） */
-.player-card .top .back svg, .player-card .top .acts .icon svg, .center .ctrl svg, .side .icon svg, .big-btn svg, .land svg, .actions .circle svg, .lp-big svg, .lp-rotate svg,
-.landscape .land-top .back svg, .landscape .side button svg, .landscape .center button svg, .landscape .bottom .prow .pi svg, .landscape .bottom .prow .land svg, .landscape .tools button svg,
-.land-back svg, .land-tv svg, .land-center button svg, .land-src svg, .land-pbtn svg, .land-list svg, .land-pip svg, .land-lock svg,
-/* S3：播放器内图标加粗（2.4），在亮暗画面都更清晰 */
-.player-card svg, .landscape svg, .land-overlay svg, .lp-stage svg, .lp-big svg, .land-center svg { stroke-width: 2.4; }
-.lp-back svg, .lp-tv svg, .player-card .bottom .land svg, .player-card .bottom .play-ico svg { display: block; width: 70%; height: 70%; margin: auto; }
+/* v3.0.4 统一居中方案：
+   旧方案（place-items:center + svg 百分比 + margin:auto）在 Android WebView 下不稳，图标会偏。
+   新方案：父容器 flex 绝对居中 + svg 固定像素尺寸（不用百分比）。 */
+.player-card .top .back, .player-card .top .acts .icon, .player-card .bottom .land, .player-card .bottom .play-ico,
+.landscape .land-top .back, .landscape .side button, .landscape .center button, .landscape .bottom .prow .land, .landscape .bottom .prow .pi, .landscape .tools button,
+.lp-back, .lp-tv, .lp-big, .lp-rotate,
+.land-back, .land-tv, .land-lock, .land-center button, .land-src, .land-pbtn, .land-list, .land-pip,
+.actions .circle {
+  display: flex !important; align-items: center !important; justify-content: center !important;
+}
+/* 播放器内所有图标：svg 不再用百分比，统一由下面分组给固定像素；基线对齐修正 */
+.player-card .top .back svg, .player-card .top .acts .icon svg, .player-card .bottom .land svg, .player-card .bottom .play-ico svg,
+.landscape .land-top .back svg, .landscape .side button svg, .landscape .center button svg, .landscape .bottom .prow .land svg, .landscape .bottom .prow .pi svg, .landscape .tools button svg,
+.lp-back svg, .lp-tv svg, .lp-big svg, .lp-rotate svg,
+.land-back svg, .land-tv svg, .land-lock svg, .land-center button svg, .land-src svg, .land-pbtn svg, .land-list svg, .land-pip svg,
+.actions .circle svg { display: block; flex: none; }
+/* S3：播放器内图标加粗（2.4），亮暗画面都更清晰 */
+.player-card svg, .landscape svg, .land-overlay svg, .lp-stage svg, .land-center svg { stroke-width: 2.4; }
+/* 分组固定像素尺寸（替换百分比，保证居中且够大） */
+/* 点播竖屏顶栏圆钮 36px → 图标 22px */
+.player-card .top .back svg, .player-card .top .acts .icon svg { width: 22px; height: 22px; }
+/* 点播竖屏底栏按钮（T6/T7 已放大到 44px）→ 图标 24px */
+.player-card .bottom .play-ico svg, .player-card .bottom .land svg { width: 24px; height: 24px; }
+/* 点播竖屏中央大钮 74px → 图标 40px */
+.big-btn svg { width: 40px !important; height: 40px !important; }
+/* 点播横屏顶栏/侧栏圆钮 → 图标 24px */
+.landscape .land-top .back svg, .landscape .side button svg { width: 24px; height: 24px; }
+/* 点播横屏中央：小钮 58px → 32px；大钮 76px → 44px */
+.landscape .center button svg { width: 32px; height: 32px; }
+.landscape .center button.main svg { width: 44px !important; height: 44px !important; }
+/* 点播横屏底栏 → 图标 24px */
+.landscape .bottom .prow .pi svg, .landscape .bottom .prow .land svg { width: 24px; height: 24px; }
+.landscape .tools button svg { width: 18px; height: 18px; }
+/* 直播竖屏顶栏（V1/V2 已放大到 40px）→ 图标 24px */
+.lp-back svg, .lp-tv svg { width: 24px; height: 24px; }
+/* 直播竖屏小窗中央 64px → 36px；右下横屏钮 36px → 20px */
+.lp-big svg { width: 36px !important; height: 36px !important; }
+.lp-rotate svg { width: 20px; height: 20px; }
+/* 直播横屏顶栏 → 24px */
+.land-back svg, .land-tv svg, .land-lock svg { width: 24px; height: 24px; }
+/* 直播横屏中央：小钮 62px → 32px；大钮 80px → 44px */
+.land-center button svg { width: 32px; height: 32px; }
+.land-center button.main svg { width: 44px !important; height: 44px !important; }
+/* 直播横屏底栏 → 22px */
+.land-src svg, .land-pbtn svg, .land-list svg, .land-pip svg { width: 22px; height: 22px; }
 .player-card .top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
 .player-card .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
 .player-card .top .ttl .res { font-size: 11px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); padding: 2px 7px; border-radius: 6px; flex: 0 0 auto; }
@@ -1320,14 +1365,15 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
-.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.68); color: var(--accent); display: grid !important; place-items: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
-.big-btn svg { width: 56% !important; height: 56% !important; }
+.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.68); color: var(--accent); display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
-.player-card .bottom .play-ico { color: #fff; cursor: pointer; display: grid; place-items: center; }
+/* T6：底栏播放/暂停放大到 44px 圆钮（原无尺寸） */
+.player-card .bottom .play-ico { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; cursor: pointer; flex: 0 0 auto; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 /* 进度条可点：整条 bar 接收点击/触摸，不再覆盖透明 range 拦截 */
-.player-card .bottom .land { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+/* T7：底栏横屏键 38→44px */
+.player-card .bottom .land { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; cursor: pointer; flex: 0 0 auto; }
 
 /* 竖屏信息区 */
 .vp-body { padding-bottom: 30px; }
@@ -1399,17 +1445,18 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 .landscape .center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 20px; flex-wrap: nowrap; }
-.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(0,0,0,.68); border: 1px solid rgba(255,255,255,.45); color: #fff; display: grid !important; place-items: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; }
+.landscape .center button { width: 58px !important; height: 58px !important; min-width: 58px !important; min-height: 58px !important; max-width: 58px !important; max-height: 58px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(0,0,0,.68); border: 1px solid rgba(255,255,255,.45); color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; }
 .landscape .center button.main { width: 76px !important; height: 76px !important; min-width: 76px !important; min-height: 76px !important; max-width: 76px !important; max-height: 76px !important; aspect-ratio: 1 !important; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.landscape .center button.main svg { width: 56% !important; height: 56% !important; }
 
 .landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .landscape .bottom .prow { display: flex; align-items: center; gap: 10px; }
-.landscape .bottom .prow .pi { color: #fff; cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+/* L9：横屏底栏播放键放大到 44px 圆钮（原无尺寸） */
+.landscape .bottom .prow .pi { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; cursor: pointer; flex: 0 0 auto; }
 .landscape .bottom .prow .t { font-size: 12px; color: #fff; min-width: 44px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 .landscape .bottom .prow .bar { flex: 1; height: 4px; background: rgba(255,255,255,.3); border-radius: 3px; position: relative; overflow: hidden; }
 .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
-.landscape .bottom .prow .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; border: none; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+/* L10：横屏底栏横屏键 34→44px */
+.landscape .bottom .prow .land { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; cursor: pointer; flex: 0 0 auto; }
 .landscape .tools { display: flex; gap: 6px; padding: 2px 0 6px; flex-wrap: nowrap; overflow: visible; }
 .landscape .tools::-webkit-scrollbar { display: none; }
 .landscape .tools button { flex: 1 1 0; min-width: 0; justify-content: center; white-space: nowrap; background: rgba(255,255,255,.1); border: none; color: #fff; padding: 8px 6px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }

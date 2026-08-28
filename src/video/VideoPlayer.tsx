@@ -9,6 +9,7 @@ import { CastOverlay } from '../components/CastOverlay';
 import { downloadStore } from '../lib/downloads';
 import { attachHls, detachHls } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
+import { requestOrientation as requestOrientationShared } from '../lib/orientation';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 
@@ -170,9 +171,8 @@ export function VideoPlayer({
   }, []);
 
   // 主动请求系统横屏/竖屏（Android 原生桥 window.MuHaiAndroid.setOrientation，由 CI 注入 MainActivity；未注入则退化为 CSS 铺满）
-  const requestOrientation = (ori: 'landscape' | 'portrait' | 'sensor') => {
-    try { (window as any).MuHaiAndroid?.setOrientation?.(ori); } catch { /* ignore */ }
-  };
+  // X1：改用共享工具，桥未就绪时自动等待最多 1.5s 再调用，解决"有时横屏有时不横"
+  const requestOrientation = requestOrientationShared;
 
   // 横屏态兜底：万一 landscape 被外部置位（如逐级返回），同步一次原生方向（退出后恢复重力感应自动旋转）
   useEffect(() => {

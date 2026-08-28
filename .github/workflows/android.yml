@@ -166,15 +166,27 @@ jobs:
           '''
           src = src[:brace + 1] + inject + src[brace + 1:]
           # 横屏真旋转 + 系统亮度/音量桥：暴露 JS 可调用的 MuHaiAndroid 对象。
-          # 通过 Tauri v2 官方 onWebViewCreated 回调在 WebView 创建时直接挂接口，
-          # 保证 window.MuHaiAndroid 一定存在（不再依赖递归 decorView 查找，解决"点了不转"）。
+          # 不 override 任何 TauriActivity 基类方法（Tauri v2 默认不暴露 onWebViewCreated，override 会编译失败）。
+          # 改为在 onStart 里 postDelayed 重试找 WebView 绑定（留足挂载时间），onResume 兜底，保证 window.MuHaiAndroid 一定存在。
           if "MuHaiAndroid" not in src:
               bridge = '''
               // 播放器原生桥：JS 通过 window.MuHaiAndroid 调用，实现真横屏旋转与系统亮度/音量调节。
+              private var _muhaiBound = false
+              private fun _muhaiBind() {
+                  if (_muhaiBound) return
+                  try {
+                      val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
+                      if (wv != null) {
+                          wv.addJavascriptInterface(MuHaiAndroid, "MuHaiAndroid")
+                          _muhaiBound = true
+                      }
+                  } catch (e: Exception) { /* 未挂载则等待下次重试 */ }
+              }
               val MuHaiAndroid = object {
                   @android.webkit.JavascriptInterface
                   fun setOrientation(orientation: String) {
                       runOnUiThread {
+                          _muhaiBind()
                           try {
                               requestedOrientation = when (orientation) {
                                   "landscape" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -219,29 +231,43 @@ jobs:
                   }
               }
 
-              // WebView 一旦创建即刻绑定 JS 桥（Tauri v2 官方扩展点），保证 window.MuHaiAndroid 一定存在
-              override fun onWebViewCreated(webView: android.webkit.WebView) {
-                  super.onWebViewCreated(webView)
-                  try { webView.addJavascriptInterface(MuHaiAndroid, "MuHaiAndroid") } catch (e: Exception) { /* ignore */ }
-              }
               '''
               src = src[:brace + 1] + bridge + src[brace + 1:]
-          # 返回回调（OnBackInvokedCallback）仍需注册，但原生桥已移至 onWebViewCreated 绑定，无需再在 onStart/onCreate 绑
-          if "fun onCreate(" not in src:
-              oncreate = '''
-              override fun onCreate(savedInstanceState: android.os.Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  if (android.os.Build.VERSION.SDK_INT >= 33) {
-            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
-            ) { if (!dispatchBack()) super.onBackPressed() }
-                  }
+          # 绑桥时机：onStart 内 postDelayed 重试（WebView 在 onCreate 后才挂进 decorView），
+          # onResume 再兜底一次，确保 window.MuHaiAndroid 一定存在。不新增 onCreate，避免与 Tauri 自带 onCreate 冲突。
+          bind_code = '''
+                  _muhaiBind()
+                  window.decorView.postDelayed({ _muhaiBind() }, 600)
+                  window.decorView.postDelayed({ _muhaiBind() }, 1500)
+
+          '''
+          if "fun onStart(" not in src:
+              onstart = '''
+              override fun onStart() {
+                  super.onStart()
+                  _muhaiBind()
+                  window.decorView.postDelayed({ _muhaiBind() }, 600)
+                  window.decorView.postDelayed({ _muhaiBind() }, 1500)
               }
 
               '''
-              src = src[:brace + 1] + oncreate + src[brace + 1:]
+              src = src[:brace + 1] + onstart + src[brace + 1:]
           else:
-              print("::warning::MainActivity 已自定义 onCreate，OnBackInvokedCallback 需手动注册")
+              import re
+              src = re.sub(r'(super\.onStart\(\)\s*\n)', r'\1' + bind_code, src, count=1)
+          if "fun onResume(" not in src:
+              onresume = '''
+              override fun onResume() {
+                  super.onResume()
+                  _muhaiBind()
+                  window.decorView.postDelayed({ _muhaiBind() }, 600)
+              }
+
+              '''
+              src = src[:brace + 1] + onresume + src[brace + 1:]
+          else:
+              import re
+              src = re.sub(r'(super\.onResume\(\)\s*\n)', r'\1' + bind_code, src, count=1)
           open(path, "w", encoding="utf-8").write(src)
           print(f"Patched {path} with Android back-button + MuHaiAndroid bridge")
           PYEOF

@@ -141,11 +141,11 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     scheduleLandHide();
   }, [scheduleLandHide]);
 
-  // 进入横屏 / 播放 / 解锁后：控件出现，播放态 3s 后自动隐藏
+  // 进入横屏 / 播放 / 解锁后：控件出现，播放态 3s 后自动隐藏（竖屏也复用此逻辑）
   useEffect(() => {
-    if (isFullscreen && !locked) showLandControls();
+    if (!locked) showLandControls();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isFullscreen, paused, locked]);
+  }, [isFullscreen, paused, locked, playing]);
 
   const toggleFullscreen = useCallback(() => {
     if (!isFullscreen) {
@@ -457,14 +457,16 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                   <span>点击频道开始播放</span>
                 </div>
               )}
-              {playing && (
-                <button className="lp-big" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
-                  <Icon name={paused ? 'play' : 'pause'} size={28} />
+              <div className={'lp-ctl' + (landControls ? '' : ' hide')}>
+                {playing && (
+                  <button className="lp-big" title={paused ? '播放' : '暂停'}>
+                    <Icon name={paused ? 'play' : 'pause'} size={28} />
+                  </button>
+                )}
+                <button className="lp-rotate" onClick={toggleFullscreen} title="横屏">
+                  <Icon name="rotate" size={18} />
                 </button>
-              )}
-              <button className="lp-rotate" onClick={toggleFullscreen} title="横屏">
-                <Icon name="rotate" size={18} />
-              </button>
+              </div>
               {hud && (
                 <div className="vp-hud">
                   <span className="vp-hud-ico"><Icon name={hud.type === 'bright' ? 'sun' : 'volume'} size={20} /></span>

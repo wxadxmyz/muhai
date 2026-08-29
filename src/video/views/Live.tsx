@@ -165,6 +165,16 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFullscreen, paused, locked, playing]);
 
+  // ② 原生画中画状态回调：进入时隐藏控件；退出小窗回到横屏（小窗全屏钮语义）
+  useEffect(() => {
+    (window as any).__onPipChanged = (entered: boolean) => {
+      if (entered) { setLandControls(false); setLocked(false); }
+      else if (!isFullscreen) { setIsFullscreen(true); requestOrientation('landscape'); }
+    };
+    return () => { (window as any).__onPipChanged = undefined; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen]);
+
   const toggleFullscreen = useCallback(() => {
     if (!isFullscreen) {
       setIsFullscreen(true);
@@ -175,8 +185,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     } else {
       setIsFullscreen(false);
       setLocked(false);
-      // 退出横屏后强制竖屏（一下回竖屏）；视频继续播，不暂停
-      requestOrientation('portrait');
+      // ① 退出横屏交还 sensor（系统重力感应接管，一下回竖屏且恢复自动翻转）；视频继续播，不暂停
+      requestOrientation('sensor');
     }
   }, [isFullscreen, showLandControls]);
 
@@ -204,6 +214,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const toggleLock = () => {
     const next = !locked;
     setLocked(next);
+    // ④ 锁定/解锁给出明确 toast 反馈，避免「点了像没反应」
+    toast(next ? '已锁定屏幕（点小锁可解锁）' : '已解锁');
     if (lockTimer.current) { window.clearTimeout(lockTimer.current); lockTimer.current = undefined; }
     if (next) {
       setLandControls(true); // 锁定态保持整层可见（小锁在 .locked 下始终可点），不被 3 秒隐藏整层
@@ -216,13 +228,13 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     }
   };
 
-  // 画中画（对齐设计文件横屏底部“源/画中画/播放/列表”）
+  // 画中画（② 原生系统级：点按钮即退出 App、桌面浮 16:9 小窗）
   const handlePip = () => {
-    const el = videoRef.current;
-    if (!el) return;
     try {
-      if (document.pictureInPictureElement) document.exitPictureInPicture();
-      else el.requestPictureInPicture().catch(() => {});
+      const m = (window as any).MuHaiAndroid;
+      if (m && typeof m.enterPip === 'function') { m.enterPip(); return; }
+      const el = videoRef.current;
+      if (el && !document.pictureInPictureElement) el.requestPictureInPicture?.().catch(() => {});
     } catch { /* 不支持时静默 */ }
   };
   const showHud = (type: 'bright' | 'vol', value: number) => {

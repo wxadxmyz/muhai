@@ -223,9 +223,19 @@ export function Home({
         <div className="empty sm" style={{ margin: '8px 14px' }}>{homeError}</div>
       ) : null}
 
-      <Section title="热播影视" items={hotFinal} />
-      <Section title="电影 · 国产精选" items={moviesFinal} />
-      <Section title="综艺 · 热榜" items={varietyFinal} />
+      {homeLoading ? (
+        // ⑩ 加载态：仅内容区，保留顶栏(logo/搜索/子站)与底部 TAB；背景跟随皮肤，中心转圈，无主题色条
+        <div className="home-loading">
+          <div className="home-spinner" />
+          <span>加载中…</span>
+        </div>
+      ) : (
+        <>
+          <Section title="热播影视" items={hotFinal} />
+          <Section title="电影 · 国产精选" items={moviesFinal} />
+          <Section title="综艺 · 热榜" items={varietyFinal} />
+        </>
+      )}
 
       {disclaimerOn && (
         <div className="home-disclaimer" onClick={() => setDisclaimerOn(false)}>

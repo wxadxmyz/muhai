@@ -1597,3 +1597,58 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .overlay.locked .top .acts .lock-btn,
 .landscape .overlay.land-h.locked .side.left .lock-btn,
 .lp-lock.on { color: var(--accent); border-color: var(--accent); }
+
+/* ============ ⑩ 首页加载态（非全屏：仅内容区，保留顶栏与底部 TAB） ============ */
+.home-loading {
+  min-height: 56vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--muted);
+}
+/* 复用播放器 spinner 风格（圆圈转），背景跟随皮肤，无主题色填充条 */
+.home-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3px solid rgba(128,128,128,.25);
+  border-top-color: var(--accent);
+  animation: vpspin .8s linear infinite;
+}
+
+/* ============ ⑦ 横屏选集浮层 ============ */
+.ep-mask {
+  position: fixed; inset: 0; z-index: 12000;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.ep-panel {
+  width: 100%; max-width: 520px; max-height: 72vh; overflow: auto;
+  background: var(--panel); border-radius: 18px 18px 0 0; padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+}
+.ep-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 15px; font-weight: 700; color: #fff; }
+.ep-toggle { font-size: 13px; color: var(--accent); cursor: pointer; }
+.ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.ep-grid button { aspect-ratio: 1.6; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
+.ep-grid button.locked { color: var(--dim); }
+
+/* ============ ⑪ 单集/末集播完：重播浮层（B 方案） ============ */
+.vp-ended {
+  position: absolute; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35);
+}
+.vp-ended-inner { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.replay-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 18px 30px; border-radius: 999px;
+  background: var(--accent); color: #04201a; border: none; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+
+/* ============ ⑨ 横屏设置 → 右侧全高侧栏（连顶连底，去掉底部浮窗观感） ============ */
+.player-root.landscape .drawer-mask { align-items: stretch; justify-content: flex-end; background: rgba(0,0,0,.35); }
+.player-root.landscape .drawer {
+  width: auto; min-width: 320px; max-width: 400px; height: 100%; max-height: 100%;
+  border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+}

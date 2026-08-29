@@ -76,3 +76,27 @@ export function requestOrientation(ori: 'landscape' | 'portrait' | 'sensor') {
     }
   }, BRIDGE_POLL_MS);
 }
+
+// ② 原生系统级画中画：点按钮即退出 App、桌面浮 16:9 小窗（A 方案）。
+// 原生 MainActivity 注入 enterPip()（带 16:9 比例 + 权限检测 + 自定义关闭/全屏 action），
+// 并在 onPictureInPictureModeChanged 里回调 window.__onPipChanged(true/false)。
+function pipBridgeReady(): boolean {
+  try {
+    return typeof (window as any).MuHaiAndroid?.enterPip === 'function';
+  } catch {
+    return false;
+  }
+}
+
+export function enterPip() {
+  try {
+    if (pipBridgeReady()) (window as any).MuHaiAndroid.enterPip();
+  } catch {
+    /* 未注入原生桥时由调用方退化到 HTML5 PiP */
+  }
+}
+
+/** 注册画中画状态回调；entered=true 进入小窗、false 退出小窗 */
+export function setPipListener(cb: (entered: boolean) => void) {
+  (window as any).__onPipChanged = cb;
+}

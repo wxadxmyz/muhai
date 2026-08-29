@@ -272,6 +272,30 @@ jobs:
                           if (max <= 0) 0.9 else (cur.toDouble() / max)
                       } catch (e: Exception) { 0.9 }
                   }
+                  // ② 原生系统级画中画：点按钮即退出 App、桌面浮 16:9 小窗（A 方案）。
+                  // 16:9 比例 + 权限检测（国产 ROM 默认关画中画权限，没开则静默放弃由前端提示）。
+                  @android.webkit.JavascriptInterface
+                  fun enterPip() {
+                      runOnUiThread {
+                          try {
+                              if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                  val am = getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+                                  if (!android.app.PictureInPictureParams.isPictureInPictureSupported(am)) return@runOnUiThread
+                                  val params = android.app.PictureInPictureParams.Builder()
+                                      .setAspectRatio(android.util.Rational(16, 9))
+                                      .build()
+                                  this@MainActivity.enterPictureInPictureMode(params)
+                              }
+                          } catch (e: Exception) { /* ignore */ }
+                      }
+                  }
+              }
+
+              // ② 进入/退出画中画时回调前端（小窗全屏钮 → 回到横屏；进入时隐藏控件）
+              override fun onPictureInPictureModeChanged(isIn: Boolean, newConfig: android.content.res.Configuration) {
+                  super.onPictureInPictureModeChanged(isIn, newConfig)
+                  val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
+                  wv?.evaluateJavascript("(function(){ if(window.__onPipChanged) window.__onPipChanged(" + (if (isIn) "true" else "false") + "); })()", null)
               }
 
               '''
@@ -326,6 +350,37 @@ jobs:
               src = src[:brace + 1] + onfocus + src[brace + 1:]
           open(path, "w", encoding="utf-8").write(src)
           print(f"Patched {path} with Android back-button + MuHaiAndroid bridge")
+          PYEOF
+
+      - name: Patch AndroidManifest for Picture-in-Picture
+        run: |
+          MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)
+          if [ -z "$MANIFEST" ]; then echo "::warning::AndroidManifest not found, skip PiP patch"; exit 0; fi
+          python3 - "$MANIFEST" << 'PYEOF'
+          import sys, re
+          path = sys.argv[1]
+          src = open(path, encoding="utf-8").read()
+          if "supportsPictureInPicture" in src:
+              print("PiP already declared, skip")
+              sys.exit(0)
+          m = re.search(r'<activity\b[^>]*android:name="[^"]*MainActivity"[^>]*>', src, re.S)
+          if not m:
+              print("::warning::MainActivity <activity> not found, skip PiP patch")
+              sys.exit(0)
+          tag = m.group(0)
+          new = tag
+          if "android:supportsPictureInPicture" not in new:
+              new = new[:-1] + ' android:supportsPictureInPicture="true">'
+          if "android:launchMode" not in new:
+              new = new[:-1].rstrip('>') + ' android:launchMode="singleTask">'
+          if "android:configChanges" in new:
+              if "screenLayout" not in new:
+                  new = re.sub(r'(android:configChanges="[^"]*)"', r'\1|screenLayout|smallestScreenSize"', new, count=1)
+          else:
+              new = new[:-1].rstrip('>') + ' android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode">'
+          src = src[:m.start()] + new + src[m.end():]
+          open(path, "w", encoding="utf-8").write(src)
+          print("Patched manifest for PiP")
           PYEOF
 
       - name: Sync Android launcher icon

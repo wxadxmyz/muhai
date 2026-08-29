@@ -128,6 +128,9 @@ export function VideoPlayer({
   // B5 约束：锁定 / 解锁全程不得调用 pause() —— 锁屏只锁操作，不打断播放。
   // 所有涉及 locked 的分支只改 UI 状态（显隐 / 手势拦截），一律不去动 player / video。
   const [locked, setLocked] = useState(false);
+  // v3.1.1：小锁独立显隐（不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"）
+  const [lockHidden, setLockHidden] = useState(false);
+  const lockTimer = useRef<number | undefined>(undefined);
   const [danmaku, setDanmaku] = useState<boolean>(!!settings.enableDanmaku);
   // 控件显隐：单击切换、播放态 3s 自动隐藏、锁屏强制常显（竖屏/横屏通用）
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -227,12 +230,12 @@ export function VideoPlayer({
 
   // 横屏态兜底：万一 landscape 被外部置位（如逐级返回），同步一次原生方向（退出后恢复重力感应自动旋转）
   useEffect(() => {
-    if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'sensor');
+    if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'portrait');
   }, [landscape, landBySensor]);
 
   // Q18：组件卸载（返回/切走/关页）时强制恢复重力感应自动旋转，避免遗留横屏状态
   useEffect(() => {
-    return () => { requestOrientation('sensor'); };
+    return () => { if (lockTimer.current) window.clearTimeout(lockTimer.current); requestOrientation('sensor'); };
   }, []);
 
   // 返回手势衔接：先关最上层浮层
@@ -481,10 +484,21 @@ export function VideoPlayer({
     setLandscape((v) => {
       const next = !v;
       setLandBySensor(next);
-      // 进入横屏强制 landscape；退出后恢复跟随系统重力感应（自动旋转）
-      requestOrientation(next ? 'landscape' : 'sensor');
+      // 进入横屏强制 landscape；退出横屏强制 portrait，让屏幕在「一下」之内肉眼可见地转回竖屏，避免「按两下」体感
+      requestOrientation(next ? 'landscape' : 'portrait');
       return next;
     });
+  };
+
+  // v3.1.1：锁定/解锁 + 小锁 3 秒自动隐藏（锁显隐独立于整层控件显隐，解决"点不回来"）
+  const toggleLock = () => {
+    const next = !locked;
+    setLocked(next);
+    if (lockTimer.current) { window.clearTimeout(lockTimer.current); lockTimer.current = undefined; }
+    if (next) {
+      setLockHidden(false); // 锁立即出现
+      lockTimer.current = window.setTimeout(() => setLockHidden(true), 3000); // B9：3 秒后自动隐藏
+    }
   };
 
   const toggleFullscreen = () => {
@@ -500,7 +514,7 @@ export function VideoPlayer({
   const clickTimer = useRef<number | undefined>(undefined);
   const onStageClick = () => {
     // B11：锁定态单击 = 只切换小锁显隐（不做双击暂停）
-    if (locked) { toggleControls(); return; }
+    if (locked) { setLockHidden((v) => !v); return; }
     if (clickTimer.current) {
       window.clearTimeout(clickTimer.current);
       clickTimer.current = undefined;
@@ -611,7 +625,7 @@ export function VideoPlayer({
         //      单击立即切换显隐（锁定态由 CSS 保证只有小锁可见，所以等于只切小锁）
         if (locked) {
           if (tapTimer.current) { window.clearTimeout(tapTimer.current); tapTimer.current = undefined; }
-          toggleControls();
+          setLockHidden((v) => !v);
         } else if (tapTimer.current) {
           // 第二击 = 双击：播放/暂停。
           // M1/M2：绝不改变控件显隐 —— 恢复成第一击之前的样子（隐藏态双击不会把控件弹出来）
@@ -877,7 +891,7 @@ export function VideoPlayer({
                   <span className="res">[{qualityLabel || resText || '1920x804'}]</span>
                 </div>
                 <div className="acts">
-                  <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
+                  <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
                   <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
                 </div>
               </div>
@@ -909,7 +923,7 @@ export function VideoPlayer({
             <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer}>
               {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
-                <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
+                <button className="back" onClick={toggleLandscape} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
                   <span className="name">{detail.title}</span>
                   <span className="res">· 第{episodeIndex + 1}集 · [{qualityLabel || resText || '1920x804'}]</span>
@@ -923,14 +937,14 @@ export function VideoPlayer({
 
               {/* 左侧边栏：锁 / 弹幕 */}
               <div className="side left">
-                <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
+                <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
                 <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
               </div>
 
               {/* 右侧边栏：投屏 / 画中画 */}
               <div className="side right">
-                <button className="icon" onClick={() => setShowCast(true)} title="投屏"><Icon name="tv" size={20} /></button>
-                <button className="icon" onClick={onPip} title="画中画"><Icon name="pip" size={20} /></button>
+                <button className="icon" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={20} /></button>
+                <button className="icon" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画"><Icon name="pip" size={20} /></button>
               </div>
 
               {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}

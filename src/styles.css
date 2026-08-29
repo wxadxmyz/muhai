@@ -1140,6 +1140,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* B3 · 直播竖屏新增小锁：36px 圆钮，放在右下角横屏切换按钮的左边 */
 .lp-lock { position: absolute; right: 52px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; cursor: pointer; box-sizing: border-box; }
 .lp-lock.on { color: var(--accent); border-color: var(--accent); background: rgba(47,224,191,.16); }
+/* v3.1.1 · 直播竖屏锁屏：隐藏中央大播放键与横屏钮，只留小锁（原先竖屏点了锁没任何反应就是缺这条） */
+.lp-ctl.locked .lp-big, .lp-ctl.locked .lp-rotate { display: none !important; }
 .lp-rotate { position: absolute; right: 10px; bottom: 8px; z-index: 3; width: 36px; height: 36px; min-width: 36px; min-height: 36px; max-width: 36px; max-height: 36px; flex: none; border-radius: 50%; background: rgba(0,0,0,.42); border: 1px solid rgba(255,255,255,.14); color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 
 /* 两栏选台 */
@@ -1212,10 +1214,18 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
    （B9 的 3 秒自动隐藏要靠它才能真正生效） */
 .land-overlay.locked .land-lock { display: flex !important; pointer-events: auto; }
 .land-overlay.locked.hide .land-lock { opacity: 0; pointer-events: none; }
+/* v3.1.1 · 小锁独立显隐（lockHidden）：锁定态小锁不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"。
+   锁定态我们保持整层不进入 .hide（JS 侧 controlsVisible/landControls 维持 true），小锁显隐完全由 .lock-hidden 控制。 */
+.player-card .overlay.locked .top .acts .lock-btn.lock-hidden,
+.landscape .overlay.land-h.locked .side.left .lock-btn.lock-hidden,
+.lp-ctl.locked .lp-lock.lock-hidden,
+.land-overlay.locked .land-lock.lock-hidden { opacity: 0; pointer-events: none; }
 
 /* 直播页轻提示（投屏占位等） */
 .live .tip { position: fixed; left: 50%; bottom: 80px; transform: translateX(-50%); background: rgba(0,0,0,.8); color: #fff; padding: 9px 16px; border-radius: 999px; font-size: 13px; z-index: 10001; opacity: 0; transition: .2s; pointer-events: none; }
 .live .tip.show { opacity: 1; }
+/* v3.1.1：直播横屏投屏浮层（.modal-mask 默认 z-index:80）必须压在 land-overlay(z-index:10000) 之上，否则投屏点了没任何反应 */
+.live .modal-mask { z-index: 10002; }
 
 .live-grid > .empty { grid-column: 1 / -1; }
 

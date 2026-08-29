@@ -115,6 +115,9 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   // 横屏锁屏：隐藏其余控件、禁手势、仅留锁按钮
   // B5 约束：锁定 / 解锁全程不得调用 pause() —— 锁屏只锁操作，不打断播放。
   const [locked, setLocked] = useState(false);
+  // v3.1.1：小锁独立显隐（不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"）
+  const [lockHidden, setLockHidden] = useState(false);
+  const lockTimer = useRef<number | undefined>(undefined);
   const landHideTimer = useRef<number | undefined>(undefined);
   const landClickTimer = useRef<number | undefined>(undefined);
   // K2：清掉可能残留的单击/双击定时器。
@@ -143,10 +146,12 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   // 单击切换控件显隐；播放态 3s 自动隐藏；锁屏强制常显（满足"单击显隐 / 双击暂停 / 自动隐藏"）
   const scheduleLandHide = useCallback(() => {
     if (landHideTimer.current) window.clearTimeout(landHideTimer.current);
-    // B9：去掉 locked —— 锁定态也要启动 3 秒定时器，让小锁自动隐藏（此前小锁永远亮着）
     if (paused) return;
+    // v3.1.1：锁定态 3 秒后只隐藏「小锁」（lockHidden），整层 landControls 维持 true（其余控件已由 .locked CSS 隐藏），
+    //           这样锁不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"
+    if (locked) { landHideTimer.current = window.setTimeout(() => setLockHidden(true), 3000); return; }
     landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000);
-  }, [paused]);
+  }, [paused, locked]);
   const showLandControls = useCallback(() => {
     setLandControls(true);
     scheduleLandHide();
@@ -191,6 +196,13 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const handleCast = () => {
     if (!curUrl) { toast('当前没有可投屏的直播地址'); return; }
     setShowCast(true);
+  };
+  // v3.1.1：锁定/解锁 + 小锁 3 秒自动隐藏（锁显隐独立于整层控件显隐，解决"点不回来"）
+  const toggleLock = () => {
+    const next = !locked;
+    setLocked(next);
+    if (lockTimer.current) { window.clearTimeout(lockTimer.current); lockTimer.current = undefined; }
+    if (next) { setLockHidden(false); lockTimer.current = window.setTimeout(() => setLockHidden(true), 3000); }
   };
 
   // 画中画（对齐设计文件横屏底部“源/画中画/播放/列表”）
@@ -263,11 +275,14 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     el.__sx = null; el.__sy = null;
     // 轻触（位移很小）：单击切换横屏控件显隐；双击播放/暂停（竖屏无控件层，toggle 等效无效）
     if (Math.abs(dx) < 16 && Math.abs(dy) < 16) {
+      // 选台/换源浮层打开时，单击屏幕（视频区）先关浮层，不动锁与控件
+      if (!locked && pickSheet) { setPickSheet(false); return; }
+      if (!locked && srcSheet) { setSrcSheet(false); return; }
       // B11：锁定态走独立分支 —— 不判双击、不等 280ms，单击立即切换小锁显隐。
       // 其余控件在锁定态由 CSS 强制隐藏，所以这里只动 landControls 就等于只动小锁。
       if (locked) {
         if (landClickTimer.current) { window.clearTimeout(landClickTimer.current); landClickTimer.current = undefined; }
-        setLandControls((v) => { const next = !v; if (next && !paused) scheduleLandHide(); return next; });
+        setLockHidden((v) => !v);
         return;
       }
       if (landClickTimer.current) {
@@ -487,12 +502,12 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               )}
               <div className={'lp-ctl' + (landControls ? '' : ' hide')}>
                 {playing && (
-                  <button className="lp-big" title={paused ? '播放' : '暂停'}>
+                  <button className="lp-big" title={paused ? '播放' : '暂停'} onClick={togglePlay}>
                     <Icon name={paused ? 'play' : 'pause'} size={28} />
                   </button>
                 )}
                 {/* A 组：直播竖屏新增小锁（与右下角横屏钮同尺寸、竖排在其正上方） */}
-                <button className={'lp-lock' + (locked ? ' on' : '')} onClick={() => { clearTapTimer(); setLocked((v) => !v); }} title={locked ? '已锁定' : '锁定屏幕'}>
+                <button className={'lp-lock' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => { clearTapTimer(); toggleLock(); }} title={locked ? '已锁定' : '锁定屏幕'}>
                   <Icon name={locked ? 'lock' : 'lock-open'} size={18} />
                 </button>
                 <button className="lp-rotate" onClick={() => { clearTapTimer(); toggleFullscreen(); }} title="横屏">
@@ -545,8 +560,6 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
       {loading && <div className="empty sm">正在加载直播频道…</div>}
 
-      <div className={'tip' + (showCast ? ' show' : '')}>投屏功能开发中</div>
-
       {/* 真实 DLNA 投屏浮层 */}
       {showCast && (
         <CastOverlay
@@ -579,10 +592,10 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
               <span>{activeName}</span>
               <span className="lp-res">[{resolution}]</span>
             </div>
-            <button className={'land-lock' + (locked ? ' on' : '')} onClick={() => { clearTapTimer(); setLocked((v) => !v); }} title={locked ? '已锁定' : '锁定屏幕'}>
+            <button className={'land-lock' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => { clearTapTimer(); toggleLock(); }} title={locked ? '已锁定' : '锁定屏幕'}>
               <Icon name={locked ? 'lock' : 'lock-open'} size={18} />
             </button>
-            <button className="land-tv" onClick={() => { clearTapTimer(); handleCast(); }} title="投屏">
+            <button className="land-tv" onClick={(e) => { e.stopPropagation(); clearTapTimer(); handleCast(); }} title="投屏">
               <Icon name="tv" size={18} />
             </button>
           </div>
@@ -615,7 +628,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
           {/* 横屏选台浮层 */}
           {pickSheet && (
-            <div className="land-pick">
+            <div className="land-pick" onTouchEnd={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
               <div className="lp-cats">
                 {cats.map((cat) => (
                   <div key={cat} className={'cat' + (activeCat === cat ? ' on' : '')} onClick={() => setActiveCat(cat)}>{cat}</div>
@@ -637,7 +650,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
           {/* 横屏换源条 */}
           {srcSheet && curChannel && (
-            <div className="land-srcbar">
+            <div className="land-srcbar" onTouchEnd={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
               <span className="land-srcbar-label">切换源</span>
               <div className="land-srcbar-row">
                 {curChannel.sources.map((_, i) => (

@@ -204,6 +204,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const toggleLock = () => {
     const next = !locked;
     setLocked(next);
+    // ④：强化可见反馈 —— 锁/解锁给 toast 确认（锁钮高亮/层级/指针事件沿用原 B 组 8 条模型）
+    toast(next ? '已锁定屏幕' : '已解除锁定');
     if (lockTimer.current) { window.clearTimeout(lockTimer.current); lockTimer.current = undefined; }
     if (next) {
       setLandControls(true); // 锁定态保持整层可见（小锁在 .locked 下始终可点），不被 3 秒隐藏整层

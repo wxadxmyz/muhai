@@ -175,7 +175,12 @@ export function Home({
         <h3>{title}</h3>
       </div>
       {items.length === 0 ? (
-        <div className="empty sm">{homeLoading ? '正在加载…' : '暂无内容'}</div>
+        // ⑩：非全屏覆盖层 —— 顶/底保留，仅内容区在 homeLoading 时显示加载态（中心旋转圆圈，背景随皮肤）
+        homeLoading ? (
+          <div className="home-loading"><span className="vp-spinner" /></div>
+        ) : (
+          <div className="empty sm">暂无内容</div>
+        )
       ) : (
         <div className="poster-grid">
           {items.map((it) => <PosterCard key={it.sourceId + it.id} it={it} />)}

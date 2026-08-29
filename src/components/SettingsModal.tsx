@@ -231,9 +231,7 @@ export function SettingsModal({
                 <Switch checked={!!settings.showDesktopLyric} onChange={(v) => update({ showDesktopLyric: v })} />
               </Row>
             )}
-            <Row icon="repeat" label="自动连播">
-              <Switch checked={!!settings.autoNext} onChange={(v) => update({ autoNext: v })} />
-            </Row>
+            {/* ⑪：删除全局「自动连播」开关（死开关且多余）；连播改由播放页抽屉的「连播」按钮控制 */}
             {!isMusic && (
               <>
                 <Row icon="play" label="跳过片头(秒)">

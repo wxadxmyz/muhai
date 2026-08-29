@@ -977,8 +977,19 @@ export function VideoPlayer({
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
                   <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
-                  <button className="tool" onClick={() => setShowSkip(true)}><Icon name="skip-forward" size={15} /><span>片头</span></button>
-                  <button className="tool" onClick={() => setShowSkip(true)}><Icon name="skip-back" size={15} /><span>片尾</span></button>
+                  {/* ⑧：横屏「片头/片尾」改为一键设定（不再弹面板）—— 点一下用当前进度设定，再点清空；长按该按钮仍弹分:秒输入面板 */}
+                  <button
+                    className={'tool' + (introSec ? ' on' : '')}
+                    onClick={() => { const t = Math.floor(videoRef.current?.currentTime ?? 0); updateSettings({ skipIntro: introSec ? 0 : t }); }}
+                    onContextMenu={(e) => { e.preventDefault(); setShowSkip(true); }}
+                    title={introSec ? `片头已设 ${introSec}s（再点清空，长按改分:秒）` : '点一下用当前进度设片头，长按输分:秒'}
+                  ><Icon name="skip-forward" size={15} /><span>{introSec ? `片头${introSec}s` : '片头'}</span></button>
+                  <button
+                    className={'tool' + (outroSec ? ' on' : '')}
+                    onClick={() => { const t = Math.floor(videoRef.current?.currentTime ?? 0); updateSettings({ skipOutro: outroSec ? 0 : t }); }}
+                    onContextMenu={(e) => { e.preventDefault(); setShowSkip(true); }}
+                    title={outroSec ? `片尾已设 ${outroSec}s（再点清空，长按改分:秒）` : '点一下用当前进度设片尾，长按输分:秒'}
+                  ><Icon name="skip-back" size={15} /><span>{outroSec ? `片尾${outroSec}s` : '片尾'}</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
                   {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
                   <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
@@ -1171,8 +1182,9 @@ export function VideoPlayer({
             </div></div>
 
             <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
-              <button className={introSec ? 'on' : ''} onClick={() => updateSettings({ skipIntro: introSec ? 0 : 12 })}><Icon name="fast-forward" size={22} /><span>片头</span></button>
-              <button className={outroSec ? 'on' : ''} onClick={() => updateSettings({ skipOutro: outroSec ? 0 : 15 })}><Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} /><span>片尾</span></button>
+              {/* ⑧：竖屏抽屉「片头/片尾」一键设定 —— 点一下用当前进度设，再点清空，按钮显示已设秒数 */}
+              <button className={introSec ? 'on' : ''} onClick={() => { const t = Math.floor(videoRef.current?.currentTime ?? 0); updateSettings({ skipIntro: introSec ? 0 : t }); }}><Icon name="fast-forward" size={22} /><span>{introSec ? `片头${introSec}s` : '片头'}</span></button>
+              <button className={outroSec ? 'on' : ''} onClick={() => { const t = Math.floor(videoRef.current?.currentTime ?? 0); updateSettings({ skipOutro: outroSec ? 0 : t }); }}><Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} /><span>{outroSec ? `片尾${outroSec}s` : '片尾'}</span></button>
               <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
               <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
             </div></div>

@@ -104,6 +104,10 @@ button.fav, .fav { color: var(--danger) !important; }
 .view.home .row-head, .view.library .row-head { padding-left: 14px; }
 .view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; gap: 2px; }
 
+/* ⑩：首页加载（非全屏覆盖层）—— 仅内容区，背景随皮肤(var(--bg))，中心旋转圆圈，无主题色填充条 */
+.home-loading { display: grid; place-items: center; min-height: 52vh; background: var(--bg); }
+.home-loading .vp-spinner { border-color: rgba(128,128,128,.28); border-top-color: var(--accent); }
+
 .row-section { margin-top: 26px; }
 .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .row-head h3 { margin: 0; font-size: 15px; color: var(--text); }

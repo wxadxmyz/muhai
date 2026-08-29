@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayer, fmtTime, player } from '../lib/playerStore';
 import { useMediaResolver } from '../lib/playback';
 import { useLibrary } from '../lib/library';
@@ -7,11 +7,12 @@ import { MediaItem, SourceConfig } from '../engine/types';
 import { gradientFor, initial } from '../lib/cover';
 import { CastOverlay } from '../components/CastOverlay';
 import { downloadStore } from '../lib/downloads';
-import { attachHls, detachHls } from '../lib/hlsPlayer';
+import { attachHls, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLevel } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared } from '../lib/orientation';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
+import { toast } from '../lib/toast';
 
 // ===== 播放器选项（持久化到 localStorage） =====
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -20,6 +21,26 @@ const DECODE_CYCLE = ['system', 'ijk-hard', 'ijk-soft', 'exo'] as const;
 const DECODE_LABEL: Record<string, string> = { system: '系统', 'ijk-hard': '硬解', 'ijk-soft': '软解', exo: 'Exo' };
 const QUALITIES = ['480P', '720P', '1080P', '4K'];
 const SCALE_OPTS = ['默认', '16:9', '4:3', '填充', '原始', '裁剪'];
+// P5：选项 → <video> 的 objectFit
+const SCALE_FIT: Record<string, string> = {
+  默认: 'contain',
+  '16:9': 'cover',
+  '4:3': 'cover',
+  填充: 'fill',
+  原始: 'none',
+  裁剪: 'cover',
+};
+// P5：选项 → 需要锁定的容器宽高比（只有 16:9 / 4:3 两档要改容器）
+const SCALE_RATIO: Record<string, string> = { '16:9': '16 / 9', '4:3': '4 / 3' };
+// P5-4：设置面板里每个选项的说明，避免再混淆「变形 / 裁边」
+const SCALE_HINT: Record<string, string> = {
+  默认: '完整显示，不变形不裁切',
+  '16:9': '强制 16:9，裁掉多余部分',
+  '4:3': '强制 4:3，裁掉多余部分',
+  填充: '拉伸铺满，画面会变形',
+  原始: '原始像素不放大，四周留白',
+  裁剪: '铺满画面，裁掉溢出部分',
+};
 const AUDIO_OPTS = ['关闭', '影院', '重低音', '环绕', 'HiFi', '人声'];
 // 线路命名：对齐设计文件“默认线路 / 备用线路 A / 备用线路 B / 海外线路”
 const LINE_NAMES = ['默认线路', '备用线路 A', '备用线路 B', '海外线路'];
@@ -104,6 +125,8 @@ export function VideoPlayer({
   // 收藏：直接写入library（设计文件 fav-btn 调 toggleFavorite），初始态从 library 派生
   const [faved, setFaved] = useState<boolean>(() => library.isFavorite(detail));
   useEffect(() => { setFaved(library.isFavorite(detail)); }, [library.lib.favorites, detail]);
+  // B5 约束：锁定 / 解锁全程不得调用 pause() —— 锁屏只锁操作，不打断播放。
+  // 所有涉及 locked 的分支只改 UI 状态（显隐 / 手势拦截），一律不去动 player / video。
   const [locked, setLocked] = useState(false);
   const [danmaku, setDanmaku] = useState<boolean>(!!settings.enableDanmaku);
   // 控件显隐：单击切换、播放态 3s 自动隐藏、锁屏强制常显（竖屏/横屏通用）
@@ -144,9 +167,37 @@ export function VideoPlayer({
   const groups = (detail.raw?.lineGroups as any[] | undefined) ?? [];
   const lines = groups.length || (detail.raw?.lines as number) || 1;
   const progressKey = `${detail.sourceId}:${detail.id}`;
+  // N1：续播键要带集数 —— 原 progressKey 只到「剧」这一级，同一部剧各集会互相覆盖进度。
+  // 片头/片尾设置仍用 progressKey（那是按剧配置的，不该按集拆开）。
+  const resumeKey = `${progressKey}:${episodeIndex}`;
   const perItem = settings.skipByItem[progressKey];
   const introSec = perItem?.intro ?? settings.skipIntro;
   const outroSec = perItem?.outro ?? settings.skipOutro;
+
+  // ===== N 组：续播（写入节流 + 加载恢复 + 暂停/切集/退出补写） =====
+  const lastSaveRef = useRef(0);
+  // 用 ref 持有实现，避免把 library / resumeKey 塞进 useCallback 依赖 ——
+  // library 每次渲染都是新对象，一旦进依赖，下面的补写 effect 就会每帧重建并反复写盘，节流形同虚设。
+  const saveProgressRef = useRef<(force?: boolean, key?: string) => void>(() => {});
+  saveProgressRef.current = (force = false, key?: string) => {
+    const v = videoRef.current;
+    if (!v || !isFinite(v.currentTime) || v.currentTime <= 0) return;
+    const now = Date.now();
+    // N4：timeupdate 约 250ms 一次，原来每秒写 4 次 localStorage；这里节流到 5 秒一次。
+    // force=true 用于暂停 / 切集 / 退出这类"最后一次机会"的补写（N5），不受节流限制。
+    if (!force && now - lastSaveRef.current < 5000) return;
+    lastSaveRef.current = now;
+    library.setWatchProgress(key || resumeKey, v.currentTime);
+  };
+  const saveProgress = useCallback((force = false, key?: string) => saveProgressRef.current(force, key), []);
+  // N5：切集 / 切剧 / 关闭播放页时补写一次。
+  // cleanup 里的 k 捕获自「上一次渲染」，所以保存的正是旧集（旧剧）的进度，不会串到新集上。
+  useEffect(() => {
+    const k = resumeKey;
+    return () => { saveProgress(true, k); };
+  }, [resumeKey, saveProgress]);
+  // 记录"这一集已经恢复过进度"，避免 seek 触发的再次 loadedmetadata 重复跳转
+  const resumedKeyRef = useRef('');
 
   // 横屏由用户点「横屏」按钮主动进入（并请求原生真旋转），不再依赖系统传感器自动切换，
   // 避免「点了按钮却不转」的问题。
@@ -200,11 +251,14 @@ export function VideoPlayer({
   useEffect(() => {
     const prev = (window as any).__onAndroidBack;
     (window as any).__onAndroidBack = () => {
+      // B6：锁定态不要求「先解锁再返回」。先解掉锁，再继续走原本的返回逻辑 ——
+      //     横屏锁定：一次返回键同时「解锁 + 退横屏」；竖屏锁定：解锁后直接关闭播放页。
+      if (locked) setLocked(false);
       if (landscape) { setLandscape(false); return false; }
       return typeof prev === 'function' ? prev() : true;
     };
     return () => { (window as any).__onAndroidBack = prev; };
-  }, [landscape]);
+  }, [landscape, locked]);
 
   useEffect(() => {
     player.attachVideo(videoRef.current);
@@ -373,11 +427,48 @@ export function VideoPlayer({
     const i = SPEEDS.indexOf(speed);
     setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
   };
+  // ===== S 组：分辨率真实切换（走 HLS 多码率，不再循环假字符串） =====
+  // 源本身没有清晰度维度（engine/adapters/normal.ts 只认 $$$ / # / $），
+  // 唯一可行路径就是 m3u8 自带的多个码率档位。
+  const [levels, setLevels] = useState<HlsLevel[]>([]);
+  const [levelOpen, setLevelOpen] = useState(false);
+  const refreshLevels = useCallback(() => { setLevels(getLevels(videoRef.current)); }, []);
+  // S3：切集 / 换线路 / 重试后档位列表会变，重新读一次并恢复用户选过的档位
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const ls = getLevels(videoRef.current);
+      setLevels(ls);
+      if (ls.length >= 2) {
+        const saved = Number(localStorage.getItem('rf_quality_level') ?? '-1');
+        if (saved >= -1 && saved < ls.length) setLevel(videoRef.current, saved);
+      }
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [episodeIndex, state.current?.playUrl, retryNonce]);
+  // S3：当前档位文案 —— 自动档显示「自动」，手动档显示实际高度
+  const qualityLabel = useMemo(() => {
+    if (levels.length >= 2) {
+      const cur = getCurrentLevel(videoRef.current);
+      if (cur < 0) return '自动';
+      const l = levels.find((x) => x.index === cur) ?? levels[cur];
+      return l?.height ? `${l.height}P` : `档${cur + 1}`;
+    }
+    return ''; // 单档 / 非 HLS：交给顶栏显示真实分辨率
+  }, [levels, levels.length]);
   const cycleQuality = () => {
-    const i = QUALITIES.indexOf(quality);
-    const n = QUALITIES[(i + 1) % QUALITIES.length];
-    setQuality(n);
-    localStorage.setItem('rf_quality', n);
+    const ls = getLevels(videoRef.current);
+    setLevels(ls);
+    // S2：档位不足两档（单码率 m3u8 或 mp4 直链）时不可切，明确告诉用户为什么
+    if (ls.length < 2) { toast('当前片源只有一档，无法切换清晰度'); return; }
+    setLevelOpen(true);
+  };
+  const pickLevel = (index: number) => {
+    setLevel(videoRef.current, index);
+    localStorage.setItem('rf_quality_level', String(index)); // S3：记住用户的选择
+    setLevelOpen(false);
+    refreshLevels();
+    setControlsVisible(true);
+    scheduleHide();
   };
   const cycleAudio = () => {
     const i = AUDIO_OPTS.indexOf(audioMode);
@@ -408,7 +499,8 @@ export function VideoPlayer({
   // 桌面单击：切换控件显隐；双击：播放/暂停（移动端走 touch 路径，单/双击同一逻辑）
   const clickTimer = useRef<number | undefined>(undefined);
   const onStageClick = () => {
-    if (locked) return;
+    // B11：锁定态单击 = 只切换小锁显隐（不做双击暂停）
+    if (locked) { toggleControls(); return; }
     if (clickTimer.current) {
       window.clearTimeout(clickTimer.current);
       clickTimer.current = undefined;
@@ -430,22 +522,32 @@ export function VideoPlayer({
   const SWIPE_STEP = 5; // 每跨 40px 跳 5s
   const SWIPE_EDGE = 40; // 左边缘 40px 内右滑 = 返回
   const onStageTouchStart = (e: React.TouchEvent) => {
-    if (locked) return;
-    // 阻止默认行为，避免移动端 touch 后触发 ghost click（否则单击显隐会被 click 再触发一次抵消）
-    try { e.preventDefault(); } catch { /* ignore */ }
     const t = e.touches[0];
     const el = stageRef.current as any;
     if (!el) return;
+
+    // B12：触摸落在控件（按钮 / 播放图标 / 进度条）上时，把手势让给控件本身 ——
+    // 既不 preventDefault（否则会把按钮的 click 一起吞掉，点小锁没反应），
+    // 也不初始化手势状态（否则点一下按钮还会顺带触发一次「控件显隐」）。
+    const hitControl = !!(e.target as HTMLElement | null)?.closest?.('button, .play-ico, .bar, input, a');
+    if (hitControl) { el.__sx = null; el.__moved = true; return; }
+
+    // 阻止默认行为，避免移动端 touch 后触发 ghost click（否则单击显隐会被 click 再触发一次抵消）
+    try { e.preventDefault(); } catch { /* ignore */ }
     el.__sx = t.clientX;
     el.__sy = t.clientY;
     el.__accum = 0;
     el.__dir = 0;
     el.__backing = false;
-    el.__half = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
-    el.__bStart = brightnessRef.current;
-    el.__vStart = state.volume;
     el.__ts = Date.now();        // 轻触起始时间
     el.__moved = false;          // 是否发生滑动
+    // B11：锁定态仍要记录轻触起点（供「单击切小锁显隐」判定），
+    //      但不初始化亮度/音量基准、也不允许滑动 —— 滑动由 onStageTouchMove 的 locked 分支继续拦。
+    if (locked) return;
+    el.__half = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
+    el.__bStart = brightnessRef.current;
+    // T5：手势起点用「系统当前音量」（不是 video 的乘数）。从系统当前值接着调，不回 100。
+    el.__vStart = systemVolRef.current;
   };
   const onStageTouchMove = (e: React.TouchEvent) => {
     const el = stageRef.current as any;
@@ -469,8 +571,9 @@ export function VideoPlayer({
         try { (window as any).MuHaiAndroid?.setBrightness?.(b); } catch { /* ignore */ }
         showHud('bright', Math.round(val * 100));
       } else {
-        if (videoRef.current) { videoRef.current.muted = false; videoRef.current.volume = val; }
+        // T5：只调系统音量；video.volume 恒为 1、muted 恒为 false，不做双轨相乘
         try { (window as any).MuHaiAndroid?.setVolume?.(val); } catch { /* ignore */ }
+        systemVolRef.current = val;
         showHud('vol', Math.round(val * 100));
       }
       el.__accum = dy;
@@ -504,14 +607,30 @@ export function VideoPlayer({
       const dt = Date.now() - (el.__ts || 0);
       const isTap = !el.__moved && !el.__backing && dt < 250 && el.__sx != null;
       if (isTap) {
-        if (tapTimer.current) {
+        // B11：锁定态走独立分支 —— 双击暂停已禁用，没必要再等 280ms 判双击；
+        //      单击立即切换显隐（锁定态由 CSS 保证只有小锁可见，所以等于只切小锁）
+        if (locked) {
+          if (tapTimer.current) { window.clearTimeout(tapTimer.current); tapTimer.current = undefined; }
+          toggleControls();
+        } else if (tapTimer.current) {
+          // 第二击 = 双击：播放/暂停。
+          // M1/M2：绝不改变控件显隐 —— 恢复成第一击之前的样子（隐藏态双击不会把控件弹出来）
           window.clearTimeout(tapTimer.current);
           tapTimer.current = undefined;
-          player.toggle(); // 双击 = 播放/暂停
+          const wasVisible = el.__tapVisible !== false;
+          player.toggle();
+          setControlsVisible(wasVisible);
+          if (wasVisible && state.isPlaying) scheduleHide();
         } else {
+          // 第一击：记下「双击前控件是否可见」，存到 DOM 元素上（不受后续 re-render 影响）
+          const wasVisible = controlsVisible;
+          el.__tapVisible = wasVisible;
+          // K3：控件当前是隐藏的 → 第一下就立即唤出，不再干等 280ms
+          if (!wasVisible) { setControlsVisible(true); if (state.isPlaying) scheduleHide(); }
+          // 单击语义仍由 280ms 定时器兜底：原本可见 → 到点隐藏；原本隐藏 → K3 已处理，到点不动
           tapTimer.current = window.setTimeout(() => {
             tapTimer.current = undefined;
-            toggleControls(); // 单击 = 控件显隐
+            if (wasVisible) setControlsVisible(false);
           }, 280);
         }
       }
@@ -527,10 +646,20 @@ export function VideoPlayer({
     }
   };
   const tapTimer = useRef<number | undefined>(undefined);
+  // K2：清掉可能残留的单击/双击定时器。
+  // 场景 —— 先点一下空白（起了 280ms 定时器），紧接着点某个控件按钮：
+  // 按钮动作执行完之后，迟到的定时器才到点，又把控件显隐翻一次，
+  // 表现就是"控件自己莫名其妙藏起来 / 弹出来"。
+  // 用 touchstart 捕获阶段挂在 overlay 上：既早于 touchend（不会误清本次新起的定时器），
+  // 又能一次性覆盖 overlay 内的所有按钮（含横屏底部 10 个工具键）。
+  const clearTapTimer = useCallback(() => {
+    if (tapTimer.current) { window.clearTimeout(tapTimer.current); tapTimer.current = undefined; }
+  }, []);
   // 单击切换控件显隐；播放态 3s 后自动隐藏；锁屏强制常显（竖屏/横屏通用）
   const scheduleHide = () => {
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    if (locked || !state.isPlaying) return;
+    // B9：去掉 locked —— 锁定态也要启动 3 秒定时器，让小锁自动隐藏（此前小锁永远亮着）
+    if (!state.isPlaying) return;
     hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
   };
   const toggleControls = () => {
@@ -540,13 +669,11 @@ export function VideoPlayer({
       return next;
     });
   };
+  // B7+B9：锁定/解锁都要走这里 —— 锁定瞬间先让小锁亮起，3 秒后被 scheduleHide 藏掉；
+  //        解锁时控件立刻出现并重启 3 秒倒计时。
   useEffect(() => {
-    if (state.isPlaying && !locked) {
-      setControlsVisible(true);
-      scheduleHide();
-    } else {
-      setControlsVisible(true);
-    }
+    setControlsVisible(true);
+    if (state.isPlaying) scheduleHide();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isPlaying, locked]);
 
@@ -559,10 +686,20 @@ export function VideoPlayer({
   const ss = settings.subtitleStyle;
   const cues = localCues.length ? localCues : detail.subtitles?.[0]?.cues;
   const activeCue = (settings.enableSubtitle && danmaku === false) ? getActiveCue(cues, state.progress) : null;
+  // P5：6 个选项各自落到「objectFit + 容器比例」的组合（此前 16:9 / 4:3 / 原始 是死选项，点了跟默认一样）
+  //   默认  contain  完整显示，不变形不裁切（默认档保持不变，见 P5-5）
+  //   16:9  锁 16/9 容器 + cover  强制按 16:9 呈现，靠裁切实现，不变形
+  //   4:3   锁 4/3 容器 + cover  同上
+  //   填充  fill                 拉伸铺满，画面**会变形**（人会变矮胖）
+  //   原始  none                 1:1 像素不放大，居中显示，四周留白
+  //   裁剪  cover                铺满容器，裁掉溢出部分，不变形
   const videoStyle: React.CSSProperties = {
-    objectFit: scaleMode === '填充' ? 'fill' : scaleMode === '裁剪' ? 'cover' : 'contain',
+    objectFit: (SCALE_FIT[scaleMode] ?? 'contain') as React.CSSProperties['objectFit'],
+    objectPosition: 'center', // P5-2：「原始」不放大时居中
     filter: brightness < 1 ? `brightness(${brightness})` : undefined,
   };
+  // 需要锁容器比例的两档；其余档保持容器原样（竖屏 16:9 / 横屏全屏）
+  const lockRatio = SCALE_RATIO[scaleMode] || '';
   const tags: string[] = Array.isArray(detail.raw?.tags)
     ? (detail.raw!.tags as string[]).slice(0, 5)
     : Array.isArray(detail.raw?.genres)
@@ -578,6 +715,26 @@ export function VideoPlayer({
   const fallbackTags: string[] = hasAnyTag ? [] : [(filmYear ? String(filmYear) : '影视'), 'HD'];
 
   const epName = detail.episodes?.[episodeIndex]?.name ?? `第${episodeIndex + 1}集`;
+
+  // ===== T 组：缓冲状态 =====
+  const [buffering, setBuffering] = useState(false);
+  const [bufPct, setBufPct] = useState(0);
+  const bufferingTimer = useRef<number | undefined>(undefined);
+  // T3：缓冲转圈延迟 300ms —— 快进后 200ms 内缓冲好就不显示，避免一闪而过反而像卡顿
+  const markBuffering = useCallback(() => {
+    if (bufferingTimer.current) window.clearTimeout(bufferingTimer.current);
+    bufferingTimer.current = window.setTimeout(() => setBuffering(true), 300);
+  }, []);
+  const clearBuffering = useCallback(() => {
+    if (bufferingTimer.current) { window.clearTimeout(bufferingTimer.current); bufferingTimer.current = undefined; }
+    setBuffering(false);
+  }, []);
+  // T5：进入播放器时读系统当前音量作为手势起点（"从系统当前音量接着调，不是回到 100"）
+  const systemVolRef = useRef(1);
+  useEffect(() => {
+    try { const v = (window as any).MuHaiAndroid?.getVolume?.(); if (typeof v === 'number') systemVolRef.current = v; } catch { /* ignore */ }
+    if (videoRef.current) { videoRef.current.volume = 1; videoRef.current.muted = false; } // 视频音量恒为 1，不做乘数
+  }, []);
 
   if (collapsed) {
     return (
@@ -595,23 +752,41 @@ export function VideoPlayer({
       <div
         className={'player-card' + (landscape ? ' land' : '')}
         ref={stageRef}
+        // P5-1/P5-3：竖屏直接改容器比例；横屏容器是 fixed 全屏，比例交给 .screen 锁（见下）
+        style={!landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}
         onTouchStart={onStageTouchStart}
         onTouchMove={onStageTouchMove}
         onTouchEnd={onStageTouchEnd}
       >
-        <div className="screen">
+        <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
           <div className="poster" />
           <video
             ref={videoRef}
             style={videoStyle}
             controls={false}
             onClick={onStageClick}
+            // N5：暂停时立刻补写一次进度（不然要等满 5 秒才落盘）
+            onPause={() => saveProgress(true)}
+            // T3：缓冲开始 → 延迟 300ms 显示转圈；播放/可播/seek 完成 → 立即取消
+            onWaiting={() => markBuffering()}
+            onStalled={() => markBuffering()}
+            onSeeking={() => markBuffering()}
+            onPlaying={clearBuffering}
+            onCanPlay={clearBuffering}
+            onSeeked={clearBuffering}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
               setLiveCur(v.currentTime);
               setLiveDur(v.duration || 0);
               player.setProgress(v.currentTime);
-              library.setWatchProgress(progressKey, v.currentTime);
+              // T4：已缓冲进度 = buffered 末尾 / 总时长（reused 现有 250ms 周期，不必另开定时器）
+              try {
+                if (v.buffered.length && v.duration > 0) {
+                  const end = v.buffered.end(v.buffered.length - 1);
+                  setBufPct(Math.min(100, (end / v.duration) * 100));
+                }
+              } catch { /* ignore */ }
+              saveProgress(); // N4：内部 5 秒节流
               trySkipIntro();
               trySkipOutro();
             }}
@@ -620,6 +795,20 @@ export function VideoPlayer({
               setLiveDur(v.duration || 0);
               player.setDuration(v.duration);
               if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
+              // N1/N2/N3：续播 —— 上次看到哪儿就接着播
+              const d = v.duration || 0;
+              if (d > 0 && resumedKeyRef.current !== resumeKey) {
+                resumedKeyRef.current = resumeKey;
+                const saved = library.watchProgress[resumeKey] ?? 0;
+                // N3：超过 95% 视为已看完 → 从头播，避免一打开就跳到片尾
+                // N1：不足 30 秒的进度不值得恢复（可能是误触），也从头播
+                if (saved > 30 && saved < d * 0.95) {
+                  v.currentTime = saved;
+                  setLiveCur(saved);
+                  player.seek(saved);
+                  toast(`上次看到 ${fmtTime(saved)}，已为你续播`); // N2
+                }
+              }
             }}
             onDurationChange={(e) => { const v = e.target as HTMLVideoElement; setLiveDur(v.duration || 0); }}
             onError={() => {
@@ -658,7 +847,8 @@ export function VideoPlayer({
               {activeCue}
             </div>
           )}
-          {castDevice && <div className="vp-cast-flag"><Icon name="cast" size={14} /> 投屏中：{castDevice}</div>}
+          {/* 锁屏态隐藏投屏提示（B1：锁定后除小锁外不留任何浮层） */}
+          {castDevice && !locked && <div className="vp-cast-flag"><Icon name="cast" size={14} /> 投屏中：{castDevice}</div>}
 
           {/* 横滑快进/快退时间气泡 */}
           {seekBubble && (
@@ -679,19 +869,24 @@ export function VideoPlayer({
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
           {!landscape && (
-            <div className={'overlay' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '')}>
+            <div className={'overlay' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer}>
               <div className="top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
                   <span className="name">{detail.title} · {epName}</span>
-                  <span className="res">[{resText || '1920x804'}]</span>
+                  <span className="res">[{qualityLabel || resText || '1920x804'}]</span>
                 </div>
                 <div className="acts">
-                  <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={16} /></button>
+                  <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
                   <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
                 </div>
               </div>
-              <div className="center"><button className="big-btn" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={30} /></button></div>
+              <div className="center">
+                <button className="big-btn" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
+                  {/* T3：缓冲转圈与播放键原地合体 —— 同一圆圈同一位置，只换里面内容 */}
+                  {buffering ? <span className="vp-spinner" /> : <Icon name={state.isPlaying ? 'pause' : 'play'} size={30} />}
+                </button>
+              </div>
               <div className="bottom">
                 <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
                 <div className="bar" onClick={(e) => {
@@ -700,6 +895,8 @@ export function VideoPlayer({
                   const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
                   v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
                 }}>
+                  {/* T4：已缓冲进度（浅色），复用 onTimeUpdate 兜底刷新，层级介于轨道与已播放之间 */}
+                  <div className="buffered" style={{ width: `${bufPct}%` }} />
                   <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                 </div>
                 <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
@@ -709,13 +906,13 @@ export function VideoPlayer({
 
           {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
           {landscape && (
-            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '')}>
+            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer}>
               {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
                   <span className="name">{detail.title}</span>
-                  <span className="res">· 第{episodeIndex + 1}集 · [{resText || '1920x804'}]</span>
+                  <span className="res">· 第{episodeIndex + 1}集 · [{qualityLabel || resText || '1920x804'}]</span>
                 </div>
                 <div className="status">
                   <Icon name="clock" size={15} />
@@ -726,7 +923,7 @@ export function VideoPlayer({
 
               {/* 左侧边栏：锁 / 弹幕 */}
               <div className="side left">
-                <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name="lock" size={20} /></button>
+                <button className={'icon lock-btn' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
                 <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
               </div>
 
@@ -739,7 +936,10 @@ export function VideoPlayer({
               {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}
               <div className="center">
                 <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={26} /></button>
-                <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={32} /></button>
+                <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
+                  {/* T3：横屏主播放键同样与转圈合体，左右切集键保持可点 */}
+                  {buffering ? <span className="vp-spinner" /> : <Icon name={state.isPlaying ? 'pause' : 'play'} size={32} />}
+                </button>
                 <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={26} /></button>
               </div>
 
@@ -754,7 +954,8 @@ export function VideoPlayer({
                     const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
                     v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
                   }}>
-                    <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                    <div className="buffered" style={{ width: `${bufPct}%` }} />
+                  <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                   </div>
                   <span className="t">{fmtTime(liveDur)}</span>
                   <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
@@ -767,7 +968,11 @@ export function VideoPlayer({
                   <button className="tool" onClick={() => setShowSkip(true)}><Icon name="skip-forward" size={15} /><span>片头</span></button>
                   <button className="tool" onClick={() => setShowSkip(true)}><Icon name="skip-back" size={15} /><span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
-                  <button className="tool" onClick={cycleQuality}><Icon name="sparkles" size={15} /><span>画质</span></button>
+                  {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
+                  <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
+                    title={levels.length === 1 ? '当前片源只有一档' : '选择清晰度'}>
+                    <Icon name="sparkles" size={15} /><span>{levels.length === 1 ? '单档' : (qualityLabel || '画质')}</span>
+                  </button>
                   <button className="tool" onClick={scrollToEpisodes}><Icon name="list" size={15} /><span>选集</span></button>
                   <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
                 </div>
@@ -857,6 +1062,31 @@ export function VideoPlayer({
         </div>
       )}
 
+      {/* S2 · 清晰度档位选择：多码率 m3u8 才出现，选中即刻生效 */}
+      {levelOpen && (
+        <div className="vp-panel">
+          <div className="vp-panel-head">选择清晰度
+            <button className="link" onClick={() => setLevelOpen(false)}>关闭</button>
+          </div>
+          <div className="vp-levels">
+            <button
+              className={getCurrentLevel(videoRef.current) < 0 ? 'on' : ''}
+              onClick={() => pickLevel(-1)}
+            >自动{getCurrentLevel(videoRef.current) < 0 ? '（当前）' : ''}</button>
+            {levels.map((l) => (
+              <button
+                key={l.index}
+                className={getCurrentLevel(videoRef.current) === l.index ? 'on' : ''}
+                onClick={() => pickLevel(l.index)}
+              >
+                {l.height ? `${l.height}P` : `档位 ${l.index + 1}`}
+                {l.bitrate ? <span className="sub">{Math.round(l.bitrate / 1000)} kbps</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 字幕样式面板 */}
       {showSubStyle && (
         <div className="vp-panel">
@@ -913,6 +1143,8 @@ export function VideoPlayer({
                 <button key={s} className={scaleMode === s ? 'on' : ''} onClick={() => { setScaleMode(s); localStorage.setItem('rf_scale', s); }}>{s}</button>
               ))}
             </div></div>
+            {/* P5-4：当前所选档位的说明，避免再混淆「会不会变形 / 会不会裁边」 */}
+            <div className="dg-hint">{SCALE_HINT[scaleMode] || SCALE_HINT['默认']}</div>
 
             <div className="dg"><div className="dg-label">倍速播放</div><div className="dg-row">
               {SPEEDS.map((s) => (

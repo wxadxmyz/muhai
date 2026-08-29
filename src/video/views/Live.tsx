@@ -112,9 +112,18 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const [pickSheet, setPickSheet] = useState(false); // 横屏选台浮层
   const [showCast, setShowCast] = useState(false); // 真实 DLNA 投屏浮层
   const [landControls, setLandControls] = useState(true); // 横屏控件显隐（自动隐藏）
-  const [locked, setLocked] = useState(false); // 横屏锁屏：隐藏其余控件、禁手势、仅留锁按钮
+  // 横屏锁屏：隐藏其余控件、禁手势、仅留锁按钮
+  // B5 约束：锁定 / 解锁全程不得调用 pause() —— 锁屏只锁操作，不打断播放。
+  const [locked, setLocked] = useState(false);
   const landHideTimer = useRef<number | undefined>(undefined);
   const landClickTimer = useRef<number | undefined>(undefined);
+  // K2：清掉可能残留的单击/双击定时器。
+  // 场景 —— 先点一下空白（起了 280ms 定时器），紧接着点返回/投屏/小锁：
+  // 按钮动作已经执行完（比如退出了横屏），迟到的定时器才到点，又把控件状态翻一次，
+  // 表现就是"控件莫名其妙自己藏起来"。所有控件按钮的 onClick 都会先调它。
+  const clearTapTimer = useCallback(() => {
+    if (landClickTimer.current) { window.clearTimeout(landClickTimer.current); landClickTimer.current = undefined; }
+  }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
   // 真实分辨率药丸（设计文件 [1920×1080]）+ 亮度/音量手势状态
   const [resolution, setResolution] = useState('1920×1080');
@@ -134,17 +143,20 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   // 单击切换控件显隐；播放态 3s 自动隐藏；锁屏强制常显（满足"单击显隐 / 双击暂停 / 自动隐藏"）
   const scheduleLandHide = useCallback(() => {
     if (landHideTimer.current) window.clearTimeout(landHideTimer.current);
-    if (locked || paused) return;
+    // B9：去掉 locked —— 锁定态也要启动 3 秒定时器，让小锁自动隐藏（此前小锁永远亮着）
+    if (paused) return;
     landHideTimer.current = window.setTimeout(() => setLandControls(false), 3000);
-  }, [locked, paused]);
+  }, [paused]);
   const showLandControls = useCallback(() => {
     setLandControls(true);
     scheduleLandHide();
   }, [scheduleLandHide]);
 
-  // 进入横屏 / 播放 / 解锁后：控件出现，播放态 3s 后自动隐藏（竖屏也复用此逻辑）
+  // 进入横屏 / 播放 / 锁定 / 解锁后：控件出现，播放态 3s 后自动隐藏（竖屏也复用此逻辑）
+  // B7+B9：锁定态也要走这里 —— 锁定瞬间先让小锁亮起，3 秒后由 scheduleLandHide 把它藏掉；
+  //        解锁时同理，控件立刻出现并启动 3 秒倒计时。
   useEffect(() => {
-    if (!locked) showLandControls();
+    showLandControls();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFullscreen, paused, locked, playing]);
 
@@ -209,13 +221,17 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   const onStageTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     const el = e.currentTarget as any;
+    // B12：触摸落在控件（小锁 / 横屏钮 / 中央播放）上时把手势让给控件本身，
+    //      不初始化手势状态，避免点一下按钮又顺带触发一次「控件显隐」
+    if ((e.target as HTMLElement | null)?.closest?.('button')) { el.__sx = null; el.__moved = true; return; }
     el.__sx = t.clientX; el.__sy = t.clientY; el.__moved = false;
     el.__half = t.clientX < window.innerWidth / 2 ? 'left' : 'right';
     el.__accum = 0; el.__bStart = brightnessRef.current; el.__vStart = videoRef.current?.volume ?? 1;
   };
   const onStageTouchMove = (e: React.TouchEvent) => {
     const el = e.currentTarget as any;
-    if (el.__sx == null) return;
+    // B4：锁定态禁掉上下滑（亮度/音量）与左右滑（切台）
+    if (el.__sx == null || locked) return;
     const t = e.touches[0];
     const dx = t.clientX - el.__sx;
     const dy = t.clientY - el.__sy;
@@ -247,16 +263,34 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     el.__sx = null; el.__sy = null;
     // 轻触（位移很小）：单击切换横屏控件显隐；双击播放/暂停（竖屏无控件层，toggle 等效无效）
     if (Math.abs(dx) < 16 && Math.abs(dy) < 16) {
+      // B11：锁定态走独立分支 —— 不判双击、不等 280ms，单击立即切换小锁显隐。
+      // 其余控件在锁定态由 CSS 强制隐藏，所以这里只动 landControls 就等于只动小锁。
+      if (locked) {
+        if (landClickTimer.current) { window.clearTimeout(landClickTimer.current); landClickTimer.current = undefined; }
+        setLandControls((v) => { const next = !v; if (next && !paused) scheduleLandHide(); return next; });
+        return;
+      }
       if (landClickTimer.current) {
+        // 第二击 = 双击：播放/暂停。
+        // M3/M4：绝不改变控件显隐 —— 恢复成第一击之前的样子（隐藏态双击不会把控件弹出来）
         window.clearTimeout(landClickTimer.current);
         landClickTimer.current = undefined;
-        if (!locked) togglePlay();
-      } else {
-        landClickTimer.current = window.setTimeout(() => {
-          landClickTimer.current = undefined;
-          if (!locked) setLandControls((v) => { const next = !v; if (next) scheduleLandHide(); return next; });
-        }, 280);
+        const wasVisible = el.__tapVisible !== false;
+        togglePlay();
+        setLandControls(wasVisible);
+        if (wasVisible && !paused) scheduleLandHide();
+        return;
       }
+      // 第一击：先记下「双击前控件是否可见」，供上面的双击分支还原
+      const wasVisible = landControls;
+      el.__tapVisible = wasVisible;
+      // K3：控件当前是隐藏的 → 第一下就立即唤出，不再干等 280ms
+      if (!wasVisible) { setLandControls(true); if (!paused) scheduleLandHide(); }
+      // 单击语义仍由 280ms 定时器兜底：原本可见 → 到点隐藏；原本隐藏 → K3 已处理，到点不动
+      landClickTimer.current = window.setTimeout(() => {
+        landClickTimer.current = undefined;
+        if (wasVisible) setLandControls(false);
+      }, 280);
       return;
     }
     // 左滑上一台 / 右滑下一台（横向位移 >50px 且明显大于纵向）
@@ -363,6 +397,10 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   useEffect(() => {
     const prev = (window as any).__onAndroidBack;
     (window as any).__onAndroidBack = () => {
+      // B6：锁定态不弹解锁提示、也不要求「先解锁再返回」。
+      //     这里先把锁解掉，然后继续往下走原本的返回逻辑 —— 一次返回键同时完成
+      //     「解锁 + 退出横屏」，再按一次才真正离开页面，避免误触直接关掉直播。
+      if (locked) setLocked(false);
       if (isFullscreen) { toggleFullscreen(); return false; }
       if (pickSheet) { setPickSheet(false); return false; }
       if (srcSheet) { setSrcSheet(false); return false; }
@@ -370,7 +408,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       return prev ? !!prev() : true;
     };
     return () => { (window as any).__onAndroidBack = prev; };
-  }, [channels, isFullscreen, pickSheet, srcSheet, toggleFullscreen]);
+  }, [channels, isFullscreen, pickSheet, srcSheet, toggleFullscreen, locked]);
 
   return (
     <div className={'view live' + (isFullscreen ? ' lp-fullscreen' : '')}>
@@ -411,14 +449,14 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
           {/* 顶栏 + 小窗 合并为同一卡片块 */}
           <div className="lp-head-stage">
             <div className="lp-hd">
-              <button className="lp-back" onClick={() => { setChannels(null); setActiveName(''); setPlaying(null); }}>
+              <button className="lp-back" onClick={() => { clearTapTimer(); setChannels(null); setActiveName(''); setPlaying(null); }}>
                 <Icon name="arrow-left" size={18} />
               </button>
               <div className="lp-title">
                 <span className="lp-ch-name">{activeName || '未播放'}</span>
                 <span className="lp-res">[{resolution}]</span>
               </div>
-              <button className="lp-tv" onClick={handleCast} title="投屏">
+              <button className="lp-tv" onClick={() => { clearTapTimer(); handleCast(); }} title="投屏">
                 <Icon name="tv" size={18} />
               </button>
             </div>
@@ -432,7 +470,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                 ref={videoRef}
                 autoPlay
                 playsInline
-                className="live-video"
+                // C2：只切 CSS 类把视频提到全屏（不挪 DOM，避免 HLS 重新 attach 导致断流）
+                className={'live-video' + (isFullscreen ? ' fs' : '')}
                 onPlay={() => setPaused(false)}
                 onPause={() => setPaused(true)}
                 onLoadedMetadata={(e) => {
@@ -452,7 +491,11 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                     <Icon name={paused ? 'play' : 'pause'} size={28} />
                   </button>
                 )}
-                <button className="lp-rotate" onClick={toggleFullscreen} title="横屏">
+                {/* A 组：直播竖屏新增小锁（与右下角横屏钮同尺寸、竖排在其正上方） */}
+                <button className={'lp-lock' + (locked ? ' on' : '')} onClick={() => { clearTapTimer(); setLocked((v) => !v); }} title={locked ? '已锁定' : '锁定屏幕'}>
+                  <Icon name={locked ? 'lock' : 'lock-open'} size={18} />
+                </button>
+                <button className="lp-rotate" onClick={() => { clearTapTimer(); toggleFullscreen(); }} title="横屏">
                   <Icon name="rotate" size={18} />
                 </button>
               </div>
@@ -516,25 +559,30 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
         />
       )}
 
+      {/* C1 · 横屏黑底遮罩：遮住下面的竖屏页面（先于控件层渲染，z-index 9998） */}
+      {isFullscreen && channels && <div className="land-backdrop" />}
+
       {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
       {isFullscreen && channels && (
         <div className={'land-overlay' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}
-          onTouchStart={(e) => { if (locked) return; onStageTouchStart(e); }}
-          onTouchMove={(e) => { if (locked) return; onStageTouchMove(e); }}
-          onTouchEnd={(e) => { if (locked) return; onStageTouchEnd(e); }}
+          // B4+B11：锁定态仍要接收 touchStart（B11 的「单击切小锁显隐」要靠它记录轻触起点），
+          // 滑动则在 onStageTouchMove 内部被 locked 拦掉，所以这里不再整体 return。
+          onTouchStart={onStageTouchStart}
+          onTouchMove={onStageTouchMove}
+          onTouchEnd={onStageTouchEnd}
         >
           <div className="land-top">
-            <button className="land-back" onClick={toggleFullscreen}>
+            <button className="land-back" onClick={() => { clearTapTimer(); toggleFullscreen(); }}>
               <Icon name="arrow-left" size={18} />
             </button>
             <div className="land-title">
               <span>{activeName}</span>
               <span className="lp-res">[{resolution}]</span>
             </div>
-            <button className={'land-lock' + (locked ? ' on' : '')} onClick={() => setLocked((v) => !v)} title={locked ? '已锁定' : '锁定屏幕'}>
-              <Icon name="lock" size={18} />
+            <button className={'land-lock' + (locked ? ' on' : '')} onClick={() => { clearTapTimer(); setLocked((v) => !v); }} title={locked ? '已锁定' : '锁定屏幕'}>
+              <Icon name={locked ? 'lock' : 'lock-open'} size={18} />
             </button>
-            <button className="land-tv" onClick={handleCast} title="投屏">
+            <button className="land-tv" onClick={() => { clearTapTimer(); handleCast(); }} title="投屏">
               <Icon name="tv" size={18} />
             </button>
           </div>

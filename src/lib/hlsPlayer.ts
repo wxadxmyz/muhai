@@ -29,6 +29,44 @@ function loadHls(): Promise<typeof import('hls.js').default | null> {
   return hlsLoading;
 }
 
+// S1：把 hls 实例也存一份到 WeakMap，供外部读写多码率档位
+// （原来只挂在 video.__hls 上，模块外拿不到类型，也就没法切清晰度）
+const INSTANCES = new WeakMap<HTMLVideoElement, any>();
+
+/** 取挂在 video 上的 hls 实例；非 HLS（mp4 直链 / 原生 HLS）返回 null */
+export function getHls(video: HTMLVideoElement | null | undefined): any | null {
+  if (!video) return null;
+  return INSTANCES.get(video) ?? null;
+}
+
+export type HlsLevel = { index: number; height: number; bitrate: number };
+
+/** 读 m3u8 里的多码率档位列表；非 HLS 返回空数组 */
+export function getLevels(video: HTMLVideoElement | null | undefined): HlsLevel[] {
+  const hls = getHls(video);
+  if (!hls || !Array.isArray(hls.levels)) return [];
+  return hls.levels.map((l: any, i: number) => ({
+    index: i,
+    height: Number(l?.height) || 0,
+    bitrate: Number(l?.bitrate) || 0,
+  }));
+}
+
+/** 当前档位索引；-1 = 自动（ABR 自适应） */
+export function getCurrentLevel(video: HTMLVideoElement | null | undefined): number {
+  const hls = getHls(video);
+  if (!hls) return -1;
+  const v = Number(hls.currentLevel);
+  return Number.isFinite(v) ? v : -1;
+}
+
+/** 切换档位；index 传 -1 表示回到自动 */
+export function setLevel(video: HTMLVideoElement | null | undefined, index: number): void {
+  const hls = getHls(video);
+  if (!hls) return;
+  try { hls.currentLevel = index; } catch { /* ignore */ }
+}
+
 // 把流挂到 video 上。自动复用/销毁旧的 hls 实例。
 export async function attachHls(video: HTMLVideoElement, url: string, opts: HlsOpts = {}) {
   detachHls(video);
@@ -48,6 +86,7 @@ export async function attachHls(video: HTMLVideoElement, url: string, opts: HlsO
         },
       });
       (video as any).__hls = hls;
+      INSTANCES.set(video, hls);
       hls.loadSource(url);
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_evt, data) => {
@@ -80,4 +119,5 @@ export function detachHls(video: HTMLVideoElement | null) {
     hls.destroy();
     (video as any).__hls = undefined;
   }
+  INSTANCES.delete(video);
 }

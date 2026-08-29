@@ -198,7 +198,7 @@ export function SettingsPage({
         {/* 网盘 */}
         <div className="settings-group-title">网盘</div>
         <div className="settings-card">
-          <NavRow icon="library" label="网盘登录" value="阿里 / 夸克 / WebDAV" onClick={() => setSub('netdisk')} />
+          <NavRow icon="library" label="网盘登录" value="阿里 / 夸克 / UC" onClick={() => setSub('netdisk')} />
           <NavRow icon="folder" label="已挂载列表" onClick={() => setSub('mounts')} />
         </div>
 

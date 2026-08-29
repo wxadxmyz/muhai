@@ -1,7 +1,7 @@
 {
   "name": "muhai",
   "private": true,
-  "version": "3.0.4",
+  "version": "3.1.0",
   "type": "module",
   "description": "幕海 MuHai - 支持自定义 API 源与云盘的影视播放器（Tauri 桌面端）",
   "scripts": {

@@ -71,7 +71,37 @@ const P: Record<string, ReactNode> = {
 
 export type IconName = keyof typeof P;
 
+// v3.0.5 A 组：图标「视觉居中」补偿表（单位 = 24×24 viewBox 的 1 格）
+// ---------------------------------------------------------------------------
+// 为什么需要：这些图标放进圆形按钮后肉眼可见地偏离圆心，但父容器的 flex/grid 居中
+// 并没有失效 —— 真正的原因是 path 自身在画布里就没居中。两种情况：
+//   1) 包围盒偏心：图形只占画布的一部分，bbox 中心 ≠ (12,12)（如 tv 底座只在下方）
+//   2) 笔画质心偏心：bbox 虽然居中，但笔画疏密不均（如 arrow-left 箭头端三笔、
+//      线尾只有一笔，质心被拉向箭头；lock 的锁体是 14×9 重矩形、锁梁只是细半弧）
+// 做法：渲染时整体平移，把视觉质心拉回 (12,12)。只做平移，不改变图标形状与线宽。
+// 数值来源：按各 path 的笔画长度加权算质心，再取 60%~80% 补偿量（补偿满会显得贴边）。
+const OPTICAL: Partial<Record<IconName, [number, number]>> = {
+  // 箭头端笔画密 → 质心 x≈10.3，右移补回
+  'arrow-left': [1.2, 0],
+  'arrow-right': [-1.2, 0],
+  // 锁体（y 11~20，周长 46）远重于锁梁（半弧，长 12.6）→ 质心 y≈13.5，上移补回
+  lock: [0, -1.2],
+  'lock-open': [0, -1.2],
+  // 气泡尾巴在左下 → 质心被拽向左下
+  message: [0.5, -0.3],
+  // 机身 y 5~18 居中，但底座（y 18~21）只在下方 → bbox 中心 y=13
+  tv: [0, -0.8],
+  // 投屏弧线集中在右下 → 质心偏下
+  cast: [0, -0.8],
+  // 主设备框 y 6~20（中心 13），右侧凸起只在中下部 → 质心 y≈13.4
+  rotate: [0, -1.2],
+};
+
 export function Icon({ name, size = 22, className, strokeWidth = 1.9, style }: { name: IconName; size?: number; className?: string; strokeWidth?: number; style?: CSSProperties }) {
+  const off = OPTICAL[name];
+  const glyph = off && (off[0] !== 0 || off[1] !== 0)
+    ? <g transform={`translate(${off[0]} ${off[1]})`}>{P[name]}</g>
+    : P[name];
   return (
     <svg
       className={className}
@@ -87,7 +117,7 @@ export function Icon({ name, size = 22, className, strokeWidth = 1.9, style }: {
       focusable="false"
       style={{ display: 'block', margin: 'auto', ...style }}
     >
-      {P[name]}
+      {glyph}
     </svg>
   );
 }

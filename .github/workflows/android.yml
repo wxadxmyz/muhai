@@ -171,6 +171,31 @@ jobs:
           if "MuHaiAndroid" not in src:
               bridge = '''
               // 播放器原生桥：JS 通过 window.MuHaiAndroid 调用，实现真横屏旋转与系统亮度/音量调节。
+
+              // R1：横屏传感器监听 —— 让左右两个横屏方向都能用。
+              // OrientationEventListener 直接读硬件加速度传感器，不受系统「自动旋转」开关影响，
+              // 所以用户关掉自动旋转也能左右横；这是单靠 LANDSCAPE 常量做不到的（那只能固定一个方向）。
+              private var _landListener: android.view.OrientationEventListener? = null
+              private fun _startLandscapeSensor() {
+                  _landListener?.disable()
+                  _landListener = object : android.view.OrientationEventListener(this) {
+                      override fun onOrientationChanged(deg: Int) {
+                          if (deg == ORIENTATION_UNKNOWN) return
+                          val target = when {
+                              deg in 45..135 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                              deg in 225..315 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                              else -> return   // 竖着握的时候不动
+                          }
+                          if (requestedOrientation != target) requestedOrientation = target
+                      }
+                  }
+                  _landListener?.enable()
+              }
+              private fun _stopLandscapeSensor() {
+                  _landListener?.disable()
+                  _landListener = null
+              }
+
               private var _muhaiBound = false
               private fun _muhaiBind() {
                   if (_muhaiBound) return
@@ -188,10 +213,26 @@ jobs:
                       runOnUiThread {
                           _muhaiBind()
                           try {
-                              requestedOrientation = when (orientation) {
-                                  "landscape" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                  "sensor" -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
-                                  else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                              // R2：横屏改用 SCREEN_ORIENTATION_LANDSCAPE（强制、不受系统自动旋转开关影响）。
+                              // 原先用 SENSOR_LANDSCAPE —— 用户一旦关掉「自动旋转」，系统不再读传感器，
+                              // 就转不动，表现正是「有时能横有时不能」。
+                              when (orientation) {
+                                  "landscape" -> {
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                      _startLandscapeSensor()   // 再交给传感器，左右两个方向都能横
+                                  }
+                                  "landscape-reverse" -> {
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                                      _startLandscapeSensor()
+                                  }
+                                  "sensor" -> {
+                                      _stopLandscapeSensor()
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                                  }
+                                  else -> {
+                                      _stopLandscapeSensor()    // 退出横屏即停监听，不耗电
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                  }
                               }
                           } catch (e: Exception) { /* ignore */ }
                       }
@@ -212,7 +253,9 @@ jobs:
                           try {
                               val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
                               val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                              am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (v * max).toInt().coerceIn(0, max), 0)
+                              // T5：第 4 个参数用 FLAG_SHOW_UI —— 调节时弹出系统音量条，用户有感知。
+                              // 原先传 0 是静默改，看起来像没反应。
+                              am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (v * max).toInt().coerceIn(0, max), android.media.AudioManager.FLAG_SHOW_UI)
                           } catch (e: Exception) { /* ignore */ }
                       }
                   }

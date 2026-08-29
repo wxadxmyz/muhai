@@ -144,7 +144,7 @@ export default function VideoApp() {
       playUrl: ep?.url ?? item.playUrl,
       raw: { ...item.raw, episode: ep?.name, line },
     };
-    const key = `${item.sourceId}:${item.id}`;
+    const key = `${item.sourceId}:${item.id}:${index}`; // 与 VideoPlayer 的 resumeKey（progressKey:集数）一致，否则读不到进度
     const resumeAt = resume ? library.lib.watchProgress[key] || 0 : 0;
     library.addHistory(item);
     player.playItem(playing);
@@ -186,7 +186,10 @@ export default function VideoApp() {
         // 详情拉取失败：退回列表项（仍可直接播放首集）
       }
     }
-    playEpisode(full, 0, 0, true);
+    // 续播：从首页/搜索/历史点开时，跳到上次观看的那一集（resumeEp 由播放器在落盘进度时记录）
+    const showKey = `${full.sourceId}:${full.id}`;
+    const resumeEp = library.lib.resumeEp[showKey] ?? 0;
+    playEpisode(full, resumeEp, 0, true);
   };
 
   const closeVideo = () => {

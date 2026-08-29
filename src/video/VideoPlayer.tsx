@@ -191,6 +191,7 @@ export function VideoPlayer({
     if (!force && now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
     library.setWatchProgress(key || resumeKey, v.currentTime);
+    library.setResumeEp(progressKey, episodeIndex); // 记录「看到第几集」，供首页/搜索/历史续播定位
   };
   const saveProgress = useCallback((force = false, key?: string) => saveProgressRef.current(force, key), []);
   // N5：切集 / 切剧 / 关闭播放页时补写一次。
@@ -204,14 +205,6 @@ export function VideoPlayer({
 
   // 横屏由用户点「横屏」按钮主动进入（并请求原生真旋转），不再依赖系统传感器自动切换，
   // 避免「点了按钮却不转」的问题。
-  const [landBySensor, setLandBySensor] = useState(false);
-  useEffect(() => {
-    // 仅用于：用户物理转回竖屏时，若仍处于横屏布局则退出（原生旋转回竖屏的兜底）
-    const mq = window.matchMedia('(orientation: portrait)');
-    const on = () => { if (mq.matches && landBySensor) setLandscape(false); };
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, [landBySensor]);
 
   // 时钟（横屏顶栏时间/电量展示）
   useEffect(() => {
@@ -228,10 +221,17 @@ export function VideoPlayer({
   // X1：改用共享工具，桥未就绪时自动等待最多 1.5s 再调用，解决"有时横屏有时不横"
   const requestOrientation = requestOrientationShared;
 
-  // 横屏态兜底：万一 landscape 被外部置位（如逐级返回），同步一次原生方向（退出后恢复重力感应自动旋转）
+  // 屏幕方向：挂载时跟随系统重力感应（竖屏可自动旋转）；进入横屏锁横屏；退出横屏锁竖屏（一下回竖屏）。
+  // 不再用 landBySensor 守卫 —— 否则点返回/手势退出时方向 effect 被拦住，原生屏卡在横屏。
+  const didMountRef = useRef(false);
   useEffect(() => {
-    if (!landBySensor) requestOrientation(landscape ? 'landscape' : 'portrait');
-  }, [landscape, landBySensor]);
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      requestOrientation('sensor');
+      return;
+    }
+    requestOrientation(landscape ? 'landscape' : 'portrait');
+  }, [landscape]);
 
   // Q18：组件卸载（返回/切走/关页）时强制恢复重力感应自动旋转，避免遗留横屏状态
   useEffect(() => {
@@ -257,7 +257,7 @@ export function VideoPlayer({
       // B6：锁定态不要求「先解锁再返回」。先解掉锁，再继续走原本的返回逻辑 ——
       //     横屏锁定：一次返回键同时「解锁 + 退横屏」；竖屏锁定：解锁后直接关闭播放页。
       if (locked) setLocked(false);
-      if (landscape) { setLandscape(false); return false; }
+      if (landscape) { toggleLandscape(); return false; }
       return typeof prev === 'function' ? prev() : true;
     };
     return () => { (window as any).__onAndroidBack = prev; };
@@ -483,21 +483,27 @@ export function VideoPlayer({
   const toggleLandscape = () => {
     setLandscape((v) => {
       const next = !v;
-      setLandBySensor(next);
       // 进入横屏强制 landscape；退出横屏强制 portrait，让屏幕在「一下」之内肉眼可见地转回竖屏，避免「按两下」体感
       requestOrientation(next ? 'landscape' : 'portrait');
       return next;
     });
   };
 
-  // v3.1.1：锁定/解锁 + 小锁 3 秒自动隐藏（锁显隐独立于整层控件显隐，解决"点不回来"）
+  // 锁屏（点播）：B 组 8 条模型
+  // 锁定 = 仅留小锁（其余由 .locked CSS 隐藏）、禁手势、视频继续播；小锁 3 秒后自动隐藏；
+  // 锁定态单击只切小锁显隐（onStageTouchEnd 处理）；点锁本身 = 解锁并恢复全部、3 秒后自动隐藏。
   const toggleLock = () => {
     const next = !locked;
     setLocked(next);
     if (lockTimer.current) { window.clearTimeout(lockTimer.current); lockTimer.current = undefined; }
     if (next) {
-      setLockHidden(false); // 锁立即出现
-      lockTimer.current = window.setTimeout(() => setLockHidden(true), 3000); // B9：3 秒后自动隐藏
+      setControlsVisible(true); // 锁定态保持控件层渲染（小锁在 .locked 下始终可见），不被 3 秒隐藏整层
+      setLockHidden(false);     // 小锁立即出现
+      lockTimer.current = window.setTimeout(() => setLockHidden(true), 3000); // B5：3 秒后自动隐藏
+    } else {
+      setLockHidden(false);
+      setControlsVisible(true); // B8：解锁恢复全部控件
+      if (state.isPlaying) scheduleHide(); // B8：3 秒后自动隐藏
     }
   };
 
@@ -653,7 +659,7 @@ export function VideoPlayer({
         else if (showCast) setShowCast(false);
         else if (showSubStyle) setShowSubStyle(false);
         else if (showSkip) setShowSkip(false);
-        else if (landscape) setLandscape(false);
+        else if (landscape) toggleLandscape();
         else onClose();
       }
       el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false; el.__half = null; el.__moved = false; el.__ts = 0;
@@ -813,7 +819,7 @@ export function VideoPlayer({
               const d = v.duration || 0;
               if (d > 0 && resumedKeyRef.current !== resumeKey) {
                 resumedKeyRef.current = resumeKey;
-                const saved = library.watchProgress[resumeKey] ?? 0;
+                const saved = library.lib.watchProgress[resumeKey] ?? 0;
                 // N3：超过 95% 视为已看完 → 从头播，避免一打开就跳到片尾
                 // N1：不足 30 秒的进度不值得恢复（可能是误触），也从头播
                 if (saved > 30 && saved < d * 0.95) {

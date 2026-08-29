@@ -1213,7 +1213,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* B10 · 去掉 opacity:1 !important，让小锁跟随 .land-overlay.hide 一起隐藏/出现
    （B9 的 3 秒自动隐藏要靠它才能真正生效） */
 .land-overlay.locked .land-lock { display: flex !important; pointer-events: auto; }
-.land-overlay.locked.hide .land-lock { opacity: 0; pointer-events: none; }
+/* 锁定态整层保持不进 .hide（JS 侧 landControls 维持 true），这里兜底：即便出现 .hide，小锁仍可见可点，确保一定能解锁 */
+.land-overlay.locked.hide .land-lock { opacity: 1; pointer-events: auto; }
 /* v3.1.1 · 小锁独立显隐（lockHidden）：锁定态小锁不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"。
    锁定态我们保持整层不进入 .hide（JS 侧 controlsVisible/landControls 维持 true），小锁显隐完全由 .lock-hidden 控制。 */
 .player-card .overlay.locked .top .acts .lock-btn.lock-hidden,

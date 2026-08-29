@@ -175,8 +175,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     } else {
       setIsFullscreen(false);
       setLocked(false);
-      // 退出横屏后恢复跟随系统重力感应（自动旋转）
-      requestOrientation('sensor');
+      // 退出横屏后强制竖屏（一下回竖屏）；视频继续播，不暂停
+      requestOrientation('portrait');
     }
   }, [isFullscreen, showLandControls]);
 
@@ -197,12 +197,23 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     if (!curUrl) { toast('当前没有可投屏的直播地址'); return; }
     setShowCast(true);
   };
-  // v3.1.1：锁定/解锁 + 小锁 3 秒自动隐藏（锁显隐独立于整层控件显隐，解决"点不回来"）
+  // 锁屏（直播）：B 组 8 条模型
+  // 锁定 = 仅留小锁（其余由 .locked CSS 隐藏）、禁手势、视频继续播；小锁 3 秒后自动隐藏；
+  // 锁定态单击只切小锁显隐（onStageTouchEnd 处理）；点锁本身 = 解锁并恢复全部、3 秒后自动隐藏。
+  // 锁定全程不得调用 pause() —— 锁屏只锁操作，不打断播放。
   const toggleLock = () => {
     const next = !locked;
     setLocked(next);
     if (lockTimer.current) { window.clearTimeout(lockTimer.current); lockTimer.current = undefined; }
-    if (next) { setLockHidden(false); lockTimer.current = window.setTimeout(() => setLockHidden(true), 3000); }
+    if (next) {
+      setLandControls(true); // 锁定态保持整层可见（小锁在 .locked 下始终可点），不被 3 秒隐藏整层
+      setLockHidden(false);
+      lockTimer.current = window.setTimeout(() => setLockHidden(true), 3000);
+    } else {
+      setLockHidden(false);
+      setLandControls(true); // 解锁恢复全部控件
+      scheduleLandHide();    // 3 秒后自动隐藏
+    }
   };
 
   // 画中画（对齐设计文件横屏底部“源/画中画/播放/列表”）
@@ -500,7 +511,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
                   <span>点击频道开始播放</span>
                 </div>
               )}
-              <div className={'lp-ctl' + (landControls ? '' : ' hide')}>
+              <div className={'lp-ctl' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}>
                 {playing && (
                   <button className="lp-big" title={paused ? '播放' : '暂停'} onClick={togglePlay}>
                     <Icon name={paused ? 'play' : 'pause'} size={28} />

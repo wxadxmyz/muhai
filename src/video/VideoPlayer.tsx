@@ -179,18 +179,23 @@ export function VideoPlayer({
 
   // ===== N 组：续播（写入节流 + 加载恢复 + 暂停/切集/退出补写） =====
   const lastSaveRef = useRef(0);
+  // ⑤：用 ref 缓存最近一次有效进度，卸载/清引用时即使 videoRef 已空也能用缓存值补写落盘
+  const lastTimeRef = useRef(0);
   // 用 ref 持有实现，避免把 library / resumeKey 塞进 useCallback 依赖 ——
   // library 每次渲染都是新对象，一旦进依赖，下面的补写 effect 就会每帧重建并反复写盘，节流形同虚设。
   const saveProgressRef = useRef<(force?: boolean, key?: string) => void>(() => {});
   saveProgressRef.current = (force = false, key?: string) => {
     const v = videoRef.current;
-    if (!v || !isFinite(v.currentTime) || v.currentTime <= 0) return;
+    // ⑤：先尝试从真实 <video> 读；videoRef 已空（卸载）时回退到 ref 缓存的最后进度
+    const t = v && isFinite(v.currentTime) ? v.currentTime : lastTimeRef.current;
+    if (t <= 0) return;
+    if (v) lastTimeRef.current = v.currentTime; // 缓存最近有效进度
     const now = Date.now();
     // N4：timeupdate 约 250ms 一次，原来每秒写 4 次 localStorage；这里节流到 5 秒一次。
     // force=true 用于暂停 / 切集 / 退出这类"最后一次机会"的补写（N5），不受节流限制。
     if (!force && now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
-    library.setWatchProgress(key || resumeKey, v.currentTime);
+    library.setWatchProgress(key || resumeKey, t);
     library.setResumeEp(progressKey, episodeIndex); // 记录「看到第几集」，供首页/搜索/历史续播定位
   };
   const saveProgress = useCallback((force = false, key?: string) => saveProgressRef.current(force, key), []);
@@ -363,7 +368,8 @@ export function VideoPlayer({
     const v = videoRef.current;
     if (!v || !outroSec || !state.duration) return;
     const remain = state.duration - v.currentTime;
-    if (autoPlay && remain <= outroSec && remain > 0.5) {
+    // ⑥：去掉 autoPlay 前置条件 —— 只要设了片尾秒数且播到片尾就直接切下一集
+    if (remain <= outroSec && remain > 0.5) {
       if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
       else player.onEnded();
     }
@@ -516,23 +522,8 @@ export function VideoPlayer({
 
   const scrollToEpisodes = () => epRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  // 桌面单击：切换控件显隐；双击：播放/暂停（移动端走 touch 路径，单/双击同一逻辑）
-  const clickTimer = useRef<number | undefined>(undefined);
-  const onStageClick = () => {
-    // B11：锁定态单击 = 只切换小锁显隐（不做双击暂停）
-    if (locked) { setLockHidden((v) => !v); return; }
-    if (clickTimer.current) {
-      window.clearTimeout(clickTimer.current);
-      clickTimer.current = undefined;
-      player.toggle(); // 双击 = 播放/暂停
-    } else {
-      clickTimer.current = window.setTimeout(() => {
-        clickTimer.current = undefined;
-        toggleControls(); // 单击 = 控件显隐
-      }, 250);
-    }
-  };
-
+  // ③ 双击暂停/播放：单击/双击统一走 onStageTouchEnd 的 touch 分发（移动端），
+  // 不再保留 click 链路的双击定时器，避免 click 与 touch 两套计数互相干扰（V5/V6 同款问题）。
   // 手势：竖滑 左半=亮度 / 右半=音量；横滑=进度快进/快退（点播）。方向区分互不冲突。
   const showHud = (type: 'bright' | 'vol', value: number) => {
     setHud({ type, value });
@@ -784,7 +775,7 @@ export function VideoPlayer({
             ref={videoRef}
             style={videoStyle}
             controls={false}
-            onClick={onStageClick}
+            // ③ 单击/双击统一由 onStageTouchEnd 的 touch 分发处理，<video> 不再挂 onClick
             // N5：暂停时立刻补写一次进度（不然要等满 5 秒才落盘）
             onPause={() => saveProgress(true)}
             // T3：缓冲开始 → 延迟 300ms 显示转圈；播放/可播/seek 完成 → 立即取消
@@ -793,7 +784,8 @@ export function VideoPlayer({
             onSeeking={() => markBuffering()}
             onPlaying={clearBuffering}
             onCanPlay={clearBuffering}
-            onSeeked={clearBuffering}
+            // ⑤：seeked 也落盘（拖动进度后即使 5 秒内切走也能续播到拖到的位置）
+            onSeeked={(e) => { clearBuffering(); saveProgress(true); }}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
               setLiveCur(v.currentTime);

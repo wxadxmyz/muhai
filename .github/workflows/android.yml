@@ -279,8 +279,7 @@ jobs:
                       runOnUiThread {
                           try {
                               if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                  val am = getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-                                  if (!android.app.PictureInPictureParams.isPictureInPictureSupported(am)) return@runOnUiThread
+                                  if (!this@MainActivity.isPictureInPictureSupported) return@runOnUiThread
                                   val params = android.app.PictureInPictureParams.Builder()
                                       .setAspectRatio(android.util.Rational(16, 9))
                                       .build()

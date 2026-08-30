@@ -76,7 +76,7 @@ function toEpisodes(playUrl: string): { name: string; url: string }[] {
 // 内嵌一段 JS：`var main = "/path/index.m3u8?sign=..."` 或同类变量名。
 // 通过抓分享页 → 提取 m3u8 → 用 URL 原域拼装成完整链接，回给播放器 HLS。
 // 已经直链（#EXTM3U / .mp4）的原样返回。
-async function resolvePlayUrl(url: string): Promise<string> {
+export async function resolvePlayUrl(url: string): Promise<string> {
   if (!url) return url;
   if (/\.(m3u8|mp4)(\?|$)/i.test(url)) return url; // 看起来已是直链，省一次请求
   try {

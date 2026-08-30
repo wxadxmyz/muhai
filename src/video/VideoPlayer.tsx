@@ -171,6 +171,7 @@ export function VideoPlayer({
   const loadTimer = useRef<number | undefined>(undefined);
   const lastTouchRef = useRef(0); // ③ 触摸结束后抑制随后合成的 click，避免移动端双击被抵消
   const pressTimer = useRef<number | undefined>(undefined); // ⑧ 片头/片尾长按(500ms)开手动输入面板
+  const skipTouchStamp = useRef(0); // ⑧ 触摸已标记的时间戳，用于抑制随后派发的合成 click（避免双触发抵消）
 
   const groups = (detail.raw?.lineGroups as any[] | undefined) ?? [];
   const lines = groups.length || (detail.raw?.lines as number) || 1;
@@ -332,6 +333,9 @@ export function VideoPlayer({
         if (alive) setResolving(false);
       };
       v.addEventListener('loadedmetadata', onMeta);
+      // A：若 loadedmetadata 在监听器挂载前就已触发（HLS 起播时序），上面的监听会漏掉，
+      //    这里在 readyState>=1 时立即补一次 seek，保证续播一定生效。
+      if (v.readyState >= 1) onMeta();
       loadTimer.current = window.setTimeout(() => {
         if (alive && v.readyState < 1) {
           detachHls(v);
@@ -353,7 +357,7 @@ export function VideoPlayer({
       detachHls(v);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.current?.id, state.current?.playUrl, episodeIndex, retryNonce]);
+  }, [state.current?.id, state.current?.playUrl, episodeIndex, retryNonce, startAt]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -416,11 +420,17 @@ export function VideoPlayer({
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = window.setTimeout(() => { pressTimer.current = undefined; longPressFired.current = true; setShowSkip(true); }, 500);
   };
-  const onSkipTouchEnd = () => {
+  // ⑧ 触摸结束 = 一键设定（短按）。原实现只清定时器、完全依赖 onClick，但 Android WebView 不派发合成 click → 标记失效。
+  //    改由 onTouchEnd 直接触发；onClick 仅作桌面端兜底，并用时间戳抑制移动端"触摸+合成 click"双触发（否则设完即被清掉）。
+  const onSkipTouchEnd = (which: 'intro' | 'outro') => () => {
     if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = undefined; }
+    if (longPressFired.current) { longPressFired.current = false; return; } // 长按已开面板，抑制
+    skipTouchStamp.current = Date.now();
+    setSkipOneTap(which);
   };
   const onSkipClick = (which: 'intro' | 'outro') => () => {
-    if (longPressFired.current) { longPressFired.current = false; return; } // 长按已开面板，抑制随后派发的 click
+    if (longPressFired.current) { longPressFired.current = false; return; }
+    if (Date.now() - skipTouchStamp.current < 700) return; // 触摸已处理，忽略合成 click
     setSkipOneTap(which);
   };
 
@@ -1043,8 +1053,8 @@ export function VideoPlayer({
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
                   <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
-                  <button className={'tool' + (introSec ? ' on' : '')} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="skip-back" size={15} /><span>片头</span></button>
-                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="skip-forward" size={15} /><span>片尾</span></button>
+                  <button className={'tool' + (introSec ? ' on' : '')} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd('intro')} onTouchCancel={onSkipTouchEnd('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
+                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd('outro')} onTouchCancel={onSkipTouchEnd('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
                   {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
                   <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
@@ -1238,8 +1248,8 @@ export function VideoPlayer({
 
             {!landscape && (
             <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
-              <button className={introSec ? 'on' : ''} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} /><span>片头</span></button>
-              <button className={outroSec ? 'on' : ''} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="fast-forward" size={22} /><span>片尾</span></button>
+              <button className={introSec ? 'on' : ''} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd('intro')} onTouchCancel={onSkipTouchEnd('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} />}<span>片头</span></button>
+              <button className={outroSec ? 'on' : ''} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd('outro')} onTouchCancel={onSkipTouchEnd('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="fast-forward" size={22} />}<span>片尾</span></button>
               <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
               <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
             </div></div>

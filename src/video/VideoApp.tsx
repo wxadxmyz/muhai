@@ -21,6 +21,7 @@ import { Disclaimer } from '../components/Disclaimer';
 import { Icon } from '../components/Icon';
 import SplashScreen from '../components/SplashScreen';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 
 type Tab = 'home' | 'live' | 'history' | 'settings';
 
@@ -38,6 +39,8 @@ export default function VideoApp() {
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [line, setLine] = useState(0);
   const [startAt, setStartAt] = useState(0);
+  // 点卡片进入播放页时的加载占位：先显示，详情接口（2-3s）返回后再切真播放页，消除白屏
+  const [enteringDetail, setEnteringDetail] = useState<MediaItem | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
@@ -172,10 +175,12 @@ export default function VideoApp() {
 
   const openDetail = async (it: MediaItem) => {
     // 直进播放页（无详情页中转）：点击影视/搜索结果立即播放，逐级返回时回到上一层列表
-    // F1：列表接口（如量子源 ac=list）不含 vod_pic / vod_play_url，打开前先补一次详情，
+    // F2：先显示加载页（消除点卡片后 2-3s 白屏），详情接口后台补全，不阻塞进入播放页。
+    //     F1：列表接口（如量子源 ac=list）不含 vod_pic / vod_play_url，打开前先补一次详情，
     //     拿到封面 + 完整选集，否则会出现"无封面 / 无选集 / 不连播 / 上下集失效"。
-    let full = it;
+    setEnteringDetail(it);
     const cfg = store.sources.find((s) => s.id === it.sourceId);
+    let full = it;
     if (cfg) {
       try {
         const d = await createSource(cfg).getDetail(it.id);
@@ -186,6 +191,7 @@ export default function VideoApp() {
         // 详情拉取失败：退回列表项（仍可直接播放首集）
       }
     }
+    setEnteringDetail(null);
     // 续播：从首页/搜索/历史点开时，跳到上次观看的那一集（resumeEp 由播放器在落盘进度时记录）
     const showKey = `${full.sourceId}:${full.id}`;
     const resumeEp = library.lib.resumeEp[showKey] ?? 0;
@@ -204,6 +210,15 @@ export default function VideoApp() {
   };
 
   const openSources = () => setTab('settings');
+
+  // 重置 APP：清空全部源 + 观看记录/收藏/进度（内存与持久化），清 WebView 缓存，回到主页（不提示重启）
+  const doReset = async () => {
+    try { store.clearAll(); } catch { /* ignore */ }
+    try { library.clearAll(); } catch { /* ignore */ }
+    try { localStorage.clear(); sessionStorage.clear(); } catch { /* ignore */ }
+    try { await invoke('clear_webview_cache'); } catch { /* ignore */ }
+    setTab('home');
+  };
 
   const playingVideo = state.current?.mediaType === 'video' && detail;
   const cloudPayload = () =>
@@ -278,6 +293,13 @@ export default function VideoApp() {
           </div>
         )}
 
+        {/* 点卡片进入播放页的加载占位：详情接口返回前先显示，避免 2-3s 白屏 */}
+        {enteringDetail && !detail && (
+          <div className="fullpage player-page">
+            <div className="vp-loading"><div className="vp-spinner" /><span>加载中…</span></div>
+          </div>
+        )}
+
         {tab === 'home' && (
           <ErrorBoundary name="主页">
           <Home
@@ -304,7 +326,7 @@ export default function VideoApp() {
 
         {tab === 'settings' && (
           <ErrorBoundary name="设置">
-          <SettingsPage sub={settingsSub} setSub={setSettingsSub} />
+          <SettingsPage sub={settingsSub} setSub={setSettingsSub} onReset={doReset} />
           </ErrorBoundary>
         )}
 

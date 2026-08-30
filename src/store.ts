@@ -169,6 +169,11 @@ export function useSources(appKey: string) {
     return JSON.stringify(getStore(appKey).state.sources, null, 2);
   }, [appKey]);
 
+  // 重置 APP：清空全部源（内存 + 持久化），回到无源状态
+  const clearAll = useCallback(() => {
+    commit(appKey, []);
+  }, [appKey]);
+
   const test = useCallback(async (cfg: SourceConfig): Promise<boolean> => {
     try {
       return await createSource(cfg).test();
@@ -177,5 +182,5 @@ export function useSources(appKey: string) {
     }
   }, []);
 
-  return { sources, add, update, remove, toggle, move, importSources, exportSources, test };
+  return { sources, add, update, remove, toggle, move, importSources, exportSources, test, clearAll };
 }

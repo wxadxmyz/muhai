@@ -1545,6 +1545,11 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .dg-quick button { display: flex; flex-direction: column; align-items: center; gap: 6px; background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 12px; padding: 12px 0; font-size: 12px; cursor: pointer; }
 .dg-quick button svg { width: 22px; height: 22px; }
 .dg-quick button.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* ⑧ 片头/片尾一键设定后：图标位置换成已设秒数（mm:ss） */
+.skip-num { font-weight: 700; color: var(--accent); line-height: 1; }
+.vp-tools .skip-num { font-size: 13px; }
+.landscape .tools .skip-num { font-size: 13px; }
+.dg-quick .skip-num { font-size: 14px; }
 
 /* 复用既有浮层样式（加载/错误/字幕/投屏/面板） */
 .player-card .vp-loading, .player-card .vp-error { position: absolute; z-index: 7; color: #fff; }

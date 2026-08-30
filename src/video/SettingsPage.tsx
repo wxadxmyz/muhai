@@ -83,10 +83,12 @@ export function SettingsPage({
   onClose,
   sub,
   setSub,
+  onReset,
 }: {
   onClose?: () => void;
   sub: string | null;
   setSub: (v: string | null) => void;
+  onReset?: () => void;
 }) {
   const store = useSources('video');
   const { settings, update } = useSettings();
@@ -109,9 +111,8 @@ export function SettingsPage({
     setCacheBusy(true);
     setCacheMsg('正在清除…');
     try {
-      await invoke('clear_webview_cache');
-      try { localStorage.clear(); } catch { /* ignore */ }
-      setCacheMsg('已清除，请重启 APP 生效');
+      await invoke('clear_webview_cache'); // 只清 WebView 缓存，不动源/进度/设置
+      setCacheMsg('已清除缓存');
     } catch (e: any) {
       setCacheMsg('清除失败：' + (e?.message ?? e));
     } finally {
@@ -126,14 +127,8 @@ export function SettingsPage({
     if (resetBusy) return;
     if (!window.confirm('确定重置 APP？将清空所有源、历史与设置，且不可恢复。')) return;
     setResetBusy(true);
-    setResetMsg('正在重置…');
     try {
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch { /* ignore */ }
-      await invoke('clear_webview_cache');
-      setResetMsg('已重置，请重启 APP');
+      onReset?.(); // 清源 + 清记录 + 清缓存 + 回主页（由 VideoApp 统一处理），不提示重启
     } catch (e: any) {
       setResetMsg('重置失败：' + (e?.message ?? e));
     } finally {

@@ -115,6 +115,11 @@ export function useLibrary(appKey: string) {
     setLib((l) => ({ ...l, resumeEp: { ...l.resumeEp, [showKey]: ep } }));
   }, []);
 
+  // 重置 APP：清空全部观看记录/收藏/进度（内存 + 持久化）
+  const clearAll = useCallback(() => {
+    setLib({ history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, localMusic: [] });
+  }, []);
+
   const clearHistory = useCallback(() => setLib((l) => ({ ...l, history: [] })), []);
 
   const removeFromHistory = useCallback((item: MediaItem) => {
@@ -139,6 +144,7 @@ export function useLibrary(appKey: string) {
     removeFromPlaylist,
     setWatchProgress,
     setResumeEp,
+    clearAll,
     clearHistory,
     removeFromHistory,
     addLocalMusic,

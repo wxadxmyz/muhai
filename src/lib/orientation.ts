@@ -100,3 +100,26 @@ export function enterPip() {
 export function setPipListener(cb: (entered: boolean) => void) {
   (window as any).__onPipChanged = cb;
 }
+
+// ③ 横屏沉浸模式：隐藏系统导航条/状态栏（粘性沉浸，从屏幕边缘往内滑一下临时出现、不点自动再藏）。
+// 复用 MuHaiAndroid 桥的 immersive() 方法，就绪等待策略同 requestOrientation。
+function immersiveBridgeReady(): boolean {
+  try {
+    return typeof (window as any).MuHaiAndroid?.immersive === 'function';
+  } catch {
+    return false;
+  }
+}
+
+export function requestImmersive(on: boolean) {
+  const call = () => {
+    try { (window as any).MuHaiAndroid?.immersive?.(on); } catch { /* ignore */ }
+  };
+  if (immersiveBridgeReady()) { call(); return; }
+  let waited = 0;
+  const timer = window.setInterval(() => {
+    waited += BRIDGE_POLL_MS;
+    if (immersiveBridgeReady()) { call(); window.clearInterval(timer); }
+    else if (waited >= BRIDGE_WAIT_MS) { window.clearInterval(timer); }
+  }, BRIDGE_POLL_MS);
+}

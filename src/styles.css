@@ -1318,8 +1318,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .cast-share:hover { border-color: var(--accent); }
 
 /* ===== v2.5.1 首页站点选择面板（纯文字列表，不内置资源） ===== */
-.station-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:flex-end;}
-.station-sheet{width:100%;background:var(--panel);border-radius:18px 18px 0 0;padding:8px 16px 22px;max-height:72%;display:flex;flex-direction:column;}
+.station-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:flex-end;}
+.station-sheet{width:100%;background:var(--panel);border-radius:18px 18px 0 0;padding:8px 16px calc(56px + var(--sab) + 22px);max-height:72%;display:flex;flex-direction:column;}
 .station-head{display:flex;align-items:center;justify-content:space-between;padding:10px 2px 12px;font-size:16px;font-weight:800;color:var(--text);}
 .station-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--panel2);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
 .station-list{overflow-y:auto;display:flex;flex-direction:column;gap:8px;}

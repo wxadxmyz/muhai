@@ -6,7 +6,7 @@ import { SourceConfig, LiveChannelSource } from '../../engine/types';
 import { Icon } from '../../components/Icon';
 import { CastOverlay } from '../../components/CastOverlay';
 import { toast } from '../../lib/toast';
-import { requestOrientation } from '../../lib/orientation';
+import { requestOrientation, requestImmersive } from '../../lib/orientation';
 
 interface Channel {
   name: string;
@@ -169,7 +169,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   useEffect(() => {
     (window as any).__onPipChanged = (entered: boolean) => {
       if (entered) { setLandControls(false); setLocked(false); }
-      else if (!isFullscreen) { setIsFullscreen(true); requestOrientation('landscape'); }
+      else if (!isFullscreen) { setIsFullscreen(true); requestOrientation('landscape'); requestImmersive(true); }
     };
     return () => { (window as any).__onPipChanged = undefined; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,11 +182,13 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
       showLandControls();
       // 安卓原生真旋转（X1：桥未就绪时自动等待，避免"有时不横"）；未注入则前端 CSS 铺满
       requestOrientation('landscape');
+      requestImmersive(true);
     } else {
       setIsFullscreen(false);
       setLocked(false);
       // 退出横屏强制回竖屏（portrait）：避免用户关了系统「自动旋转」时卡在横屏回不来；视频继续播，不暂停
       requestOrientation('portrait');
+      requestImmersive(false);
     }
   }, [isFullscreen, showLandControls]);
 

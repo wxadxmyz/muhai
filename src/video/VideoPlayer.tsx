@@ -9,7 +9,7 @@ import { CastOverlay } from '../components/CastOverlay';
 import { downloadStore } from '../lib/downloads';
 import { attachHls, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLevel } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
-import { requestOrientation as requestOrientationShared } from '../lib/orientation';
+import { requestOrientation as requestOrientationShared, requestImmersive } from '../lib/orientation';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { toast } from '../lib/toast';
@@ -169,7 +169,6 @@ export function VideoPlayer({
   const appliedStartAt = useRef(false);
   const loadTimer = useRef<number | undefined>(undefined);
   const lastTouchRef = useRef(0); // ③ 触摸结束后抑制随后合成的 click，避免移动端双击被抵消
-  const lastSkipTouch = useRef(0); // 一键标记：触摸已触发，抑制随后合成 click 双触发
 
   const groups = (detail.raw?.lineGroups as any[] | undefined) ?? [];
   const lines = groups.length || (detail.raw?.lines as number) || 1;
@@ -234,6 +233,8 @@ export function VideoPlayer({
     }
     // ⑦：横屏锁 landscape、退出强制 portrait（回竖屏）；首次进入（landscape=false）也锁一次竖屏
     requestOrientation(landscape ? 'landscape' : 'portrait');
+    // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
+    requestImmersive(landscape);
   }, [landscape]);
 
   // Q18：组件卸载（返回/切走/关页）时强制恢复重力感应自动旋转，避免遗留横屏状态
@@ -391,31 +392,27 @@ export function VideoPlayer({
   };
 
   // ⑧ 片头/片尾「一键设定」：点一下用当前播放进度设定、再点清空；长按(500ms)打开分:秒手动输入面板
+  // 一键设定：点一下用当前进度设定、再点清空（无长按面板；只绑 onClick，与「解码」按钮同款，真机可靠）
   const setSkipOneTap = (which: 'intro' | 'outro') => {
-    const v = videoRef.current;
-    const t = v ? Math.max(0, Math.floor(v.currentTime)) : 0;
-    const cur = which === 'intro' ? introSec : outroSec;
-    const next = cur > 0 ? 0 : t; // 已设 → 清空；未设 → 设为当前进度
-    const base = settings.skipByItem[progressKey] ?? ({} as { intro?: number; outro?: number });
-    updateSettings({
-      skipByItem: {
-        ...settings.skipByItem,
-        [progressKey]: {
-          intro: which === 'intro' ? next : (base.intro ?? settings.skipIntro),
-          outro: which === 'outro' ? next : (base.outro ?? settings.skipOutro),
+    try {
+      const v = videoRef.current;
+      const t = v ? Math.max(0, Math.floor(v.currentTime)) : 0;
+      const cur = which === 'intro' ? introSec : outroSec;
+      const next = cur > 0 ? 0 : t; // 已设 → 清空；未设 → 设为当前进度
+      const base = settings.skipByItem[progressKey] ?? ({} as { intro?: number; outro?: number });
+      updateSettings({
+        skipByItem: {
+          ...settings.skipByItem,
+          [progressKey]: {
+            intro: which === 'intro' ? next : (base.intro ?? settings.skipIntro),
+            outro: which === 'outro' ? next : (base.outro ?? settings.skipOutro),
+          },
         },
-      },
-    });
-    toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
-  };
-  // 一键设定：点一下用当前进度设定、再点清空（无长按面板；绑定 onTouchStart 保证真机可靠触发，onClick 仅作桌面兜底）
-  const onSkipTouchStart = (which: 'intro' | 'outro') => () => {
-    lastSkipTouch.current = Date.now();
-    setSkipOneTap(which);
-  };
-  const onSkipClick = (which: 'intro' | 'outro') => () => {
-    if (Date.now() - lastSkipTouch.current < 700) return; // 触摸已处理，忽略合成 click 双触发
-    setSkipOneTap(which);
+      });
+      toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
+    } catch (e: any) {
+      toast('跳过设置失败：' + (e?.message || String(e)), 'error');
+    }
   };
 
   const onScreenshot = () => {
@@ -1034,8 +1031,8 @@ export function VideoPlayer({
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
                   <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
-                  <button className={'tool' + (introSec ? ' on' : '')} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
-                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
+                  <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
+                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
                   {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
                   <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
@@ -1215,8 +1212,8 @@ export function VideoPlayer({
 
             {!landscape && (
             <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
-              <button className={introSec ? 'on' : ''} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} />}<span>片头</span></button>
-              <button className={outroSec ? 'on' : ''} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="fast-forward" size={22} />}<span>片尾</span></button>
+              <button className={introSec ? 'on' : ''} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} />}<span>片头</span></button>
+              <button className={outroSec ? 'on' : ''} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="fast-forward" size={22} />}<span>片尾</span></button>
               <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
               <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
             </div></div>

@@ -288,6 +288,23 @@ jobs:
                           } catch (e: Exception) { /* ignore */ }
                       }
                   }
+                  // ③ 横屏沉浸模式：隐藏系统导航条/状态栏（粘性沉浸，从边缘内滑临时出现）。
+                  // 用 legacy systemUiVisibility 标志，全 API 等级可用、不依赖 AndroidX core view。
+                  @android.webkit.JavascriptInterface
+                  fun immersive(on: Boolean) {
+                      runOnUiThread {
+                          try {
+                              val decor = window.decorView
+                              if (on) {
+                                  decor.systemUiVisibility = (android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                      or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                      or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN)
+                              } else {
+                                  decor.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                              }
+                          } catch (e: Exception) { /* ignore */ }
+                      }
+                  }
               }
 
               // ② 进入/退出画中画时回调前端（小窗全屏钮 → 回到横屏；进入时隐藏控件）

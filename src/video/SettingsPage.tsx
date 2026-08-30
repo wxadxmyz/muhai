@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSources } from '../store';
-import { useSettings } from '../lib/settings';
+import { useSettings, DEFAULT_BLOCKLIST } from '../lib/settings';
 import { SubPage } from '../components/SubPage';
 import { ImportSourcePage } from '../components/ImportSourcePage';
 import { SourceListPage } from '../components/SourceListPage';
@@ -101,6 +101,17 @@ export function SettingsPage({
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
   }, []);
+
+  // ⑬ 首页地区过滤：屏蔽词增删（标题含这些词 → 视为非国产内地，首页不显示）
+  const [blockDraft, setBlockDraft] = useState('');
+  const blocklist = settings.blocklist ?? [];
+  const addBlock = () => {
+    const w = blockDraft.trim();
+    if (!w) return;
+    if (!blocklist.includes(w)) update({ blocklist: [...blocklist, w] });
+    setBlockDraft('');
+  };
+  const removeBlock = (w: string) => update({ blocklist: blocklist.filter((x) => x !== w) });
 
   // 清除缓存：调原生 clear_webview_cache，清掉 WebView 全部浏览数据（含前端资源缓存），
   // 下次加载强制重新拉取 APK 内最新前端。这是根治"前端没更新"的自救按钮。
@@ -207,6 +218,17 @@ export function SettingsPage({
         <div className="settings-group-title">下载</div>
         <div className="settings-card">
           <NavRow icon="download" label="离线缓存" value="路径 / 清晰度 / 并发" onClick={() => setSub('downloads')} />
+        </div>
+
+        {/* ⑬ 首页 */}
+        <div className="settings-group-title">首页</div>
+        <div className="settings-card">
+          <NavRow
+            icon="home"
+            label="首页地区过滤"
+            value={`${blocklist.length} 个屏蔽词`}
+            onClick={() => setSub('blocklist')}
+          />
         </div>
 
         {/* 外观 */}
@@ -356,6 +378,54 @@ export function SettingsPage({
             </div>
           </div>
           <p className="settings-note">离线缓存路径在桌面端设置中指定，移动端默认保存在应用私有目录。</p>
+        </SubPage>
+      )}
+
+      {/* ⑬ 首页地区过滤：源带地区字段按地区判；无地区字段时按这里维护的屏蔽词过滤标题 */}
+      {sub === 'blocklist' && (
+        <SubPage title="首页地区过滤" onBack={() => setSub(null)}>
+          <div className="settings-card">
+            <div className="settings-row">
+              <span className="ico"><Icon name="home" size={20} /></span>
+              <span className="label">
+                只显示国产内地
+                <small>源返回地区字段时按地区判断；源不带地区时，用下方屏蔽词过滤标题</small>
+              </span>
+            </div>
+          </div>
+          <div className="settings-group-title">屏蔽词（点标签可删除）</div>
+          <div className="settings-card">
+            <div className="bl-chips">
+              {blocklist.length === 0 && <p className="settings-note">暂无屏蔽词，首页不对标题做过滤</p>}
+              {blocklist.map((w) => (
+                <span className="chip bl-chip" key={w} onClick={() => removeBlock(w)}>
+                  {w}
+                  <Icon name="x" size={11} />
+                </span>
+              ))}
+            </div>
+            <div className="settings-row">
+              <span className="ico"><Icon name="plus" size={20} /></span>
+              <input
+                type="text"
+                className="bl-input"
+                placeholder="输入屏蔽词，如：韩剧"
+                value={blockDraft}
+                onChange={(e) => setBlockDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') addBlock(); }}
+              />
+              <button className="bl-add" onClick={addBlock}>添加</button>
+            </div>
+          </div>
+          <div className="settings-card">
+            <div className="settings-row danger-row" onClick={() => update({ blocklist: [...DEFAULT_BLOCKLIST] })}>
+              <span className="ico"><Icon name="refresh" size={20} /></span>
+              <span className="label">恢复默认屏蔽词</span>
+              <span className="value muted">{DEFAULT_BLOCKLIST.length} 个</span>
+              <span className="chevron"><Icon name="arrow-right" size={18} /></span>
+            </div>
+          </div>
+          <p className="settings-note">修改后立即生效，返回首页自动重新过滤。</p>
         </SubPage>
       )}
 

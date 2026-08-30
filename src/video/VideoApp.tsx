@@ -179,7 +179,8 @@ export default function VideoApp() {
     const resumeEp = library.lib.resumeEp[showKey] ?? 0;
     const hadEps = !!(it.episodes && it.episodes.length);
     // 列表项已有选集 → 直接跳续播集；否则先进首集，详情回来再跳
-    playEpisode(it, hadEps ? resumeEp : 0, 0, true);
+    // ⑬ 统一用 resumeEp 定位集（含列表项无选集但有续播记录的场景，避免先白播首集）
+    playEpisode(it, resumeEp, 0, true);
     if (cfg) {
       createSource(cfg).getDetail(it.id).then((d) => {
         if (!d || !d.id) return;
@@ -273,7 +274,10 @@ export default function VideoApp() {
         </div>
       </header>
 
-      <main className="main">
+      {/* ⑬ 直播页满屏（无滚动、无 padding）改用动态 class：
+          原 `.main:has(.view.live)` 在卓易通/鸿蒙 WebView 上会误匹配历史、收藏页，
+          把它们的 .main 也设成 padding:0 + overflow:hidden，卡片于是顶进通知栏 */}
+      <main className={tab === 'live' ? 'main main-live' : 'main'}>
         {playingVideo && detail && (
           <div className="fullpage player-page">
           <ErrorBoundary name="播放器">

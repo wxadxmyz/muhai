@@ -11,20 +11,24 @@ import {
   onDisclaimerRequest,
   takePendingDisclaimer,
 } from '../../lib/disclaimer';
+import { useSettings } from '../../lib/settings';
 
 // v3.0.2 首页板块：热播影视(国产电视剧) → 电影(国产) → 综艺(国产)，互不串门
 type SectionKey = 'hot' | 'movie' | 'variety';
 
-// 国产判定：地区含 国产/大陆/内地/华语/中/CN 等；源未给地区时按标题是否含中文字符兜底
-function isDomestic(it: MediaItem): boolean {
+// ⑬ 国产内地判定：地区明确海外、或标题命中黑名单词（韩/美/日…）→ 非国产；其余（含台/港/澳及无地区但标题含中文）→ 视为国产
+function isDomestic(it: MediaItem, blocklist: string[]): boolean {
   const raw: any = it.raw ?? {};
   const area = String(raw.vod_area ?? raw.area ?? raw.region ?? '').toLowerCase();
   if (area) {
-    if (/国产|大陆|内地|华语|中国|中剧|国产剧|cn|china/.test(area)) return true;
-    if (/美|韩|日|泰|英|法|欧|印度|台|港|澳|欧美|日韩|海外/.test(area)) return false;
+    if (/国产|大陆|内地|华语|中国|中剧|国产剧|cn|china|台|港|澳/.test(area)) return true;
+    if (/美|韩|日|泰|英|法|欧|印度|海外/.test(area)) return false;
     return true; // 地区字段存在但非明确海外，按国产保留
   }
-  // 无地区字段：标题含中文字符则视为国产
+  // 无地区字段：标题命中黑名单词 → 非国产
+  const t = it.title.toLowerCase();
+  for (const w of blocklist) if (w && t.includes(w.toLowerCase())) return false;
+  // 否则标题含中文字符则视为国产
   return /[一-龥]/.test(it.title);
 }
 
@@ -66,6 +70,7 @@ export function Home({
   onSearch: (q: string) => void;
   onOpenSources: () => void;
 }) {
+  const { settings } = useSettings();
   const [homeItems, setHomeItems] = useState<MediaItem[]>([]);
   const [homeLoading, setHomeLoading] = useState(false);
   const [homeError, setHomeError] = useState('');
@@ -141,14 +146,14 @@ export function Home({
   }, [sources, stations, activeStation]);
 
   // v3.0.2：三块各自按"国产 + 类型"过滤，并按下更新时间倒序（方案A 近似"豆瓣最新"）
-  const domestic = homeItems.filter(isDomestic);
+  const domestic = homeItems.filter((it) => isDomestic(it, settings.blocklist ?? []));
   const sorted = [...domestic].sort((a, b) => updateTimeOf(b) - updateTimeOf(a));
   const hot = sorted.filter((it) => classify(it) === 'hot').slice(0, 6);
   const movies = sorted.filter((it) => classify(it) === 'movie').slice(0, 6);
   const variety = sorted.filter((it) => classify(it) === 'variety').slice(0, 6);
-  // 降级：某块国产为空时，从全量（不过国产过滤）按同类型补，避免板块空白
+  // ⑬ 降级只从「已过滤国产」的 domestic 补，不再从全量（含外国）补，避免板块混入非国产
   const fallback = (arr: MediaItem[], key: SectionKey) =>
-    arr.length ? arr : homeItems.filter((it) => classify(it) === key).slice(0, 6);
+    arr.length ? arr : domestic.filter((it) => classify(it) === key).slice(0, 6);
   const hotFinal = fallback(hot, 'hot');
   const moviesFinal = fallback(movies, 'movie');
   const varietyFinal = fallback(variety, 'variety');

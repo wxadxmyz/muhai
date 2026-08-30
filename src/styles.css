@@ -40,8 +40,10 @@ button:focus:not(:focus-visible) { outline: none; }
 /* S5/S6：全局 .main 是布局容器，但播放器圆钮也用了 class="main"，加 :not(button) 避免 padding 把按钮撑成椭圆 */
 .main:not(button) { flex: 1; overflow: auto; padding: 22px 28px 110px; position: relative; }
 .main { position: relative; }
-/* 直播视图：锁满屏、整页不滚，仅内部选台列表独立滚（小窗固定） */
-.main:has(.view.live) { overflow: hidden; height: 100%; padding: 0; }
+/* ⑬ 直播视图：锁满屏、整页不滚，仅内部选台列表独立滚（小窗固定）
+   改用 .main-live 由 VideoApp 按 tab 动态添加 —— 不再用 :has()（鸿蒙/卓易通 WebView 支持不稳，
+   误匹配会把历史/收藏页的 .main 也设成 padding:0，导致卡片上滑顶进通知栏） */
+.main-live { overflow: hidden; height: 100%; padding: 0; }
 .view.live { height: 100%; display: flex; flex-direction: column; }
 
 /* 侧边栏（音乐） */
@@ -104,7 +106,8 @@ button.fav, .fav { color: var(--danger) !important; }
 .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
 /* 标题仍留一点左缩进，卡片则贴屏幕左右边 */
 .view.home .row-head, .view.library .row-head { padding-left: 14px; }
-.view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; gap: 2px; }
+/* ⑬ padding-top 双保险：滚动内容与 sticky tabs 之间保留间距，卡片不会顶到通知栏 */
+.view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; padding-top: 12px; gap: 2px; }
 
 .row-section { margin-top: 26px; }
 .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -253,6 +256,14 @@ button.fav, .fav { color: var(--danger) !important; }
 .switch.on::after { transform: translateX(18px); }
 /* 整组说明 */
 .settings-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: -4px 6px 0; }
+/* ⑬ 首页地区过滤 · 屏蔽词编辑（设置 → 首页 → 首页地区过滤） */
+.bl-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px 6px; }
+.bl-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; font-size: 12px; cursor: pointer; user-select: none; }
+.bl-chip svg { flex: 0 0 auto; opacity: .7; }
+.bl-chip:active { filter: brightness(1.25); }
+.settings-row .bl-input { flex: 1; min-width: 0; margin-left: 4px; max-width: none; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+.bl-add { flex: 0 0 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--accent); font-size: 13px; cursor: pointer; }
+.bl-add:active { filter: brightness(1.25); }
 
 /* 全屏覆盖页（音源管理 / 网盘浏览 / 我的音乐）*/
 .fullpage { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .15s; }
@@ -624,7 +635,8 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   .view.home, .view.library { margin-left: -14px; margin-right: -14px; }
   .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
   .view.home .row-head, .view.library .row-head { padding-left: 12px; }
-  .view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; gap: 2px; }
+  /* ⑬ padding-top 双保险：滚动内容与 sticky tabs 之间保留间距，卡片不会顶到通知栏 */
+.view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; padding-top: 12px; gap: 2px; }
 
   /* 底部 Tab 导航 */
   .bottom-nav {
@@ -1120,7 +1132,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* 顶栏 + 小窗 合并为同一卡片块（L1） */
 /* Q9：直播竖屏顶栏预留通知栏安全区 */
-.lp-head-stage { background: var(--panel); padding: calc(10px + env(safe-area-inset-top)) 12px 12px; flex: 0 0 auto; }
+/* ⑬ 去掉左右 padding，让直播小窗 .lp-stage 左右贴到屏幕边缘（点播 .player-card 是左右 0，保持一致） */
+.lp-head-stage { background: var(--panel); padding: calc(10px + env(safe-area-inset-top)) 0 12px; flex: 0 0 auto; }
 .lp-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 /* V1/V2：直播竖屏顶栏返回+投屏 36→40px（图标随之放大） */
 .lp-back { width: 40px; height: 40px; border-radius: 50%; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.55); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
@@ -1348,7 +1361,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
    O4 不加分隔线，播放器区与下方介绍区直接连通
    保留 position:sticky / top:0 / z-index:5 —— 上下滑动页面时播放区钉在最上边不动
    P1 aspect-ratio 16/10.5 → 16/9（16:9 片源零黑边，容器高度恒定不跳） */
-.player-card { margin: var(--sat) 0 0; background: transparent; border-radius: 0; overflow: hidden; position: sticky; top: 0; z-index: 5; aspect-ratio: 16 / 9; touch-action: none; }
+/* ⑬ top 用安全区：上滑吸顶时停在通知栏下方，不再顶进通知栏最顶 */
+.player-card { margin: var(--sat) 0 0; background: transparent; border-radius: 0; overflow: hidden; position: sticky; top: var(--sat, 0px); z-index: 5; aspect-ratio: 16 / 9; touch-action: none; }
 /* P2：去掉 padding-top: var(--sat) —— 横屏顶部那条 26px 起的黑条就是它造成的，
    视频区被人为压成 2.47:1（比屏幕 2.26:1 还宽），16:9 片源左右黑边从 10.7% 恶化到 13.9%。
    顶部安全区改由控件层 .land-top 自己处理（见下）。 */
@@ -1369,7 +1383,12 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .overlay.hide .top,
 .overlay.hide .center,
 .overlay.hide .bottom,
+.overlay.hide .times,
 .overlay.hide .screen > *:not(video) { pointer-events: none; }
+/* ⑬ 隐藏态兜底：overlay 内任何后代都不拦截指针（含横屏 land-top / 左右侧栏 / 底部工具条，
+   旧规则只点了竖屏的 .top/.center/.bottom，横屏隐藏后点原图标位置会直接触发按钮动作）。
+   overlay 自身保持 pointer-events:none（1374 行），事件落到 stage —— 单击只做「先显控件」。 */
+.overlay.hide * { pointer-events: none !important; }
 .player-card .top { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: linear-gradient(rgba(0,0,0,.55), transparent); }
 .player-card .top .back { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 /* v3.0.4 统一居中方案：
@@ -1444,8 +1463,21 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .player-card .bottom .bar .fill, .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 2; }
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
-/* ⑬ 竖屏进度条左右时间 */
+/* ⑬ 竖屏进度条左右时间（历史遗留规则，.t 现由下方 .times 承载） */
 .player-card .bottom .t { font-size: 12px; color: #fff; min-width: 42px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+/* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方，左=当前 右=总时长。
+   上移 6px 抵消 .bottom 的 padding-bottom:14px，视觉上紧贴进度条。 */
+.player-card .overlay .times {
+  position: relative; z-index: 3; margin-top: -6px; padding: 0 14px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  pointer-events: none; /* 纯展示，不拦截单击显隐 */
+}
+.player-card .overlay .times .t {
+  font-size: 11px; color: rgba(255, 255, 255, .88); letter-spacing: .3px;
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+}
+.player-card .overlay.locked .times,
+.player-card .overlay.loading .times { display: none !important; }
 /* 进度条可点：整条 bar 接收点击/触摸，不再覆盖透明 range 拦截 */
 /* T7：底栏横屏键 38→44px */
 .player-card .bottom .land { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; cursor: pointer; flex: 0 0 auto; }
@@ -1546,8 +1578,11 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* 设置抽屉（设计文件 .drawer） */
 .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }
 .drawer { width: 100%; max-width: 430px; background: var(--panel); border-radius: 22px 22px 0 0; padding: 10px 16px calc(24px + env(safe-area-inset-bottom)); max-height: 82vh; overflow: auto; }
-.drawer-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 4px auto 12px; }
-.drawer-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 14px; }
+/* ⑬ 收紧顶部间距：handle 上 4px + 下 12px 与 title 下 14px 叠加，是「解码器上方空白」的来源 */
+.drawer-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 8px; }
+.drawer-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+/* 横屏设置抽屉是右侧竖抽屉，顶部小横条多余且占空白 → 直接隐藏 */
+.player-card.land .drawer-handle { display: none; }
 .dg { margin-bottom: 16px; }
 .dg-label { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
 .dg-row { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -186,8 +186,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     } else {
       setIsFullscreen(false);
       setLocked(false);
-      // 退出横屏强制回竖屏（portrait）：避免用户关了系统「自动旋转」时卡在横屏回不来；视频继续播，不暂停
-      requestOrientation('portrait');
+      // ⑬ 退出横屏恢复 sensor（系统重力感应，卓易通可转）；视频继续播，不暂停
+      requestOrientation('sensor');
       requestImmersive(false);
     }
   }, [isFullscreen, showLandControls]);

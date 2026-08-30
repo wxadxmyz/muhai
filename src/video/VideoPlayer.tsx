@@ -9,7 +9,7 @@ import { CastOverlay } from '../components/CastOverlay';
 import { downloadStore } from '../lib/downloads';
 import { attachHls, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLevel } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
-import { requestOrientation as requestOrientationShared, requestImmersive } from '../lib/orientation';
+import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { toast } from '../lib/toast';
@@ -111,7 +111,6 @@ export function VideoPlayer({
   const { ensureResolved } = useMediaResolver(sources);
   const videoRef = useRef<HTMLVideoElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const epRef = useRef<HTMLDivElement>(null);
   const [speed, setSpeed] = useState(settings.playbackRate || 1);
   const [collapsed, setCollapsed] = useState(false);
   const [showCast, setShowCast] = useState(false);
@@ -177,8 +176,9 @@ export function VideoPlayer({
   // 片头/片尾设置仍用 progressKey（那是按剧配置的，不该按集拆开）。
   const resumeKey = `${progressKey}:${episodeIndex}`;
   const perItem = settings.skipByItem[progressKey];
-  const introSec = perItem?.intro ?? settings.skipIntro;
-  const outroSec = perItem?.outro ?? settings.skipOutro;
+  // ⑬ 去掉全局兜底（settings.skipIntro/skipOutro），严格只认单剧标记：符合「单剧跳过、不污染其他影片」
+  const introSec = perItem?.intro ?? 0;
+  const outroSec = perItem?.outro ?? 0;
 
   // ===== N 组：续播（写入节流 + 加载恢复 + 暂停/切集/退出补写） =====
   const lastSaveRef = useRef(0);
@@ -231,8 +231,8 @@ export function VideoPlayer({
       didMountRef.current = true;
       return;
     }
-    // ⑦：横屏锁 landscape、退出强制 portrait（回竖屏）；首次进入（landscape=false）也锁一次竖屏
-    requestOrientation(landscape ? 'landscape' : 'portrait');
+    // ⑬：横屏锁 landscape、退出恢复 sensor（系统重力感应，卓易通可转）；首次进入（landscape=false）也恢复一次 sensor
+    requestOrientation(landscape ? 'landscape' : 'sensor');
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
@@ -243,7 +243,7 @@ export function VideoPlayer({
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (tapTimer.current) window.clearTimeout(tapTimer.current);
       if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
-      requestOrientation('portrait');
+      requestOrientation('sensor');
     };
   }, []);
 
@@ -439,19 +439,14 @@ export function VideoPlayer({
   };
 
   const onPip = async () => {
+    // ⑬ 先检测原生桥；不可用则提示并退出，不再退化到 HTML5 PiP ——
+    //    卓易通/鸿蒙 WebView 不支持 requestPictureInPicture，退化会直接把 DOMException 抛给用户看到。
+    if (!pipBridgeReady()) { toast('当前环境不支持画中画'); return; }
     try {
       // ② 原生系统级画中画：点按钮即退出 App、桌面浮 16:9 小窗（A 方案）
       const m = (window as any).MuHaiAndroid;
-      if (m && typeof m.enterPip === 'function') {
-        const ok = m.enterPip(); // 原生桥已改返回 Boolean（失败=false）
-        if (!ok) toast('画中画不可用：请检查系统是否支持并已开启画中画权限');
-        return;
-      }
-      // 退化（桌面/开发环境未注入原生桥）：用 HTML5 PiP
-      const v = videoRef.current;
-      if (!v) return;
-      if (document.pictureInPictureElement) await document.exitPictureInPicture();
-      else await v.requestPictureInPicture();
+      const ok = m.enterPip(); // 原生桥已改返回 Boolean（失败=false）
+      if (!ok) toast('画中画不可用：请检查系统是否支持并已开启画中画权限');
     } catch (e: any) {
       toast('画中画启动失败：' + (e?.message || e || '未知'));
     }
@@ -564,8 +559,6 @@ export function VideoPlayer({
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else el.requestFullscreen?.().catch(() => {});
   };
-
-  const scrollToEpisodes = () => epRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   // ③ 单击/双击：移动端统一走 touch 路径（onStageTouchEnd），这里只在「非触摸」(桌面鼠标)时生效。
   // 触摸结束后 700ms 内的合成 click 一律忽略，避免移动端一次点按被 click+touch 双重触发导致 toggle 抵消。
@@ -969,7 +962,6 @@ export function VideoPlayer({
               </div>
               <div className="bottom">
                 <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
-                <span className="t">{fmtTime(liveCur)}</span>
                 <div className="bar" onClick={(e) => {
                   const v = videoRef.current; if (!v || !liveDur) return;
                   const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -980,8 +972,12 @@ export function VideoPlayer({
                   <div className="buffered" style={{ width: `${bufPct}%` }} />
                   <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                 </div>
-                <span className="t">{fmtTime(liveDur)}</span>
                 <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
+              </div>
+              {/* ⑬ 竖屏：当前/总时长移到进度条下方两端（左=当前，右=总时长） */}
+              <div className="times">
+                <span className="t">{fmtTime(liveCur)}</span>
+                <span className="t">{fmtTime(liveDur)}</span>
               </div>
               {/* 竖屏左中：弹幕（从右上移到左中） */}
               <div className="vp-side vp-side-left">
@@ -1063,7 +1059,8 @@ export function VideoPlayer({
                     title={levels.length === 1 ? '当前片源只有一档' : '选择清晰度'}>
                     <Icon name="sparkles" size={15} /><span>{levels.length === 1 ? '单档' : (qualityLabel || '画质')}</span>
                   </button>
-                  <button className="tool" onClick={scrollToEpisodes}><Icon name="list" size={15} /><span>选集</span></button>
+                  {/* ⑬ 选集改为右侧浮层（同「设置」抽屉），不再用页面内 scrollToEpisodes（会被整屏 .player-card.land 盖住） */}
+                  <button className="tool" onClick={() => setEpOpen(true)}><Icon name="list" size={15} /><span>选集</span></button>
                   <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
                 </div>
               </div>

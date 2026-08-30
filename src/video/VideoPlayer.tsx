@@ -962,7 +962,6 @@ export function VideoPlayer({
               </div>
               <div className="bottom">
                 <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
-                <span className="t">{fmtTime(liveCur)}</span>
                 <div className="bar" onClick={(e) => {
                   const v = videoRef.current; if (!v || !liveDur) return;
                   const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -973,7 +972,6 @@ export function VideoPlayer({
                   <div className="buffered" style={{ width: `${bufPct}%` }} />
                   <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                 </div>
-                <span className="t">{fmtTime(liveDur)}</span>
                 <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
               </div>
               {/* ⑬ 竖屏：当前/总时长移到进度条下方两端（左=当前，右=总时长） */}

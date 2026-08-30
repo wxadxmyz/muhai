@@ -205,8 +205,7 @@ export function VideoPlayer({
     const k = resumeKey;
     return () => { saveProgress(true, k); };
   }, [resumeKey, saveProgress]);
-  // 记录"这一集已经恢复过进度"，避免 seek 触发的再次 loadedmetadata 重复跳转
-  const resumedKeyRef = useRef('');
+  // 续播防重复交由 appliedStartAt（onMeta 应用 startAt 后置 true）处理，不再用 resumedKeyRef 守卫
 
   // 横屏由用户点「横屏」按钮主动进入（并请求原生真旋转），不再依赖系统传感器自动切换，
   // 避免「点了按钮却不转」的问题。
@@ -232,16 +231,21 @@ export function VideoPlayer({
   useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
-      requestOrientation('sensor');
       return;
     }
-    // ① 回退到 v3.1.0 模型：进横屏锁 landscape，退出交还 sensor（跟随重力，可自动翻转/一下回竖屏）
-    requestOrientation(landscape ? 'landscape' : 'sensor');
+    // ⑦：横屏锁 landscape、退出强制 portrait（回竖屏）；首次进入（landscape=false）也锁一次竖屏
+    requestOrientation(landscape ? 'landscape' : 'portrait');
   }, [landscape]);
 
   // Q18：组件卸载（返回/切走/关页）时强制恢复重力感应自动旋转，避免遗留横屏状态
   useEffect(() => {
-    return () => { if (lockTimer.current) window.clearTimeout(lockTimer.current); requestOrientation('sensor'); };
+    return () => {
+      if (lockTimer.current) window.clearTimeout(lockTimer.current);
+      if (tapTimer.current) window.clearTimeout(tapTimer.current);
+      if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
+      if (pressTimer.current) window.clearTimeout(pressTimer.current);
+      requestOrientation('portrait');
+    };
   }, []);
 
   // 返回手势衔接：先关最上层浮层
@@ -404,14 +408,21 @@ export function VideoPlayer({
     });
     toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
   };
-  const onSkipDown = (which: 'intro' | 'outro') => () => {
+  // ⑧ 片头/片尾「一键设定」：改用触摸事件（Android WebView 对 pointer 事件在部分 ROM 会丢 up，导致单击失效）。
+  //    单击=用当前进度设定/再点清空；长按(500ms)=打开分:秒手动输入面板
+  const longPressFired = useRef(false);
+  const onSkipTouchStart = (which: 'intro' | 'outro') => () => {
+    longPressFired.current = false;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
-    pressTimer.current = window.setTimeout(() => { pressTimer.current = undefined; setShowSkip(true); }, 500);
+    pressTimer.current = window.setTimeout(() => { pressTimer.current = undefined; longPressFired.current = true; setShowSkip(true); }, 500);
   };
-  const onSkipUp = (which: 'intro' | 'outro') => () => {
-    if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = undefined; setSkipOneTap(which); }
+  const onSkipTouchEnd = () => {
+    if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = undefined; }
   };
-  const onSkipLeave = () => { if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = undefined; } };
+  const onSkipClick = (which: 'intro' | 'outro') => () => {
+    if (longPressFired.current) { longPressFired.current = false; return; } // 长按已开面板，抑制随后派发的 click
+    setSkipOneTap(which);
+  };
 
   const onScreenshot = () => {
     const v = videoRef.current;
@@ -528,14 +539,9 @@ export function VideoPlayer({
     localStorage.setItem('rf_audio', n);
   };
 
-  const toggleLandscape = () => {
-    setLandscape((v) => {
-      const next = !v;
-      // ① 进入横屏锁 landscape；退出交还 sensor（系统重力感应接管，一下回竖屏且恢复自动翻转）
-      requestOrientation(next ? 'landscape' : 'sensor');
-      return next;
-    });
-  };
+  // ⑦：只翻转 state，真正的屏幕旋转统一由下方 [landscape] effect 驱动 requestOrientation，
+  //    避免「toggleLandscape 内联 + effect 内」双调用竞态（部分 ROM 表现为「点横屏有时不灵」）
+  const toggleLandscape = () => { setLandscape((v) => !v); };
 
   // 锁屏（点播）：B 组 8 条模型
   // 锁定 = 仅留小锁（其余由 .locked CSS 隐藏）、禁手势、视频继续播；小锁 3 秒后自动隐藏；
@@ -670,6 +676,7 @@ export function VideoPlayer({
         //      单击立即切换显隐（锁定态由 CSS 保证只有小锁可见，所以等于只切小锁）
         if (locked) {
           if (tapTimer.current) { window.clearTimeout(tapTimer.current); tapTimer.current = undefined; }
+          if (singleHideTimer.current) { window.clearTimeout(singleHideTimer.current); singleHideTimer.current = undefined; }
           setLockHidden((v) => !v);
         } else if (epOpen) {
           setEpOpen(false); // ⑦ 横屏选集浮层：点播放窗口空白即关
@@ -681,9 +688,9 @@ export function VideoPlayer({
           setShowSkip(false);
         } else if (tapTimer.current) {
           // 第二击 = 双击：播放/暂停。
-          // M1/M2：绝不改变控件显隐 —— 恢复成第一击之前的样子（隐藏态双击不会把控件弹出来）
           window.clearTimeout(tapTimer.current);
           tapTimer.current = undefined;
+          if (singleHideTimer.current) { window.clearTimeout(singleHideTimer.current); singleHideTimer.current = undefined; }
           const wasVisible = el.__tapVisible !== false;
           player.toggle();
           setControlsVisible(wasVisible);
@@ -694,11 +701,9 @@ export function VideoPlayer({
           el.__tapVisible = wasVisible;
           // K3：控件当前是隐藏的 → 第一下就立即唤出，不再干等 280ms
           if (!wasVisible) { setControlsVisible(true); if (state.isPlaying) scheduleHide(); }
-          // 单击语义仍由 280ms 定时器兜底：原本可见 → 到点隐藏；原本隐藏 → K3 已处理，到点不动
-          tapTimer.current = window.setTimeout(() => {
-            tapTimer.current = undefined;
-            if (wasVisible) setControlsVisible(false);
-          }, 280);
+          // 双击判定窗口（280ms）与单击隐藏（280ms）分离：clearTapTimer 只清单击隐藏，不误伤双击
+          tapTimer.current = window.setTimeout(() => { tapTimer.current = undefined; }, 280);
+          singleHideTimer.current = window.setTimeout(() => { singleHideTimer.current = undefined; if (wasVisible) setControlsVisible(false); }, 280);
         }
       }
       if (el.__backing) {
@@ -713,7 +718,8 @@ export function VideoPlayer({
       lastTouchRef.current = Date.now(); // ③ 抑制随后合成的 click
     }
   };
-  const tapTimer = useRef<number | undefined>(undefined);
+  const tapTimer = useRef<number | undefined>(undefined);   // 双击判定窗口（第一击后 280ms 内有第二击 = 双击）
+  const singleHideTimer = useRef<number | undefined>(undefined); // 单击隐藏（280ms，与双击窗口分离，避免 clearTapTimer 误清导致双击失效）
   // K2：清掉可能残留的单击/双击定时器。
   // 场景 —— 先点一下空白（起了 280ms 定时器），紧接着点某个控件按钮：
   // 按钮动作执行完之后，迟到的定时器才到点，又把控件显隐翻一次，
@@ -721,7 +727,8 @@ export function VideoPlayer({
   // 用 touchstart 捕获阶段挂在 overlay 上：既早于 touchend（不会误清本次新起的定时器），
   // 又能一次性覆盖 overlay 内的所有按钮（含横屏底部 10 个工具键）。
   const clearTapTimer = useCallback(() => {
-    if (tapTimer.current) { window.clearTimeout(tapTimer.current); tapTimer.current = undefined; }
+    // 只清单击隐藏定时器；绝不碰 tapTimer（双击窗口），否则第二次轻触的 touchstart 捕获清掉第一次轻触的窗口，双击失效（⑥）
+    if (singleHideTimer.current) { window.clearTimeout(singleHideTimer.current); singleHideTimer.current = undefined; }
   }, []);
   // 单击切换控件显隐；播放态 3s 后自动隐藏；锁屏强制常显（竖屏/横屏通用）
   const scheduleHide = () => {
@@ -865,11 +872,11 @@ export function VideoPlayer({
               if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
               // N1/N2/N3：续播 —— 上次看到哪儿就接着播
               const d = v.duration || 0;
-              if (d > 0 && resumedKeyRef.current !== resumeKey) {
-                resumedKeyRef.current = resumeKey;
+              // 续播兜底：startAt（来自首页/搜索/历史）已在 onMeta 应用过则跳过，否则用本地进度恢复
+              // 去掉 resumedKeyRef 守卫：同集重看时 resumeKey 不变会被旧守卫跳过，导致「再看不续播」（⑤）
+              if (d > 0 && !appliedStartAt.current) {
                 const saved = library.lib.watchProgress[resumeKey] ?? 0;
-                // N3：超过 95% 视为已看完 → 从头播，避免一打开就跳到片尾
-                // N1：不足 30 秒的进度不值得恢复（可能是误触），也从头播
+                // N3：超过 95% 视为已看完 → 从头播；N1：不足 30 秒不恢复（误触）
                 if (saved > 30 && saved < d * 0.95) {
                   v.currentTime = saved;
                   setLiveCur(saved);
@@ -1036,8 +1043,8 @@ export function VideoPlayer({
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
                   <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
-                  <button className={'tool' + (introSec ? ' on' : '')} onPointerDown={onSkipDown('intro')} onPointerUp={onSkipUp('intro')} onPointerLeave={onSkipLeave} onPointerCancel={onSkipLeave}><Icon name="skip-forward" size={15} /><span>片头</span></button>
-                  <button className={'tool' + (outroSec ? ' on' : '')} onPointerDown={onSkipDown('outro')} onPointerUp={onSkipUp('outro')} onPointerLeave={onSkipLeave} onPointerCancel={onSkipLeave}><Icon name="skip-back" size={15} /><span>片尾</span></button>
+                  <button className={'tool' + (introSec ? ' on' : '')} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="skip-back" size={15} /><span>片头</span></button>
+                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="skip-forward" size={15} /><span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
                   {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
                   <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
@@ -1231,8 +1238,8 @@ export function VideoPlayer({
 
             {!landscape && (
             <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
-              <button className={introSec ? 'on' : ''} onPointerDown={onSkipDown('intro')} onPointerUp={onSkipUp('intro')} onPointerLeave={onSkipLeave} onPointerCancel={onSkipLeave}><Icon name="fast-forward" size={22} /><span>片头</span></button>
-              <button className={outroSec ? 'on' : ''} onPointerDown={onSkipDown('outro')} onPointerUp={onSkipUp('outro')} onPointerLeave={onSkipLeave} onPointerCancel={onSkipLeave}><Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} /><span>片尾</span></button>
+              <button className={introSec ? 'on' : ''} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} /><span>片头</span></button>
+              <button className={outroSec ? 'on' : ''} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd} onTouchCancel={onSkipTouchEnd}><Icon name="fast-forward" size={22} /><span>片尾</span></button>
               <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
               <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
             </div></div>

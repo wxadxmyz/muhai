@@ -185,8 +185,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     } else {
       setIsFullscreen(false);
       setLocked(false);
-      // ① 退出横屏交还 sensor（系统重力感应接管，一下回竖屏且恢复自动翻转）；视频继续播，不暂停
-      requestOrientation('sensor');
+      // 退出横屏强制回竖屏（portrait）：避免用户关了系统「自动旋转」时卡在横屏回不来；视频继续播，不暂停
+      requestOrientation('portrait');
     }
   }, [isFullscreen, showLandControls]);
 

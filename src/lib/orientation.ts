@@ -10,7 +10,7 @@ const BRIDGE_WAIT_MS = 3000;
 const BRIDGE_POLL_MS = 100;
 // Q2：发完指令不校验，系统没响应前端完全不知道 → 隔一会儿检查实际朝向，没到位就再发一次
 const VERIFY_DELAY_MS = 300;
-const VERIFY_MAX_RETRY = 3;
+const VERIFY_MAX_RETRY = 8; // X2：总校验窗口 ~2.4s，覆盖系统异步旋转耗时（原 3 次≈0.9s 偏短会"只放大不转"）
 
 function bridgeReady(): boolean {
   try {

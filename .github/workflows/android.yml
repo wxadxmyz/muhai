@@ -275,17 +275,28 @@ jobs:
                   // ② 原生系统级画中画：点按钮即退出 App、桌面浮 16:9 小窗（A 方案）。
                   // 16:9 比例 + 权限检测（国产 ROM 默认关画中画权限，没开则静默放弃由前端提示）。
                   @android.webkit.JavascriptInterface
-                  fun enterPip() {
-                      runOnUiThread {
-                          try {
-                              if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                  if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) return@runOnUiThread
-                                  val params = android.app.PictureInPictureParams.Builder()
-                                      .setAspectRatio(android.util.Rational(16, 9))
-                                      .build()
-                                  this@MainActivity.enterPictureInPictureMode(params)
+                  fun enterPip(): Boolean {
+                      return try {
+                          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                              if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                                  android.util.Log.e("MuHai", "PiP unsupported: FEATURE_PICTURE_IN_PICTURE not present")
+                                  return false
                               }
-                          } catch (e: Exception) { /* ignore */ }
+                              val builder = android.app.PictureInPictureParams.Builder()
+                                  .setAspectRatio(android.util.Rational(16, 9))
+                              // ④ 尝试清空默认 action，去掉系统画中画的齿轮/关闭等默认按钮
+                              // （多数国产 ROM 仍强制保留自身设置钮，去不掉属系统约束，不保证生效）
+                              builder.setActions(java.util.ArrayList<android.app.RemoteAction>())
+                              val params = builder.build()
+                              // Android 12+ 进 PiP 前需先 setPictureInPictureParams，否则部分 ROM 抛异常
+                              this@MainActivity.setPictureInPictureParams(params)
+                              this@MainActivity.enterPictureInPictureMode(params)
+                          } else {
+                              false
+                          }
+                      } catch (e: Exception) {
+                          android.util.Log.e("MuHai", "enterPip failed: " + (e.message ?: e.toString()))
+                          false
                       }
                   }
                   // ③ 横屏沉浸模式：隐藏系统导航条/状态栏（粘性沉浸，从边缘内滑临时出现）。
@@ -371,7 +382,7 @@ jobs:
       - name: Patch AndroidManifest for Picture-in-Picture
         run: |
           MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)
-          if [ -z "$MANIFEST" ]; then echo "::warning::AndroidManifest not found, skip PiP patch"; exit 0; fi
+          if [ -z "$MANIFEST" ]; then echo "::error::AndroidManifest not found under src-tauri/gen/android — PiP 清单补丁无法应用，构建中止"; exit 1; fi
           python3 - "$MANIFEST" << 'PYEOF'
           import sys, re
           path = sys.argv[1]
@@ -381,8 +392,8 @@ jobs:
               sys.exit(0)
           m = re.search(r'<activity\b[^>]*android:name="[^"]*MainActivity"[^>]*>', src, re.S)
           if not m:
-              print("::warning::MainActivity <activity> not found, skip PiP patch")
-              sys.exit(0)
+              print("::error::MainActivity <activity> not found in " + path + " — PiP 清单补丁无法应用")
+              sys.exit(1)
           tag = m.group(0)
           new = tag
           if "android:supportsPictureInPicture" not in new:
@@ -396,7 +407,11 @@ jobs:
               new = new[:-1].rstrip('>') + ' android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode">'
           src = src[:m.start()] + new + src[m.end():]
           open(path, "w", encoding="utf-8").write(src)
-          print("Patched manifest for PiP")
+          # 校验：补丁后清单必须含 supportsPictureInPicture，否则视为失败（不再静默跳过）
+          if "supportsPictureInPicture" not in src:
+              print("::error::PiP patch applied but supportsPictureInPicture still missing — abort")
+              sys.exit(1)
+          print("Patched manifest for PiP: android:supportsPictureInPicture=true")
           PYEOF
 
       - name: Sync Android launcher icon

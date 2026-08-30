@@ -18,6 +18,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; overflow-x: hidden; }
+/* ⑦ 屏幕自适应基线：禁止 WebView 按系统/字号设置自动放大文字（鸿蒙 vs 安卓字号表现不一致的主因） */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -177,7 +179,7 @@ button.fav, .fav { color: var(--danger) !important; }
 .tprog-in { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
 
 /* ============ Tabs ============ */
-.tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; background: var(--bg); }
 /* A2：历史/收藏页顶部 tab 区预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
 .view.library .tabs { padding-top: max(0px, calc(var(--sat) - 22px)); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
@@ -200,6 +202,8 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* ============ 弹窗 ============ */
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: var(--sat) 0 0; z-index: 80; animation: fade .15s; }
+/* ⑤-2 点播横屏：投屏浮层必须压在整屏播放器 .player-card.land(z-index:100) 之上，否则浮层生成但被盖住看不见 */
+.player-page .modal-mask { z-index: 130; }
 .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px; width: 460px; max-width: 92vw; max-height: 88vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow); }
 .modal h3 { margin: 0 0 8px; }
 .modal label { font-size: 12px; color: var(--muted); margin-top: 8px; }
@@ -449,7 +453,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-lines { display: flex; gap: 6px; flex-wrap: wrap; }
 .vp-episodes { display: flex; flex-direction: column; gap: 8px; }
 .vp-episodes .ep-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.vp-episodes .ep-grid .ep-btn { aspect-ratio: 1.6; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
+.vp-episodes .ep-grid .ep-btn { aspect-ratio: 2.6; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
 .vp-episodes .ep-grid .ep-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 .vp-desc { font-size: 13px; line-height: 1.7; color: var(--muted); margin: 0; }
 
@@ -510,6 +514,12 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-side .side-btn:hover { background: rgba(0,0,0,.6); }
 .vp-side .side-btn.on { color: var(--accent); border-color: var(--accent); }
 .vp-side .side-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* ⑪ 竖屏控件隐藏时，左中/右中侧栏随之一起隐藏、禁触（避免点空白误触） */
+.player-card .overlay.hide .vp-side { opacity: 0; pointer-events: none; transition: opacity .2s; }
+/* ⑨ 横屏：字幕/清晰度面板改左侧抽屉，不沉到竖屏式底部；设置抽屉同样改左侧 */
+.player-card.land .vp-panel { position: absolute; left: 0; top: 0; bottom: 0; width: 240px; background: rgba(16,20,28,.96); border-right: 1px solid var(--border); z-index: 7; overflow-y: auto; padding: 16px; }
+.player-card.land .drawer-mask { align-items: stretch; justify-content: flex-start; }
+.player-card.land .drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
 
 /* 横屏：中央三圆（上一集/暂停/下一集） */
 .vp-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 5; display: flex; align-items: center; gap: 22px; }
@@ -1355,7 +1365,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .overlay { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; transition: opacity .2s; }
 /* Q16/Q17：隐藏时 overlay 本身继续接收单击/双击（显隐与双击暂停在隐藏态也生效），
    仅让内部子控件（按钮/进度条）不拦截，避免误触播放操作 */
-.overlay.hide { opacity: 0; pointer-events: auto; }
+.overlay.hide { opacity: 0; pointer-events: none; }
 .overlay.hide .top,
 .overlay.hide .center,
 .overlay.hide .bottom,
@@ -1434,6 +1444,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .player-card .bottom .bar .fill, .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 2; }
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
+/* ⑬ 竖屏进度条左右时间 */
+.player-card .bottom .t { font-size: 12px; color: #fff; min-width: 42px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 /* 进度条可点：整条 bar 接收点击/触摸，不再覆盖透明 range 拦截 */
 /* T7：底栏横屏键 38→44px */
 .player-card .bottom .land { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; cursor: pointer; flex: 0 0 auto; }
@@ -1442,11 +1454,12 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .vp-body { padding-bottom: 30px; }
 /* O5：去掉底色与圆角 —— 它是播放小窗下方唯一的色块，去掉后
    标题 / 评分 / 收藏 / 标签 / 四大按钮 / 线路 / 选集 / 简介整片同色，消除「介绍卡片跟下面有割裂」 */
-.info-card { margin: 0 16px 18px; background: transparent; border-radius: 0; padding: 16px; display: flex; gap: 14px; }
+.info-card { margin: 0 16px 18px; background: transparent; border-radius: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.info-title { font-size: 20px; font-weight: 700; margin: 0 0 4px; text-align: center; }
+.info-main { display: flex; gap: 14px; align-items: stretch; }
 .info-poster { width: 110px; height: 150px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
 .info-poster img { width: 100%; height: 100%; object-fit: cover; }
 .info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.info-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
 .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .info-badges span { font-size: 11px; padding: 3px 9px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); }
 .info-badges span.on { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); font-weight: 600; }
@@ -1458,7 +1471,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .meta-extra { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .meta-extra.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
 .meta-toggle { background: none; border: none; color: var(--accent); font-size: 12px; cursor: pointer; padding: 2px 0; margin-top: 2px; }
-.fav-btn { align-self: flex-start; margin-top: 10px; background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 7px 14px; border-radius: 999px; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.info-favrow { display: flex; justify-content: center; }
+.fav-btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 7px 14px; border-radius: 999px; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .fav-btn.on { background: var(--accent); color: #04201a; border-color: var(--accent); }
 
 .tags { margin: 0 16px 18px; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1634,7 +1648,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .ep-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 15px; font-weight: 700; color: #fff; }
 .ep-toggle { font-size: 13px; color: var(--accent); cursor: pointer; }
 .ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.ep-grid button { aspect-ratio: 1.6; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid button { aspect-ratio: 2.6; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
 .ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
 .ep-grid button.locked { color: var(--dim); }
 

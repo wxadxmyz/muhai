@@ -373,10 +373,12 @@ export function VideoPlayer({
   const trySkipIntro = () => {
     const v = videoRef.current;
     if (!v || !introSec || introDone.current) return;
-    if (v.currentTime < 0.6) {
-      introDone.current = true;
+    // ⑤：只要在片头范围内就跳（不再卡死 <0.6s）；seek 成功后再置 introDone
+    if (v.currentTime < introSec) {
       player.seek(introSec);
-      v.currentTime = introSec;
+      try { v.currentTime = introSec; } catch { /* ignore */ }
+      introDone.current = true;
+      toast('已跳过片头');
     }
   };
 
@@ -386,8 +388,8 @@ export function VideoPlayer({
     if (!v || !outroSec || !state.duration) return;
     const remain = state.duration - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {
-      if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
-      else setEnded(true); // 末集：走 B 方案（重播浮层）
+      if (detail.episodes && episodeIndex < detail.episodes.length - 1) { onSelectEpisode(episodeIndex + 1); toast('已跳过片尾'); }
+      else { setEnded(true); toast('已播至片尾'); } // 末集：走 B 方案（重播浮层）
     }
   };
 
@@ -440,14 +442,18 @@ export function VideoPlayer({
     try {
       // ② 原生系统级画中画：点按钮即退出 App、桌面浮 16:9 小窗（A 方案）
       const m = (window as any).MuHaiAndroid;
-      if (m && typeof m.enterPip === 'function') { m.enterPip(); return; }
+      if (m && typeof m.enterPip === 'function') {
+        const ok = m.enterPip(); // 原生桥已改返回 Boolean（失败=false）
+        if (!ok) toast('画中画不可用：请检查系统是否支持并已开启画中画权限');
+        return;
+      }
       // 退化（桌面/开发环境未注入原生桥）：用 HTML5 PiP
       const v = videoRef.current;
       if (!v) return;
       if (document.pictureInPictureElement) await document.exitPictureInPicture();
       else await v.requestPictureInPicture();
-    } catch {
-      /* 不支持时静默 */
+    } catch (e: any) {
+      toast('画中画启动失败：' + (e?.message || e || '未知'));
     }
   };
 
@@ -850,6 +856,15 @@ export function VideoPlayer({
                 }
               } catch { /* ignore */ }
               saveProgress(); // N4：内部 5 秒节流
+              // N3 兜底：onLoadedMetadata 时 duration 可能未就绪导致漏续播，这里补一次（仅 seek 一次）
+              if (!appliedStartAt.current && v.duration > 0) {
+                const saved = library.lib.watchProgress[resumeKey] ?? 0;
+                if (saved > 5 && saved < v.duration * 0.95) {
+                  v.currentTime = saved; setLiveCur(saved); player.seek(saved);
+                  appliedStartAt.current = true;
+                  toast(`上次看到 ${fmtTime(saved)}，已为你续播`);
+                }
+              }
               trySkipIntro();
               trySkipOutro();
             }}
@@ -864,8 +879,8 @@ export function VideoPlayer({
               // 去掉 resumedKeyRef 守卫：同集重看时 resumeKey 不变会被旧守卫跳过，导致「再看不续播」（⑤）
               if (d > 0 && !appliedStartAt.current) {
                 const saved = library.lib.watchProgress[resumeKey] ?? 0;
-                // N3：超过 95% 视为已看完 → 从头播；N1：不足 30 秒不恢复（误触）
-                if (saved > 30 && saved < d * 0.95) {
+                // N3：超过 95% 视为已看完 → 从头播；N1：不足 5 秒不恢复（误触）
+                if (saved > 5 && saved < d * 0.95) {
                   v.currentTime = saved;
                   setLiveCur(saved);
                   player.seek(saved);
@@ -944,7 +959,6 @@ export function VideoPlayer({
                 </div>
                 <div className="acts">
                   <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
-                  <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
                 </div>
               </div>
               <div className="center">
@@ -955,6 +969,7 @@ export function VideoPlayer({
               </div>
               <div className="bottom">
                 <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                <span className="t">{fmtTime(liveCur)}</span>
                 <div className="bar" onClick={(e) => {
                   const v = videoRef.current; if (!v || !liveDur) return;
                   const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -965,7 +980,16 @@ export function VideoPlayer({
                   <div className="buffered" style={{ width: `${bufPct}%` }} />
                   <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                 </div>
+                <span className="t">{fmtTime(liveDur)}</span>
                 <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
+              </div>
+              {/* 竖屏左中：弹幕（从右上移到左中） */}
+              <div className="vp-side vp-side-left">
+                <button className={'side-btn' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
+              </div>
+              {/* 竖屏右中：画中画（绑原生桥 enterPip） */}
+              <div className="vp-side vp-side-right">
+                <button className="side-btn" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画"><Icon name="pip" size={16} /></button>
               </div>
             </div>
           )}
@@ -1052,24 +1076,28 @@ export function VideoPlayer({
       {!landscape && (
         <div className="vp-body">
           <div className="info-card">
-            <div className="info-poster">
-              {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
-            </div>
-            <div className="info-body">
-              <div className="info-title">{detail.title}</div>
-              <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
-              <div className="info-meta">
-                {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
-                {filmYear && <><span className="label">年份</span> {filmYear}　</>}
-                <br />
-                <div className={'meta-extra' + (metaExpanded ? ' open' : '')}>
-                  {director && <><span className="label">导演</span> {director}　</>}
-                  {actor && <><span className="label">主演</span> {actor}</>}
-                </div>
-                {(director || actor) && (
-                  <button className="meta-toggle" onClick={() => setMetaExpanded((v) => !v)}>{metaExpanded ? '收起 ▴' : '展开 ▾'}</button>
-                )}
+            <div className="info-title">{detail.title}</div>
+            <div className="info-main">
+              <div className="info-poster">
+                {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
               </div>
+              <div className="info-body">
+                <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
+                <div className="info-meta">
+                  {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
+                  {filmYear && <><span className="label">年份</span> {filmYear}　</>}
+                  <br />
+                  <div className={'meta-extra' + (metaExpanded ? ' open' : '')}>
+                    {director && <><span className="label">导演</span> {director}　</>}
+                    {actor && <><span className="label">主演</span> {actor}</>}
+                  </div>
+                  {(director || actor) && (
+                    <button className="meta-toggle" onClick={() => setMetaExpanded((v) => !v)}>{metaExpanded ? '收起 ▴' : '展开 ▾'}</button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="info-favrow">
               <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => { library.toggleFavorite(detail); setFaved(library.isFavorite(detail)); }}>
                 <Icon name={faved ? 'heart-filled' : 'heart'} size={14} />{faved ? '已收藏' : '加入收藏'}
               </button>

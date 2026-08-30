@@ -118,7 +118,6 @@ export function VideoPlayer({
   const [castDevice, setCastDevice] = useState<string | null>(null);
   const [localCues, setLocalCues] = useState<{ time: number; text: string }[]>([]);
   const [showSubStyle, setShowSubStyle] = useState(false);
-  const [showSkip, setShowSkip] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -170,8 +169,7 @@ export function VideoPlayer({
   const appliedStartAt = useRef(false);
   const loadTimer = useRef<number | undefined>(undefined);
   const lastTouchRef = useRef(0); // ③ 触摸结束后抑制随后合成的 click，避免移动端双击被抵消
-  const pressTimer = useRef<number | undefined>(undefined); // ⑧ 片头/片尾长按(500ms)开手动输入面板
-  const skipTouchStamp = useRef(0); // ⑧ 触摸已标记的时间戳，用于抑制随后派发的合成 click（避免双触发抵消）
+  const lastSkipTouch = useRef(0); // 一键标记：触摸已触发，抑制随后合成 click 双触发
 
   const groups = (detail.raw?.lineGroups as any[] | undefined) ?? [];
   const lines = groups.length || (detail.raw?.lines as number) || 1;
@@ -244,7 +242,6 @@ export function VideoPlayer({
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (tapTimer.current) window.clearTimeout(tapTimer.current);
       if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
-      if (pressTimer.current) window.clearTimeout(pressTimer.current);
       requestOrientation('portrait');
     };
   }, []);
@@ -256,11 +253,10 @@ export function VideoPlayer({
       if (epOpen) { setEpOpen(false); return true; }
       if (showCast) { setShowCast(false); return true; }
       if (showSubStyle) { setShowSubStyle(false); return true; }
-      if (showSkip) { setShowSkip(false); return true; }
       return false;
     };
     return () => { (window as any).__playerBack = undefined; };
-  }, [settingsOpen, showCast, showSubStyle, showSkip]);
+  }, [settingsOpen, showCast, showSubStyle]);
 
   // 逐级返回：点播页优先退「横屏 → 竖屏」这一级，否则交还外层（VideoApp 的 closeVideo）
   useEffect(() => {
@@ -412,25 +408,13 @@ export function VideoPlayer({
     });
     toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
   };
-  // ⑧ 片头/片尾「一键设定」：改用触摸事件（Android WebView 对 pointer 事件在部分 ROM 会丢 up，导致单击失效）。
-  //    单击=用当前进度设定/再点清空；长按(500ms)=打开分:秒手动输入面板
-  const longPressFired = useRef(false);
+  // 一键设定：点一下用当前进度设定、再点清空（无长按面板；绑定 onTouchStart 保证真机可靠触发，onClick 仅作桌面兜底）
   const onSkipTouchStart = (which: 'intro' | 'outro') => () => {
-    longPressFired.current = false;
-    if (pressTimer.current) window.clearTimeout(pressTimer.current);
-    pressTimer.current = window.setTimeout(() => { pressTimer.current = undefined; longPressFired.current = true; setShowSkip(true); }, 500);
-  };
-  // ⑧ 触摸结束 = 一键设定（短按）。原实现只清定时器、完全依赖 onClick，但 Android WebView 不派发合成 click → 标记失效。
-  //    改由 onTouchEnd 直接触发；onClick 仅作桌面端兜底，并用时间戳抑制移动端"触摸+合成 click"双触发（否则设完即被清掉）。
-  const onSkipTouchEnd = (which: 'intro' | 'outro') => () => {
-    if (pressTimer.current) { window.clearTimeout(pressTimer.current); pressTimer.current = undefined; }
-    if (longPressFired.current) { longPressFired.current = false; return; } // 长按已开面板，抑制
-    skipTouchStamp.current = Date.now();
+    lastSkipTouch.current = Date.now();
     setSkipOneTap(which);
   };
   const onSkipClick = (which: 'intro' | 'outro') => () => {
-    if (longPressFired.current) { longPressFired.current = false; return; }
-    if (Date.now() - skipTouchStamp.current < 700) return; // 触摸已处理，忽略合成 click
+    if (Date.now() - lastSkipTouch.current < 700) return; // 触摸已处理，忽略合成 click 双触发
     setSkipOneTap(which);
   };
 
@@ -694,8 +678,6 @@ export function VideoPlayer({
           setSettingsOpen(false); // ⑨ 横屏设置侧栏：点空白即关
         } else if (showCast) {
           setShowCast(false);
-        } else if (showSkip) {
-          setShowSkip(false);
         } else if (tapTimer.current) {
           // 第二击 = 双击：播放/暂停。
           window.clearTimeout(tapTimer.current);
@@ -720,7 +702,6 @@ export function VideoPlayer({
         if (settingsOpen) setSettingsOpen(false);
         else if (showCast) setShowCast(false);
         else if (showSubStyle) setShowSubStyle(false);
-        else if (showSkip) setShowSkip(false);
         else if (landscape) toggleLandscape();
         else onClose();
       }
@@ -1053,8 +1034,8 @@ export function VideoPlayer({
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
                   <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
-                  <button className={'tool' + (introSec ? ' on' : '')} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd('intro')} onTouchCancel={onSkipTouchEnd('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
-                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd('outro')} onTouchCancel={onSkipTouchEnd('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
+                  <button className={'tool' + (introSec ? ' on' : '')} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
+                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
                   {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
                   <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
@@ -1197,21 +1178,7 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* 跳过片头片尾 */}
-      {showSkip && (
-        <div className="vp-panel">
-          <div className="vp-panel-head">跳过设置（仅对本剧《{detail.title}》生效）
-            <button className="link" onClick={() => setShowSkip(false)}>关闭</button>
-          </div>
-          <label>片头跳过(秒)
-            <input type="number" min={0} value={perItem?.intro ?? settings.skipIntro} onChange={(e) => updateSettings({ skipByItem: { ...settings.skipByItem, [progressKey]: { intro: Number(e.target.value) || 0, outro: perItem?.outro ?? settings.skipOutro } } })} />
-          </label>
-          <label>片尾提前(秒)
-            <input type="number" min={0} value={perItem?.outro ?? settings.skipOutro} onChange={(e) => updateSettings({ skipByItem: { ...settings.skipByItem, [progressKey]: { intro: perItem?.intro ?? settings.skipIntro, outro: Number(e.target.value) || 0 } } })} />
-          </label>
-          <p className="muted sm">在播放页设置后，本剧每次打开都会自动按此跳过（覆盖全局设置）。</p>
-        </div>
-      )}
+      {/* 跳过片头片尾：播放页内一键设定，无独立输入面板 */}
 
       {/* 播放器设置抽屉（按设计文件 .drawer） */}
       {settingsOpen && (
@@ -1248,8 +1215,8 @@ export function VideoPlayer({
 
             {!landscape && (
             <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
-              <button className={introSec ? 'on' : ''} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')} onTouchEnd={onSkipTouchEnd('intro')} onTouchCancel={onSkipTouchEnd('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} />}<span>片头</span></button>
-              <button className={outroSec ? 'on' : ''} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')} onTouchEnd={onSkipTouchEnd('outro')} onTouchCancel={onSkipTouchEnd('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="fast-forward" size={22} />}<span>片尾</span></button>
+              <button className={introSec ? 'on' : ''} onClick={onSkipClick('intro')} onTouchStart={onSkipTouchStart('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} />}<span>片头</span></button>
+              <button className={outroSec ? 'on' : ''} onClick={onSkipClick('outro')} onTouchStart={onSkipTouchStart('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="fast-forward" size={22} />}<span>片尾</span></button>
               <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
               <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
             </div></div>

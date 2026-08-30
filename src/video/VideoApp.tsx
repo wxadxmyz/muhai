@@ -39,8 +39,6 @@ export default function VideoApp() {
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [line, setLine] = useState(0);
   const [startAt, setStartAt] = useState(0);
-  // 点卡片进入播放页时的加载占位：先显示，详情接口（2-3s）返回后再切真播放页，消除白屏
-  const [enteringDetail, setEnteringDetail] = useState<MediaItem | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
@@ -173,29 +171,31 @@ export default function VideoApp() {
     setStartAt(0);
   };
 
-  const openDetail = async (it: MediaItem) => {
-    // 直进播放页（无详情页中转）：点击影视/搜索结果立即播放，逐级返回时回到上一层列表
-    // F2：先显示加载页（消除点卡片后 2-3s 白屏），详情接口后台补全，不阻塞进入播放页。
-    //     F1：列表接口（如量子源 ac=list）不含 vod_pic / vod_play_url，打开前先补一次详情，
-    //     拿到封面 + 完整选集，否则会出现"无封面 / 无选集 / 不连播 / 上下集失效"。
-    setEnteringDetail(it);
+  const openDetail = (it: MediaItem) => {
+    // 直进播放页：点卡片立即进播放页，播放窗口内解析/转圈照常（不再用「加载中」占位页阻塞进入）
+    // 详情（封面/选集）后台补全：列表项常缺 episodes，补全后据此跳到续播集
     const cfg = store.sources.find((s) => s.id === it.sourceId);
-    let full = it;
-    if (cfg) {
-      try {
-        const d = await createSource(cfg).getDetail(it.id);
-        if (d && d.id && (d.episodes?.length || (d as any).cover || ((d as any).raw?.vod_pic))) {
-          full = { ...it, ...d, raw: { ...it.raw, ...(d as any).raw } };
-        }
-      } catch {
-        // 详情拉取失败：退回列表项（仍可直接播放首集）
-      }
-    }
-    setEnteringDetail(null);
-    // 续播：从首页/搜索/历史点开时，跳到上次观看的那一集（resumeEp 由播放器在落盘进度时记录）
-    const showKey = `${full.sourceId}:${full.id}`;
+    const showKey = `${it.sourceId}:${it.id}`;
     const resumeEp = library.lib.resumeEp[showKey] ?? 0;
-    playEpisode(full, resumeEp, 0, true);
+    const hadEps = !!(it.episodes && it.episodes.length);
+    // 列表项已有选集 → 直接跳续播集；否则先进首集，详情回来再跳
+    playEpisode(it, hadEps ? resumeEp : 0, 0, true);
+    if (cfg) {
+      createSource(cfg).getDetail(it.id).then((d) => {
+        if (!d || !d.id) return;
+        if (!(d.episodes?.length || (d as any).cover || ((d as any).raw?.vod_pic))) return;
+        const full = { ...it, ...d, raw: { ...it.raw, ...(d as any).raw } };
+        if (!hadEps && resumeEp > 0) {
+          // 列表项无选集：用补全后的详情跳到续播集
+          playEpisode(full, resumeEp, 0, true);
+        } else {
+          // 仅补全封面/选集 UI，不打断当前播放
+          setDetail((prev) => (prev && prev.sourceId === it.sourceId && prev.id === it.id
+            ? { ...prev, ...full, episodes: full.episodes ?? prev.episodes }
+            : prev));
+        }
+      }).catch(() => {});
+    }
   };
 
   const closeVideo = () => {
@@ -290,13 +290,6 @@ export default function VideoApp() {
             settings={settings}
           />
           </ErrorBoundary>
-          </div>
-        )}
-
-        {/* 点卡片进入播放页的加载占位：详情接口返回前先显示，避免 2-3s 白屏 */}
-        {enteringDetail && !detail && (
-          <div className="fullpage player-page">
-            <div className="vp-loading"><div className="vp-spinner" /><span>加载中…</span></div>
           </div>
         )}
 

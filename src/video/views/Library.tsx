@@ -3,6 +3,7 @@ import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { ProxiedImg } from '../../components/ProxiedImg';
+import { fmtTime } from '../../lib/playerStore';
 
 // 影视仓风格：顶部 Tab 切换「观看历史 / 影视收藏」+ 海报卡片网格
 export function VideoLibrary({
@@ -51,7 +52,10 @@ export function VideoLibrary({
         <div className="poster-grid">
           {list.map((it) => {
             const key = `${it.sourceId}:${it.id}`;
-            const prog = library.lib.watchProgress[key] ?? 0;
+            // P7：进度是按「剧:集序号」存的，旧代码用不带集数的 key 去读 → 永远读到 0。
+            //     这里先取续播集号，再拼出真正的存储键。
+            const resumeIdx = library.lib.resumeEp[key] ?? 0;
+            const prog = library.lib.watchProgress[`${key}:${resumeIdx}`] ?? 0;
             const pct = it.duration ? Math.round((prog / it.duration) * 100) : 0;
             return (
               <div className="pcard" key={key}>
@@ -68,6 +72,9 @@ export function VideoLibrary({
                 >
                   {it.cover ? <ProxiedImg src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
                   {it.episodes?.length ? <span className="eps">{it.episodes.length} 集</span> : null}
+                  {/* P7：影视卡片没有总时长，百分比算不出来，直接把「看到几分几秒」标出来，
+                      既能确认进度确实存住了，也是排查续播最直观的信号 */}
+                  {prog > 5 && <span className="eps resume-tag">看到 {fmtTime(prog)}</span>}
                   {pct > 0 && (
                     <span className="pbar">
                       <span className="pbar-in" style={{ width: pct + '%' }} />

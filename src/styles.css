@@ -2,14 +2,26 @@
 :root {
   color-scheme: dark;
   /* 安全区：状态栏/底部导航条高度，由 viewport-fit=cover 下的 env() 提供。
-     A4：部分国产 ROM / WebView 在 edge-to-edge 下 env() 返回 0，导致顶部被通知栏压住，
-     故统一用 max(..., 26px) 兜底，保证任何机型都留出至少 26px。 */
-  --sat: max(env(safe-area-inset-top, 0px), 26px);
+     A4：部分国产 ROM / WebView 在 edge-to-edge 下 env() 返回 0，导致顶部被通知栏压住，需兜底。
+     ⑭ 关键修复：原先写 max(env(...), 26px)，但卓易通/鸿蒙 WebView 对 max() 支持不完整，
+        整条声明会被判为无效 → --sat 未定义 → 所有 var(--sat) 的地方（.main 顶部 padding、
+        .player-card sticky top 等）全部失效 → 历史/收藏卡片上滑直接盖到通知栏上方。
+        现在改回 env(safe-area-inset-top, 26px)：不支持 env() 的设备回退 26px，语义等价且兼容最好。 */
+  --sat: env(safe-area-inset-top, 26px);
   /* 问题 #5 修复：部分国产 ROM / Android WebView 在 edge-to-edge 下不报告底部 inset（返回 0），
-     导致底部 Tab 被系统手势条压住。用 max(..., 12px) 兜底，确保至少留出 12px 安全间距。 */
-  --sab: max(env(safe-area-inset-bottom, 0px), 12px);
+     导致底部 Tab 被系统手势条压住。同样避开 max()，直接用带兜底的 env()。 */
+  --sab: env(safe-area-inset-bottom, 12px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
+}
+/* ⑭ 支持 max() 的设备（现代 Chrome / iOS Safari）再升级为「取较大值」，
+   这样刘海屏/挖孔屏上 env() 真实值大于 26px 时不会被兜底值截断。
+   不支持 max() 的卓易通/鸿蒙 WebView 会跳过整块，继续用上面的 env(..., 26px)。 */
+@supports (top: max(1px, 2px)) {
+  :root {
+    --sat: max(env(safe-area-inset-top, 0px), 26px);
+    --sab: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
 }
 /* 每套皮肤的 --bg/--panel/--accent 等由 theme.tsx 写到 documentElement；
    .music-theme / .video-theme 仅控制布局方向，不覆盖主色，保证皮肤色全局生效 */
@@ -157,6 +169,8 @@ button.fav, .fav { color: var(--danger) !important; }
 .ph-big { font-weight: 800; }
 .eps { position: absolute; top: 8px; right: 8px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); padding: 2px 7px; border-radius: 6px; }
 .pscore { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 800; color: #fff; background: var(--accent); padding: 2px 7px; border-radius: 999px; }
+/* P7：影视卡片的「看到 mm:ss」角标，放左下，避开右上的集数标签 */
+.eps.resume-tag { top: auto; right: auto; bottom: 10px; left: 8px; color: var(--accent); background: rgba(0,0,0,.68); }
 .pbar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0,0,0,.5); }
 .pbar-in { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
 .ptitle { font-size: 13px; font-weight: 600; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -184,7 +198,10 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ============ Tabs ============ */
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; background: var(--bg); }
 /* A2：历史/收藏页顶部 tab 区预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
-.view.library .tabs { padding-top: max(0px, calc(var(--sat) - 22px)); }
+/* ⑭ 去掉 max()：卓易通 WebView 上 max() 失效会拖垮整条规则。
+   calc(var(--sat) - 22px) 在 --sat < 22px 时为负 → padding 负值非法 → 整条规则被丢弃 = 0，
+   效果与 max(0px, ...) 一致，且兼容性更好。 */
+.view.library .tabs { padding-top: calc(var(--sat) - 22px); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -230,7 +247,8 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* ============ 设置页 · iOS 风分组卡片（两个 App 共用）============ */
 /* A3：设置页顶部预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
-.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(4px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
+/* ⑭ 同上：拆开写，避免 max() 失效时把左右/底部 padding 一起拖没 */
+.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: 4px 2px 8px; padding-top: calc(4px + var(--sat) - 22px); }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
@@ -527,8 +545,10 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-side .side-btn:disabled { opacity: .4; cursor: not-allowed; }
 /* ⑪ 竖屏控件隐藏时，左中/右中侧栏随之一起隐藏、禁触（避免点空白误触） */
 .player-card .overlay.hide .vp-side { opacity: 0; pointer-events: none; transition: opacity .2s; }
-/* ⑨ 横屏：字幕/清晰度面板改左侧抽屉，不沉到竖屏式底部；设置抽屉同样改左侧 */
-.player-card.land .vp-panel { position: absolute; left: 0; top: 0; bottom: 0; width: 240px; background: rgba(16,20,28,.96); border-right: 1px solid var(--border); z-index: 7; overflow-y: auto; padding: 16px; }
+/* ⑨ 横屏：字幕/清晰度面板改侧边抽屉，不沉到竖屏式底部；设置抽屉同样改侧边。
+   ⑭ 从左侧改到右侧（与设置/选集抽屉统一在右侧），并提层级到 210 ——
+      原 z-index 7 会被同层的 .drawer-mask（z-index 200）盖住，表现为「点了字幕没浮窗」。 */
+.player-card.land .vp-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 260px; background: rgba(16,20,28,.96); border-left: 1px solid var(--border); z-index: 210; overflow-y: auto; padding: 16px; }
 .player-card.land .drawer-mask { align-items: stretch; justify-content: flex-start; }
 .player-card.land .drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
 
@@ -631,6 +651,25 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   .sidebar, .topbar { display: none; }
 
   .main { padding: calc(14px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
+  /* A8：卡片上滑不顶进通知栏。
+     padding-top 只把内容「初始位置」推下去，滚动时内容照样穿过 padding 一路滚到屏幕最顶端。
+     这里在滚动容器内容流最前面插一条 sticky 不透明挡板：
+       · height = var(--sat)          —— 正好盖住通知栏那条区域
+       · margin-top 取 -var(--sat)    —— 塞回原本的 padding 空白区，不占流空间、不推挤内容
+       · z-index 3                    —— 高于卡片（auto，滚上去被遮住）、低于顶栏
+                                         （.tabs=5 / .home-top.v25=20，顶栏照常显示）
+     配合 lib/safeArea.ts 的 JS 兜底，--sat 不会因 WebView 上报 0 而失效。 */
+  .main:not(button):not(.main-live)::before {
+    content: '';
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: block;
+    height: var(--sat);
+    margin-top: calc(-1 * var(--sat));
+    background: var(--bg);
+    pointer-events: none;
+  }
   /* 主页/历史移动端同样贴边（抵消 .main 左右 14px） */
   .view.home, .view.library { margin-left: -14px; margin-right: -14px; }
   .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
@@ -697,9 +736,12 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 }
 
 /* ===== v2.5.0 首页顶栏：品牌 + 短搜索胶囊 + 站点 pill ===== */
-/* A1：主页顶部预留通知栏安全区。
-   .main 已有 22px 顶部 padding，这里只补齐 (--sat - 22px) 的差值，避免双重留白。 */
-.home-top.v25{display:flex;align-items:center;gap:10px;padding:calc(10px + max(0px, calc(var(--sat) - 22px))) 14px 10px;}
+/* ⑭ 顶栏吸顶：内容上滑时 logo / 搜索框 / 站点选择固定在顶部，不再跟着一起滚走。
+   旧 padding 用 calc(10px + max(0px, calc(var(--sat) - 22px))) 补安全区差值，
+   但 max() 在卓易通 WebView 上会整条失效（同 --sat 的坑），这里一并去掉：
+   初始位置的安全区由 .main 的 padding-top（calc(14px + var(--sat))）提供，
+   吸顶后顶栏贴在 header 之下，安全区由 header 承担，无需重复留白。 */
+.home-top.v25{position:sticky;top:0;z-index:20;background:var(--bg);display:flex;align-items:center;gap:10px;padding:10px 14px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -1543,7 +1585,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .land-h.hide .bottom { opacity: 0; pointer-events: none; transition: opacity .25s; }
 
 /* P2：容器不再预留顶部黑条，安全区由顶栏自己吃掉（挖孔/刘海屏也不会被挡） */
-.landscape .land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 12px; padding: max(env(safe-area-inset-top), 8px) 16px 12px; background: linear-gradient(rgba(0,0,0,.65), transparent); }
+/* ⑭ max(env(...), 8px) → env(..., 8px)：不支持 env() 的设备回退 8px，避开 max() 兼容坑 */
+.landscape .land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 12px; padding: env(safe-area-inset-top, 8px) 16px 12px; background: linear-gradient(rgba(0,0,0,.65), transparent); }
 .landscape .land-top .back { width: 38px; height: 38px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
 .landscape .land-top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .landscape .land-top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1640,6 +1683,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
    小锁会永远亮着。现在它跟 .overlay 的 hide 状态联动：显→出现，隐→藏起来） */
 .player-card .overlay.locked .top .acts .lock-btn,
 .landscape .overlay.land-h.locked .side.left .lock-btn { display: flex !important; pointer-events: auto; }
+/* ⑭ 锁定态把左右侧栏一起隐藏：竖屏小窗的「画中画」按钮在 .vp-side-right 里，
+   旧规则只隐藏了 .top/.center/.bottom，没覆盖 .vp-side → 点小锁后画中画按钮仍留在画面上。 */
+.player-card .overlay.locked .vp-side,
+.landscape .overlay.land-h.locked .vp-side { display: none !important; }
 /* T1/T2：加载中与加载失败时，隐藏中央与底栏，只留顶栏（随时能退出）。错误卡片在 462 行已处理居中。 */
 .player-card .overlay.loading .center,
 .player-card .overlay.loading .bottom,
@@ -1706,3 +1753,14 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   width: auto; min-width: 320px; max-width: 400px; height: 100%; max-height: 100%;
   border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
 }
+
+/* ============ ⑭ 横屏选集 → 右侧全高抽屉（与「设置」抽屉同款：连顶连底、上下占满） ============ */
+/* 原先 .ep-mask/.ep-panel 只有底部浮窗样式（align-items:flex-end），横屏下与设置抽屉观感不一致 */
+.player-root.landscape .ep-mask { align-items: stretch; justify-content: flex-end; background: rgba(0,0,0,.35); }
+.player-root.landscape .ep-panel {
+  width: auto; min-width: 300px; max-width: 380px; height: 100%; max-height: 100%;
+  border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+/* 右侧竖抽屉宽度有限，选集网格从 5 列收成 4 列，避免按钮被压扁 */
+.player-root.landscape .ep-grid { grid-template-columns: repeat(4, 1fr); }

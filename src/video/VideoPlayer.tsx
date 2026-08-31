@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayer, fmtTime, player } from '../lib/playerStore';
 import { useMediaResolver } from '../lib/playback';
 import { useLibrary } from '../lib/library';
-import { AppSettings, useSettings } from '../lib/settings';
+import { AppSettings, updateSettingsGlobal } from '../lib/settings';
 import { MediaItem, SourceConfig } from '../engine/types';
 import { gradientFor, initial } from '../lib/cover';
 import { CastOverlay } from '../components/CastOverlay';
@@ -106,7 +106,11 @@ export function VideoPlayer({
   sources: SourceConfig[];
   settings: AppSettings;
 }) {
-  const { update: updateSettings } = useSettings();
+  // ⑭ 关键：写入走全局单例（settings.ts 的 updateSettingsGlobal），读取走 props.settings。
+  //     旧写法在这里又调了一次 useSettings()，拿到的是第 2 份互不相通的 state：
+  //     写进去的那份没人读，props.settings 纹丝不动 → 片头/片尾标记后图标不变数字、跳过也不执行。
+  //     现在写入会广播给所有订阅者（含把 settings 传进来的 VideoApp），props.settings 随之更新。
+  const updateSettings = updateSettingsGlobal;
   const state = usePlayer();
   const { ensureResolved } = useMediaResolver(sources);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -165,9 +169,20 @@ export function VideoPlayer({
   const [pipMode, setPipMode] = useState(false); // ② 进入系统画中画（隐藏控件，纯视频）
 
   const introDone = useRef(false);
-  const appliedStartAt = useRef(false);
   const loadTimer = useRef<number | undefined>(undefined);
   const lastTouchRef = useRef(0); // ③ 触摸结束后抑制随后合成的 click，避免移动端双击被抵消
+  // P1：续播四件套 —— 目标秒数 / 是否已确认到位 / 首次尝试时间戳 / 是否本组件自动 seek
+  //     旧实现只有一个 appliedStartAt 布尔值，且「seek 一次就置 true」，
+  //     那次 seek 一旦失败（HLS 未就绪 / duration 未就绪 / startAt 读到 0），
+  //     后面所有兜底都被这个标记挡死 → 进度明明存了却从头播。
+  const resumeTargetRef = useRef(0);
+  const resumedRef = useRef(false);
+  const resumeTryTsRef = useRef(0);
+  const autoSeekingRef = useRef(false);
+  // P2：最后已知播放位置。卸载时 React 已把 videoRef.current 置为 null（沙箱探针实锤：
+  //     卸载 cleanup 里打印 videoRef=NULL），所以「返回时补写一次进度」从来没成功过。
+  //     这里存一份不依赖 DOM 的镜像，卸载补写才真正落地。
+  const lastTimeRef = useRef(0);
 
   const groups = (detail.raw?.lineGroups as any[] | undefined) ?? [];
   const lines = groups.length || (detail.raw?.lines as number) || 1;
@@ -186,14 +201,17 @@ export function VideoPlayer({
   // library 每次渲染都是新对象，一旦进依赖，下面的补写 effect 就会每帧重建并反复写盘，节流形同虚设。
   const saveProgressRef = useRef<(force?: boolean, key?: string) => void>(() => {});
   saveProgressRef.current = (force = false, key?: string) => {
+    // P2：videoRef 在卸载阶段已被 React 清空，回落到 lastTimeRef 记录的位置。
+    //     这样「返回 / 切集 / 退后台」时的最后一次补写才真的能落盘。
     const v = videoRef.current;
-    if (!v || !isFinite(v.currentTime) || v.currentTime <= 0) return;
+    const t = v && isFinite(v.currentTime) ? v.currentTime : lastTimeRef.current;
+    if (!(t > 0)) return;
     const now = Date.now();
     // N4：timeupdate 约 250ms 一次，原来每秒写 4 次 localStorage；这里节流到 5 秒一次。
     // force=true 用于暂停 / 切集 / 退出这类"最后一次机会"的补写（N5），不受节流限制。
     if (!force && now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
-    library.setWatchProgress(key || resumeKey, v.currentTime);
+    library.setWatchProgress(key || resumeKey, t);
     library.setResumeEp(progressKey, episodeIndex); // 记录「看到第几集」，供首页/搜索/历史续播定位
   };
   const saveProgress = useCallback((force = false, key?: string) => saveProgressRef.current(force, key), []);
@@ -203,7 +221,44 @@ export function VideoPlayer({
     const k = resumeKey;
     return () => { saveProgress(true, k); };
   }, [resumeKey, saveProgress]);
-  // 续播防重复交由 appliedStartAt（onMeta 应用 startAt 后置 true）处理，不再用 resumedKeyRef 守卫
+  // P4：退后台 / 切走 / 杀进程的兜底补写 —— React 的 cleanup 在 App 被系统回收时不保证执行，
+  //     这两个事件是 WebView 上唯一可靠的「最后一次机会」。
+  useEffect(() => {
+    const flush = () => saveProgress(true);
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [saveProgress]);
+  // 续播应用与防重复交由 P3 的 tryApplyResume 统一处理
+
+  // P3：续播应用器 —— 「目标 + 校验 + 重试」，不再「seek 一次就宣布完成」。
+  // 触发点覆盖 loadedmetadata / durationchange / canplay / timeupdate，
+  // 只要还没真正跳到目标位置就继续重试（最长 12 秒），跳到或超窗口才收手。
+  const tryApplyResume = useCallback(() => {
+    const v = videoRef.current;
+    const target = resumeTargetRef.current;
+    if (!v || resumedRef.current || !(target > 1)) return;
+    const d = v.duration;
+    if (!isFinite(d) || d <= 0) return;
+    if (target >= d - 3) { resumedRef.current = true; return; } // 已接近片尾 → 不跳
+    if (Math.abs(v.currentTime - target) < 1.5) { resumedRef.current = true; return; } // 已到位
+    const now = Date.now();
+    if (resumeTryTsRef.current === 0) resumeTryTsRef.current = now;
+    if (now - resumeTryTsRef.current > 12000) { resumedRef.current = true; return; } // 超时放弃，不再打扰用户
+    autoSeekingRef.current = true;
+    try { v.currentTime = target; } catch { /* ignore */ }
+    if (Math.abs(v.currentTime - target) < 1.5) {
+      resumedRef.current = true;
+      setLiveCur(target);
+      player.seek(target);
+      toast(`上次看到 ${fmtTime(target)}，已为你续播`);
+    }
+    autoSeekingRef.current = false;
+  }, []);
 
   // 横屏由用户点「横屏」按钮主动进入（并请求原生真旋转），不再依赖系统传感器自动切换，
   // 避免「点了按钮却不转」的问题。
@@ -231,8 +286,10 @@ export function VideoPlayer({
       didMountRef.current = true;
       return;
     }
-    // ⑬：横屏锁 landscape、退出恢复 sensor（系统重力感应，卓易通可转）；首次进入（landscape=false）也恢复一次 sensor
-    requestOrientation(landscape ? 'landscape' : 'sensor');
+    // ⑭：横屏锁 landscape；竖屏/退出横屏锁 portrait。
+    //     原生桥的 portrait 已改为 SENSOR_PORTRAIT（见 android.yml）：只保证「不横屏」，
+    //     不像旧 PORTRAIT 那样死锁，所以卓易通上点横屏依然能转，同时躺着看不会自动转横屏。
+    requestOrientation(landscape ? 'landscape' : 'portrait');
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
@@ -243,7 +300,7 @@ export function VideoPlayer({
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (tapTimer.current) window.clearTimeout(tapTimer.current);
       if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
-      requestOrientation('sensor');
+      requestOrientation('portrait');
     };
   }, []);
 
@@ -302,11 +359,16 @@ export function VideoPlayer({
     const v = videoRef.current;
     if (!v) return;
     let alive = true;
-    appliedStartAt.current = false;
+    // P3：每次（重新）加载都重设续播目标与状态，换集 / 换线路 / 重试都走这里。
+    //     startAt 由上层按「列表项 id + 集数」读出，为 0 时再用本组件自己的 resumeKey 兜一次，
+    //     这样即便上层读键与写入键不一致（id 漂移），本地仍能救回续播。
+    const wantResume = startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0);
+    resumeTargetRef.current = wantResume;
+    resumedRef.current = false;
+    resumeTryTsRef.current = 0;
     introDone.current = false;
     setResolving(true);
     setErr(null);
-    const wantResume = startAt;
     ensureResolved(state.current).then(async (it) => {
       if (!alive || !v) return;
       if (!it.playUrl) {
@@ -325,19 +387,25 @@ export function VideoPlayer({
       });
       const onMeta = () => {
         v.removeEventListener('loadedmetadata', onMeta);
-        if (wantResume > 0 && wantResume < (v.duration || 1e9) - 3) v.currentTime = wantResume;
-        appliedStartAt.current = true;
+        tryApplyResume();
         if (alive) setResolving(false);
       };
       v.addEventListener('loadedmetadata', onMeta);
       // A：若 loadedmetadata 在监听器挂载前就已触发（HLS 起播时序），上面的监听会漏掉，
       //    这里在 readyState>=1 时立即补一次 seek，保证续播一定生效。
       if (v.readyState >= 1) onMeta();
+      // P5：旧实现 8 秒一到就 detachHls 判死 —— 弱网 / 冷启动 / 防盗链重握手稍慢，
+      //     视频就被永久断开，表现为「重新点进去一直转圈然后报超时」。
+      //     改成 8 秒只提示、20 秒才真正放弃，且期间不再打断 hls 加载。
       loadTimer.current = window.setTimeout(() => {
         if (alive && v.readyState < 1) {
-          detachHls(v);
-          setResolving(false);
-          setErr('视频加载超时，请检查网络或换源。');
+          loadTimer.current = window.setTimeout(() => {
+            if (alive && v.readyState < 1) {
+              detachHls(v);
+              setResolving(false);
+              setErr('视频加载超时，请检查网络或换源。');
+            }
+          }, 12000);
         }
       }, 8000);
       v.playbackRate = speed;
@@ -354,7 +422,7 @@ export function VideoPlayer({
       detachHls(v);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.current?.id, state.current?.playUrl, episodeIndex, retryNonce, startAt]);
+  }, [state.current?.id, state.current?.playUrl, episodeIndex, retryNonce, startAt, detail.id, detail.sourceId]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -368,6 +436,29 @@ export function VideoPlayer({
   useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = speed; }, [speed]);
   useEffect(() => { updateSettings({ playbackRate: speed }); }, [speed]);
   useEffect(() => { setLocalCues([]); }, [detail.id, episodeIndex]);
+
+  // ⑭ 换集/换剧时重置片头/片尾「一次性」标记。
+  //    introDone / outroDone 都是 useRef，挂载后不会自动清零 → 第 1 集跳过后切第 2 集时仍为 true，
+  //    于是第 2 集不跳。这里必须重置。
+  //    同时处理「多集共用一个 playUrl」的边界：切集时若 URL 没变，加载 effect 不会重跑，
+  //    视频不会自动回到新集起点。我们在本 effect 里手动 seek 到 startAt（或 0），保证片头/续播逻辑对齐。
+  useEffect(() => {
+    introDone.current = false;
+    outroDone.current = false;
+    clearOutroTimer();
+    const v = videoRef.current;
+    const want = startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0);
+    if (v && v.duration > 0 && want > 0 && want < v.duration - 3) {
+      v.currentTime = want;
+      setLiveCur(want);
+      player.seek(want);
+    } else if (v) {
+      v.currentTime = 0;
+      setLiveCur(0);
+      player.seek(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.id, episodeIndex, resumeKey]);
 
   // 片头跳过
   const trySkipIntro = () => {
@@ -383,13 +474,27 @@ export function VideoPlayer({
   };
 
   // 片尾提前连播（⑥：去掉 autoPlay 前置条件，设了片尾秒数且播到片尾即切下一集）
+  // ⑮ 用户设计：进入片尾区后，继续播放 2 秒再切下一集；下一集播到片尾时间点也继续切。
+  const outroDone = useRef(false);
+  const outroTimer = useRef<number | undefined>(undefined);
+  const clearOutroTimer = () => { if (outroTimer.current) { window.clearTimeout(outroTimer.current); outroTimer.current = undefined; } };
+
   const trySkipOutro = () => {
     const v = videoRef.current;
-    if (!v || !outroSec || !state.duration) return;
+    if (!v || !outroSec || !state.duration || outroDone.current) return;
     const remain = state.duration - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {
-      if (detail.episodes && episodeIndex < detail.episodes.length - 1) { onSelectEpisode(episodeIndex + 1); toast('已跳过片尾'); }
-      else { setEnded(true); toast('已播至片尾'); } // 末集：走 B 方案（重播浮层）
+      if (!outroTimer.current) {
+        outroTimer.current = window.setTimeout(() => {
+          outroTimer.current = undefined;
+          outroDone.current = true;
+          if (detail.episodes && episodeIndex < detail.episodes.length - 1) { onSelectEpisode(episodeIndex + 1); toast('已跳过片尾'); }
+          else { setEnded(true); toast('已播至片尾'); } // 末集：走 B 方案（重播浮层）
+        }, 2000);
+      }
+    } else {
+      // 离开片尾区（用户手动往回拖）→ 取消延迟，避免误切
+      clearOutroTimer();
     }
   };
 
@@ -406,8 +511,9 @@ export function VideoPlayer({
         skipByItem: {
           ...settings.skipByItem,
           [progressKey]: {
-            intro: which === 'intro' ? next : (base.intro ?? settings.skipIntro),
-            outro: which === 'outro' ? next : (base.outro ?? settings.skipOutro),
+            // ⑭ 去掉 settings.skipIntro/skipOutro 全局兜底：取消片头时不再把全局片尾值写进单剧配置
+            intro: which === 'intro' ? next : (base.intro ?? 0),
+            outro: which === 'outro' ? next : (base.outro ?? 0),
           },
         },
       });
@@ -717,6 +823,21 @@ export function VideoPlayer({
     // 只清单击隐藏定时器；绝不碰 tapTimer（双击窗口），否则第二次轻触的 touchstart 捕获清掉第一次轻触的窗口，双击失效（⑥）
     if (singleHideTimer.current) { window.clearTimeout(singleHideTimer.current); singleHideTimer.current = undefined; }
   }, []);
+  // ⑭ 控件隐藏时的点击守卫（挂在竖屏/横屏 overlay 的 onClickCapture）
+  // 需求：控件自动隐藏后点屏幕，无论点的是空白还是「原本有图标的位置」，都只是把控件唤出来，
+  //       绝不执行那个按钮的动作（例如横屏下点在「设置」原位置 → 只显控件，不弹设置抽屉）。
+  // CSS 侧已有 .overlay.hide * { pointer-events: none !important }，但卓易通/鸿蒙 WebView 对
+  // pointer-events 的实现不彻底，某些按钮仍能收到 click。这里在捕获阶段再兜一道：
+  // stopPropagation 会拦住后续冒泡，按钮自己的 onClick 就不会执行了。
+  // 锁定态不拦截 —— 锁定态下小锁是唯一可点元素，交给 onStageTouchEnd 的 locked 分支处理。
+  const guardTapWhenHidden = (e: React.MouseEvent) => {
+    if (locked) return;
+    if (controlsVisible) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setControlsVisible(true);
+    if (state.isPlaying) scheduleHide();
+  };
   // 单击切换控件显隐；播放态 3s 后自动隐藏；锁屏强制常显（竖屏/横屏通用）
   const scheduleHide = () => {
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
@@ -832,14 +953,16 @@ export function VideoPlayer({
             // T3：缓冲开始 → 延迟 300ms 显示转圈；播放/可播/seek 完成 → 立即取消
             onWaiting={() => markBuffering()}
             onStalled={() => markBuffering()}
-            onSeeking={() => markBuffering()}
+            // P3：用户自己拖进度条 / 手势快进时，放弃自动续播，不与用户抢位置
+            onSeeking={() => { if (!autoSeekingRef.current) resumedRef.current = true; markBuffering(); }}
             onPlaying={clearBuffering}
-            onCanPlay={clearBuffering}
-            onSeeked={() => { saveProgress(true); clearBuffering(); }}
+            onCanPlay={() => { clearBuffering(); tryApplyResume(); }}
+            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); }}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
               setLiveCur(v.currentTime);
               setLiveDur(v.duration || 0);
+              lastTimeRef.current = v.currentTime; // P2：卸载补写的镜像
               player.setProgress(v.currentTime);
               // T4：已缓冲进度 = buffered 末尾 / 总时长（reused 现有 250ms 周期，不必另开定时器）
               try {
@@ -849,15 +972,7 @@ export function VideoPlayer({
                 }
               } catch { /* ignore */ }
               saveProgress(); // N4：内部 5 秒节流
-              // N3 兜底：onLoadedMetadata 时 duration 可能未就绪导致漏续播，这里补一次（仅 seek 一次）
-              if (!appliedStartAt.current && v.duration > 0) {
-                const saved = library.lib.watchProgress[resumeKey] ?? 0;
-                if (saved > 5 && saved < v.duration * 0.95) {
-                  v.currentTime = saved; setLiveCur(saved); player.seek(saved);
-                  appliedStartAt.current = true;
-                  toast(`上次看到 ${fmtTime(saved)}，已为你续播`);
-                }
-              }
+              tryApplyResume(); // P3：只要还没真正跳到目标位置就继续重试
               trySkipIntro();
               trySkipOutro();
             }}
@@ -866,22 +981,13 @@ export function VideoPlayer({
               setLiveDur(v.duration || 0);
               player.setDuration(v.duration);
               if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
-              // N1/N2/N3：续播 —— 上次看到哪儿就接着播
-              const d = v.duration || 0;
-              // 续播兜底：startAt（来自首页/搜索/历史）已在 onMeta 应用过则跳过，否则用本地进度恢复
-              // 去掉 resumedKeyRef 守卫：同集重看时 resumeKey 不变会被旧守卫跳过，导致「再看不续播」（⑤）
-              if (d > 0 && !appliedStartAt.current) {
-                const saved = library.lib.watchProgress[resumeKey] ?? 0;
-                // N3：超过 95% 视为已看完 → 从头播；N1：不足 5 秒不恢复（误触）
-                if (saved > 5 && saved < d * 0.95) {
-                  v.currentTime = saved;
-                  setLiveCur(saved);
-                  player.seek(saved);
-                  toast(`上次看到 ${fmtTime(saved)}，已为你续播`); // N2
-                }
-              }
+              tryApplyResume(); // P3
             }}
-            onDurationChange={(e) => { const v = e.target as HTMLVideoElement; setLiveDur(v.duration || 0); }}
+            onDurationChange={(e) => {
+              const v = e.target as HTMLVideoElement;
+              setLiveDur(v.duration || 0);
+              tryApplyResume(); // P3：HLS 的 duration 常常晚于 loadedmetadata 才好，这里再补一次
+            }}
             onError={() => {
               if (videoRef.current) detachHls(videoRef.current);
               setResolving(false);
@@ -943,7 +1049,7 @@ export function VideoPlayer({
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
           {!landscape && (
-            <div className={'overlay' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer}>
+            <div className={'overlay' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
               <div className="top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
@@ -992,7 +1098,7 @@ export function VideoPlayer({
 
           {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
           {landscape && (
-            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer}>
+            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
               {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
                 <button className="back" onClick={toggleLandscape} title="返回"><Icon name="arrow-left" size={18} /></button>

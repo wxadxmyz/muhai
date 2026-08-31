@@ -186,8 +186,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     } else {
       setIsFullscreen(false);
       setLocked(false);
-      // ⑬ 退出横屏恢复 sensor（系统重力感应，卓易通可转）；视频继续播，不暂停
-      requestOrientation('sensor');
+      // ⑭ 退出横屏锁 portrait（原生桥已改为 SENSOR_PORTRAIT：不横屏也不死锁），视频继续播，不暂停
+      requestOrientation('portrait');
       requestImmersive(false);
     }
   }, [isFullscreen, showLandControls]);

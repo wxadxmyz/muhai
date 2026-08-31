@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer } from 'react';
 
 export interface AppSettings {
   downloadDir: string;
@@ -62,22 +62,64 @@ const DEFAULTS: AppSettings = {
   blocklist: [...DEFAULT_BLOCKLIST],
 };
 
-export function useSettings() {
-  const [settings, setSettings] = useState<AppSettings>(() => {
+/* ⑭ 全局单例 store（关键修复）
+   旧实现用 useState —— 每个调用 useSettings() 的组件都各自持有一份互不相通的内存副本，
+   唯一交集是 localStorage。于是出现「写了没人读」的致命问题：
+     VideoPlayer 用 props.settings（父组件那份）读取，却用自己 new 出来的第二个副本的 update 写入，
+     写入只更新了没人读的那份 → 片头/片尾标记永远读不到 → 图标不变数字、跳过也不执行。
+     这也解释了为什么前几个版本改触发方式（Touch/onClick）、改全局兜底都无效 —— 源头就没打通。
+   现在改成模块级单例 + 订阅广播：任何组件 update，所有组件立刻拿到同一份最新值。 */
+
+function loadSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+  } catch {
+    /* ignore */
+  }
+  return DEFAULTS;
+}
+
+let globalSettings: AppSettings = loadSettings();
+const listeners = new Set<() => void>();
+
+function emitChange() {
+  listeners.forEach((l) => {
     try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) return { ...DEFAULTS, ...JSON.parse(raw) };
+      l();
     } catch {
       /* ignore */
     }
-    return DEFAULTS;
   });
+}
+
+/** 非组件环境（如工具函数）读取当前设置 */
+export function getSettings(): AppSettings {
+  return globalSettings;
+}
+
+/** 非组件环境写入设置（同样会广播给所有组件） */
+export function updateSettingsGlobal(patch: Partial<AppSettings>) {
+  globalSettings = { ...globalSettings, ...patch };
+  try {
+    localStorage.setItem(KEY, JSON.stringify(globalSettings));
+  } catch {
+    /* ignore */
+  }
+  emitChange();
+}
+
+export function useSettings() {
+  const [, forceRender] = useReducer((c: number) => c + 1, 0);
 
   useEffect(() => {
-    localStorage.setItem(KEY, JSON.stringify(settings));
-  }, [settings]);
+    listeners.add(forceRender);
+    return () => {
+      listeners.delete(forceRender);
+    };
+  }, [forceRender]);
 
-  const update = (patch: Partial<AppSettings>) => setSettings((s) => ({ ...s, ...patch }));
+  const update = (patch: Partial<AppSettings>) => updateSettingsGlobal(patch);
 
-  return { settings, update };
+  return { settings: globalSettings, update };
 }

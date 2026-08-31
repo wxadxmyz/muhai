@@ -185,14 +185,16 @@ export default function VideoApp() {
       createSource(cfg).getDetail(it.id).then((d) => {
         if (!d || !d.id) return;
         if (!(d.episodes?.length || (d as any).cover || ((d as any).raw?.vod_pic))) return;
-        const full = { ...it, ...d, raw: { ...it.raw, ...(d as any).raw } };
+        // P6：详情补全只补 UI 字段（封面 / 选集 / 演职员），绝不覆盖 id 与 sourceId。
+        //     否则进度会「按详情 id 写、按列表 id 读」，两套键对不上，续播必然失效。
+        const full = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
         if (!hadEps && resumeEp > 0) {
           // 列表项无选集：用补全后的详情跳到续播集
           playEpisode(full, resumeEp, 0, true);
         } else {
           // 仅补全封面/选集 UI，不打断当前播放
           setDetail((prev) => (prev && prev.sourceId === it.sourceId && prev.id === it.id
-            ? { ...prev, ...full, episodes: full.episodes ?? prev.episodes }
+            ? { ...prev, ...full, id: prev.id, sourceId: prev.sourceId, episodes: full.episodes ?? prev.episodes }
             : prev));
         }
       }).catch(() => {});

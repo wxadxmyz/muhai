@@ -13,19 +13,21 @@ import {
 } from '../../lib/disclaimer';
 import { useSettings } from '../../lib/settings';
 
-// v3.0.2 首页板块：热播影视(国产电视剧) → 电影(国产) → 综艺(国产)，互不串门
-type SectionKey = 'hot' | 'movie' | 'variety';
+// v3.0.2 首页板块：电视剧 → 电影 → 综艺 → 动漫（v3.1.12 新增「动漫」块），互不串门
+type SectionKey = 'hot' | 'movie' | 'variety' | 'anime';
 
-// ⑬ 国产内地判定：地区明确海外、或标题命中黑名单词（韩/美/日…）→ 非国产；其余（含台/港/澳及无地区但标题含中文）→ 视为国产
+// v3.1.12 国产内地判定（用户确认：港澳台不算内地，只留内地）。
+//   地区字段明确海外/港澳台/含海外词 → 非国产；明确国产/内地/华语 → 国产；
+//   地区字段存在但不明确 → 非国产（宁缺毋滥，避免漏网外国片）；无地区字段再走标题黑名单兜底。
 function isDomestic(it: MediaItem, blocklist: string[]): boolean {
   const raw: any = it.raw ?? {};
   const area = String(raw.vod_area ?? raw.area ?? raw.region ?? '').toLowerCase();
   if (area) {
-    if (/国产|大陆|内地|华语|中国|中剧|国产剧|cn|china|台|港|澳/.test(area)) return true;
-    if (/美|韩|日|泰|英|法|欧|印度|海外/.test(area)) return false;
-    return true; // 地区字段存在但非明确海外，按国产保留
+    if (/美|韩|日|泰|英|法|俄|德|意|西|印|欧|澳|港|台|海外|欧美|日韩/.test(area)) return false;
+    if (/国产|大陆|内地|华语|中国|中剧|国产剧|cn|china/.test(area)) return true;
+    return false; // 地区字段存在但非明确国产 → 当作非国产（v3.1.12 收紧）
   }
-  // 无地区字段：标题命中黑名单词 → 非国产
+  // 无地区字段：标题命中黑名单词（含单字韩/美/日…及 港澳台/海外 词）→ 非国产
   const t = it.title.toLowerCase();
   for (const w of blocklist) if (w && t.includes(w.toLowerCase())) return false;
   // 否则标题含中文字符则视为国产
@@ -50,11 +52,20 @@ function classify(it: MediaItem): SectionKey | null {
   const remarks = String(raw.vod_remarks ?? raw.type_name ?? it.artist ?? '').toLowerCase();
   const t = it.title.toLowerCase();
   const blob = g + ' ' + remarks + ' ' + t;
+  // v3.1.12：动漫优先识别，避免「集数>1」的动漫被误归电视剧块
+  if (/动漫|动画|anime|cartoon/.test(blob)) return 'anime';
   if (/综艺|variety|真人秀|选秀|脱口秀|访谈|脱口/.test(blob)) return 'variety';
   if (/电视剧|剧集|连续剧|电视连续剧|国产剧|台剧|港剧|drama|tvb|tv series|tvshow|tv/.test(blob)
       || /集$/.test(remarks) || (raw.vod_total && +raw.vod_total > 1)) return 'hot';
   if (/电影|movie|film/.test(g) || it.mediaType === 'video') return 'movie';
   return 'movie';
+}
+
+// 热度（用于排序）：优先源的 vod_hot/vod_hits/vod_score，回退评分；缺省 0
+function heatOf(it: MediaItem): number {
+  const raw: any = it.raw ?? {};
+  const h = Number(raw.vod_hot ?? raw.vod_hits ?? raw.vod_score ?? it.score ?? 0);
+  return isFinite(h) ? h : 0;
 }
 
 export function Home({
@@ -145,18 +156,25 @@ export function Home({
     };
   }, [sources, stations, activeStation]);
 
-  // v3.0.2：三块各自按"国产 + 类型"过滤，并按下更新时间倒序（方案A 近似"豆瓣最新"）
+  // v3.1.12：四块各自按"国产 + 类型"过滤，并按「热度降序 → 上映时间/更新时间降序」排序
+  // （热度最高的、上映最新的排前面）
   const domestic = homeItems.filter((it) => isDomestic(it, settings.blocklist ?? []));
-  const sorted = [...domestic].sort((a, b) => updateTimeOf(b) - updateTimeOf(a));
+  const sorted = [...domestic].sort((a, b) => {
+    const dh = heatOf(b) - heatOf(a);
+    if (dh !== 0) return dh;
+    return updateTimeOf(b) - updateTimeOf(a);
+  });
   const hot = sorted.filter((it) => classify(it) === 'hot').slice(0, 6);
   const movies = sorted.filter((it) => classify(it) === 'movie').slice(0, 6);
   const variety = sorted.filter((it) => classify(it) === 'variety').slice(0, 6);
+  const anime = sorted.filter((it) => classify(it) === 'anime').slice(0, 6);
   // ⑬ 降级只从「已过滤国产」的 domestic 补，不再从全量（含外国）补，避免板块混入非国产
   const fallback = (arr: MediaItem[], key: SectionKey) =>
     arr.length ? arr : domestic.filter((it) => classify(it) === key).slice(0, 6);
   const hotFinal = fallback(hot, 'hot');
   const moviesFinal = fallback(movies, 'movie');
   const varietyFinal = fallback(variety, 'variety');
+  const animeFinal = fallback(anime, 'anime');
 
   const enabledCount = sources.filter((s) => s.enabled).length;
   const activeStationName =
@@ -236,9 +254,10 @@ export function Home({
         </div>
       ) : (
         <>
-          <Section title="热播影视" items={hotFinal} />
-          <Section title="电影 · 国产精选" items={moviesFinal} />
-          <Section title="综艺 · 热榜" items={varietyFinal} />
+          <Section title="电视剧" items={hotFinal} />
+          <Section title="电影" items={moviesFinal} />
+          <Section title="综艺" items={varietyFinal} />
+          <Section title="动漫" items={animeFinal} />
         </>
       )}
 

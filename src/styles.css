@@ -201,7 +201,7 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ⑭ 去掉 max()：卓易通 WebView 上 max() 失效会拖垮整条规则。
    calc(var(--sat) - 22px) 在 --sat < 22px 时为负 → padding 负值非法 → 整条规则被丢弃 = 0，
    效果与 max(0px, ...) 一致，且兼容性更好。 */
-.view.library .tabs { padding-top: calc(var(--sat) - 22px); }
+.view.library .tabs { padding-top: max(0px, calc(var(--sat) - 22px)); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -248,7 +248,7 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ============ 设置页 · iOS 风分组卡片（两个 App 共用）============ */
 /* A3：设置页顶部预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
 /* ⑭ 同上：拆开写，避免 max() 失效时把左右/底部 padding 一起拖没 */
-.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: 4px 2px 8px; padding-top: calc(4px + var(--sat) - 22px); }
+.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(4px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
@@ -552,7 +552,22 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
    原 .player-card.land .vp-panel 是后代选择器，而面板在 DOM 里是 .player-card 的兄弟节点，
    选择器永不命中、面板被 z-index:100 播放层盖住。改为独立遮罩+抽屉结构，脱离嵌套依赖。 */
 .vp-drawer-mask { position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
-.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: rgba(16,20,28,.96); color: #fff; border-radius: 22px 22px 0 0; padding: 10px 16px calc(24px + env(safe-area-inset-bottom)); animation: pop .16s ease; }
+.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: linear-gradient(180deg, #1b2330 0%, #141b26 100%); color: #fff; border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
+.vp-sub-drawer::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); margin: 4px auto 12px; }
+.player-card.land .vp-sub-drawer::before { display: none; }
+.vp-panel-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; font-weight: 700; margin: 2px 2px 14px; color: #fff; }
+.vp-panel-head .link { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,.1); color: #fff; font-size: 16px; cursor: pointer; display: grid; place-items: center; }
+.vp-panel-head .link:hover { background: rgba(255,255,255,.18); }
+.vp-sub-drawer > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: rgba(255,255,255,.82); margin: 14px 2px 4px; }
+.vp-sub-drawer > label b { color: var(--accent); font-weight: 700; }
+.vp-sub-drawer input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 4px; background: rgba(255,255,255,.18); outline: none; margin: 0 4px; }
+.vp-sub-drawer input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+.vp-sub-drawer input[type="color"] { width: 44px; height: 30px; border: none; border-radius: 8px; background: none; cursor: pointer; padding: 0; }
+.vp-panel-row { display: flex; align-items: center; gap: 10px; margin: 14px 2px 4px; flex-wrap: wrap; }
+.vp-panel-row > span:first-child { font-size: 14px; color: rgba(255,255,255,.82); min-width: 40px; }
+.vp-panel-row .mini { border-radius: 999px; padding: 8px 16px; font-size: 13px; min-width: 0; width: auto; height: auto; background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.14); }
+.vp-panel-row .mini.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; font-weight: 600; }
+.vp-panel-row label.row { display: inline-flex; }
 .player-card.land .vp-drawer-mask { align-items: stretch; justify-content: flex-end; }
 .player-card.land .vp-sub-drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
 .player-card.land .drawer-mask { align-items: stretch; justify-content: flex-start; }
@@ -661,23 +676,16 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   .app .main:not(.main-live) { padding: calc(14px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
   /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
   .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
-  /* A8：卡片上滑不顶进通知栏。
-     padding-top 只把内容「初始位置」推下去，滚动时内容照样穿过 padding 一路滚到屏幕最顶端。
-     这里在滚动容器内容流最前面插一条 sticky 不透明挡板：
-       · height = var(--sat)          —— 正好盖住通知栏那条区域
-       · margin-top 取 -var(--sat)    —— 塞回原本的 padding 空白区，不占流空间、不推挤内容
-       · z-index 3                    —— 高于卡片（auto，滚上去被遮住）、低于顶栏
-                                         （.tabs=5 / .home-top.v25=20，顶栏照常显示）
-     配合 lib/safeArea.ts 的 JS 兜底，--sat 不会因 WebView 上报 0 而失效。 */
-  .main:not(button):not(.main-live)::before {
+  /* A8（v3.1.12 重做）：不再用 sticky::before 挡板（会留 14px 缝隙、且把 home-top 双重下推成「太靠下」）。
+     滚动容器 .main 的 padding-top(14px+var(--sat)) 本身就是「天花板」——内容无法滚过容器顶部。
+     移动端另加下方 .app::before 固定遮罩，罩住状态栏那条区域（含点播竖屏页），上滑时被它挡住。 */
+  .app::before {
     content: '';
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    display: block;
+    position: fixed;
+    top: 0; left: 0; right: 0;
     height: var(--sat);
-    margin-top: calc(-1 * var(--sat));
     background: var(--bg);
+    z-index: 50;
     pointer-events: none;
   }
   /* L9：移动端隐藏占位滚动条（真机 WebView 按占位式渲染，白吃 10px 宽；触摸/惯性滚动不受影响）。
@@ -755,7 +763,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
    但 max() 在卓易通 WebView 上会整条失效（同 --sat 的坑），这里一并去掉：
    初始位置的安全区由 .main 的 padding-top（calc(14px + var(--sat))）提供，
    吸顶后顶栏贴在 header 之下，安全区由 header 承担，无需重复留白。 */
-.home-top.v25{position:sticky;top:var(--sat);z-index:20;background:var(--bg);display:flex;align-items:center;gap:10px;padding:10px 14px;}
+.home-top.v25{display:flex;align-items:center;gap:10px;padding:calc(10px + max(0px, calc(var(--sat) - 22px))) 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -1510,6 +1518,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
 .big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.68); color: var(--accent); display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
+/* v3.1.12：竖屏底栏改纵向——进度条一行 + 时间一行；时间行两端对齐进度条（左=当前 右=总时长） */
+.player-card:not(.land) .bottom { flex-direction: column; align-items: stretch; gap: 8px; }
+.player-card:not(.land) .bottom .bottom-row { display: flex; align-items: center; gap: 10px; }
 /* T6：底栏播放/暂停放大到 44px 圆钮（原无尺寸） */
 .player-card .bottom .play-ico { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; cursor: pointer; flex: 0 0 auto; }
 .player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
@@ -1521,10 +1532,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 /* ⑬ 竖屏进度条左右时间（历史遗留规则，.t 现由下方 .times 承载） */
 .player-card .bottom .t { font-size: 12px; color: #fff; min-width: 42px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-/* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方，左=当前 右=总时长。
-   上移 6px 抵消 .bottom 的 padding-bottom:14px，视觉上紧贴进度条。 */
+/* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方；两端对齐进度条（左=当前 右=总时长）。
+   左右 padding 54px = 播放/横屏钮 44px + 间距 10px，与进度条两端精确对齐。 */
 .player-card .overlay .times {
-  position: relative; z-index: 3; margin-top: -6px; padding: 0 14px 10px;
+  position: relative; z-index: 3; margin-top: 0; padding: 2px 54px 4px;
   display: flex; align-items: center; justify-content: space-between;
   pointer-events: none; /* 纯展示，不拦截单击显隐 */
 }

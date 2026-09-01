@@ -169,6 +169,7 @@ export function VideoPlayer({
   const [pipMode, setPipMode] = useState(false); // ② 进入系统画中画（隐藏控件，纯视频）
 
   const introDone = useRef(false);
+  const pendingIntro = useRef(false); // v3.1.12：是否已发出片头 seek，等待 onSeeked/onTimeUpdate 确认到达
   const loadTimer = useRef<number | undefined>(undefined);
   const lastTouchRef = useRef(0); // ③ 触摸结束后抑制随后合成的 click，避免移动端双击被抵消
   // P1：续播四件套 —— 目标秒数 / 是否已确认到位 / 首次尝试时间戳 / 是否本组件自动 seek
@@ -444,6 +445,7 @@ export function VideoPlayer({
   //    视频不会自动回到新集起点。我们在本 effect 里手动 seek 到 startAt（或 0），保证片头/续播逻辑对齐。
   useEffect(() => {
     introDone.current = false;
+    pendingIntro.current = false;
     outroDone.current = false;
     clearOutroTimer();
     const v = videoRef.current;
@@ -464,12 +466,26 @@ export function VideoPlayer({
   const trySkipIntro = () => {
     const v = videoRef.current;
     if (!v || !introSec || introDone.current) return;
-    // ⑤：只要在片头范围内就跳（不再卡死 <0.6s）；seek 成功后再置 introDone
+    // v3.1.12：真机 player.seek() 是异步的，若立即置 introDone 会导致「永不重试/跳过无效」。
+    // 改为：先发 seek 并标记 pendingIntro，待 onSeeked / onTimeUpdate 确认 currentTime 真正到达片头点后再置位。
+    if (pendingIntro.current) {
+      if (v.currentTime >= introSec - 0.6) {
+        introDone.current = true;
+        pendingIntro.current = false;
+        toast('已跳过片头');
+      }
+      return;
+    }
     if (v.currentTime < introSec) {
+      pendingIntro.current = true;
       player.seek(introSec);
       try { v.currentTime = introSec; } catch { /* ignore */ }
-      introDone.current = true;
-      toast('已跳过片头');
+      // 同步完成（桌面/部分 WebView）：当前帧已到片头点，直接确认
+      if (v.currentTime >= introSec - 0.6) {
+        introDone.current = true;
+        pendingIntro.current = false;
+        toast('已跳过片头');
+      }
     }
   };
 
@@ -957,7 +973,7 @@ export function VideoPlayer({
             onSeeking={() => { if (!autoSeekingRef.current) resumedRef.current = true; markBuffering(); }}
             onPlaying={clearBuffering}
             onCanPlay={() => { clearBuffering(); tryApplyResume(); }}
-            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); }}
+            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); trySkipIntro(); }}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
               setLiveCur(v.currentTime);
@@ -1067,23 +1083,25 @@ export function VideoPlayer({
                 </button>
               </div>
               <div className="bottom">
-                <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
-                <div className="bar" onClick={(e) => {
-                  const v = videoRef.current; if (!v || !liveDur) return;
-                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-                  v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
-                }}>
-                  {/* T4：已缓冲进度（浅色），复用 onTimeUpdate 兜底刷新，层级介于轨道与已播放之间 */}
-                  <div className="buffered" style={{ width: `${bufPct}%` }} />
-                  <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                <div className="bottom-row">
+                  <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                  <div className="bar" onClick={(e) => {
+                    const v = videoRef.current; if (!v || !liveDur) return;
+                    const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                    const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                    v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
+                  }}>
+                    {/* T4：已缓冲进度（浅色），复用 onTimeUpdate 兜底刷新，层级介于轨道与已播放之间 */}
+                    <div className="buffered" style={{ width: `${bufPct}%` }} />
+                    <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                  </div>
+                  <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
                 </div>
-                <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
-              </div>
-              {/* ⑬ 竖屏：当前/总时长移到进度条下方两端（左=当前，右=总时长） */}
-              <div className="times">
-                <span className="t">{fmtTime(liveCur)}</span>
-                <span className="t">{fmtTime(liveDur)}</span>
+                {/* ⑬ 竖屏：当前/总时长在进度条下方，左=当前 右=总时长，两端对齐进度条 */}
+                <div className="times">
+                  <span className="t">{fmtTime(liveCur)}</span>
+                  <span className="t">{fmtTime(liveDur)}</span>
+                </div>
               </div>
               {/* 竖屏左中：弹幕（从右上移到左中） */}
               <div className="vp-side vp-side-left">

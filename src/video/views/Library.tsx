@@ -36,10 +36,10 @@ export function VideoLibrary({
   return (
     <div className="view library">
       <div className="tabs">
-        <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
+        <button className={tab === 'history' ? 'active' : ''} onClick={(e) => { setTab('history'); (e.currentTarget.closest('.main') as HTMLElement | null)?.scrollTo({ top: 0 }); }}>
           观看历史
         </button>
-        <button className={tab === 'fav' ? 'active' : ''} onClick={() => setTab('fav')}>
+        <button className={tab === 'fav' ? 'active' : ''} onClick={(e) => { setTab('fav'); (e.currentTarget.closest('.main') as HTMLElement | null)?.scrollTo({ top: 0 }); }}>
           影视收藏
         </button>
       </div>

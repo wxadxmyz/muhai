@@ -548,7 +548,13 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 /* ⑨ 横屏：字幕/清晰度面板改侧边抽屉，不沉到竖屏式底部；设置抽屉同样改侧边。
    ⑭ 从左侧改到右侧（与设置/选集抽屉统一在右侧），并提层级到 210 ——
       原 z-index 7 会被同层的 .drawer-mask（z-index 200）盖住，表现为「点了字幕没浮窗」。 */
-.player-card.land .vp-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 260px; background: rgba(16,20,28,.96); border-left: 1px solid var(--border); z-index: 210; overflow-y: auto; padding: 16px; }
+/* L11：清晰度/字幕面板 → 右侧抽屉（与「设置」抽屉一致：竖屏底部抽屉、横屏右侧竖抽屉）。
+   原 .player-card.land .vp-panel 是后代选择器，而面板在 DOM 里是 .player-card 的兄弟节点，
+   选择器永不命中、面板被 z-index:100 播放层盖住。改为独立遮罩+抽屉结构，脱离嵌套依赖。 */
+.vp-drawer-mask { position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
+.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: rgba(16,20,28,.96); color: #fff; border-radius: 22px 22px 0 0; padding: 10px 16px calc(24px + env(safe-area-inset-bottom)); animation: pop .16s ease; }
+.player-card.land .vp-drawer-mask { align-items: stretch; justify-content: flex-end; }
+.player-card.land .vp-sub-drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
 .player-card.land .drawer-mask { align-items: stretch; justify-content: flex-start; }
 .player-card.land .drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
 
@@ -650,7 +656,11 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   .app { flex-direction: column; height: 100vh; height: 100dvh; }
   .sidebar, .topbar { display: none; }
 
-  .main { padding: calc(14px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
+  /* L7：特异性 bug 修复。桌面 `.main:not(button)`(0,1,1) 压住移动端 `.main`(0,1,0) 与 `.main-live`(0,1,0)，
+     导致真机左右各空 28px、顶部安全区失效、直播页整页可滚。这里用更高特异性(0,2,1)抢回覆盖。 */
+  .app .main:not(.main-live) { padding: calc(14px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
+  /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
+  .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
   /* A8：卡片上滑不顶进通知栏。
      padding-top 只把内容「初始位置」推下去，滚动时内容照样穿过 padding 一路滚到屏幕最顶端。
      这里在滚动容器内容流最前面插一条 sticky 不透明挡板：
@@ -670,6 +680,10 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
     background: var(--bg);
     pointer-events: none;
   }
+  /* L9：移动端隐藏占位滚动条（真机 WebView 按占位式渲染，白吃 10px 宽；触摸/惯性滚动不受影响）。
+     覆盖默认规则、回收每页左右约 10px；桌面保留细条。 */
+  .main, .player-root, .live-list, .fullpage-body { scrollbar-width: none; -ms-overflow-style: none; }
+  .main::-webkit-scrollbar, .player-root::-webkit-scrollbar, .live-list::-webkit-scrollbar, .fullpage-body::-webkit-scrollbar { width: 0; height: 0; display: none; }
   /* 主页/历史移动端同样贴边（抵消 .main 左右 14px） */
   .view.home, .view.library { margin-left: -14px; margin-right: -14px; }
   .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
@@ -741,7 +755,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
    但 max() 在卓易通 WebView 上会整条失效（同 --sat 的坑），这里一并去掉：
    初始位置的安全区由 .main 的 padding-top（calc(14px + var(--sat))）提供，
    吸顶后顶栏贴在 header 之下，安全区由 header 承担，无需重复留白。 */
-.home-top.v25{position:sticky;top:0;z-index:20;background:var(--bg);display:flex;align-items:center;gap:10px;padding:10px 14px;}
+.home-top.v25{position:sticky;top:var(--sat);z-index:20;background:var(--bg);display:flex;align-items:center;gap:10px;padding:10px 14px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;

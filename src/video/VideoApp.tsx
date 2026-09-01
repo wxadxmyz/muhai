@@ -35,6 +35,7 @@ export default function VideoApp() {
   useSwipeBack();
 
   const [tab, setTab] = useState<Tab>('home');
+  const mainRef = useRef<HTMLElement>(null);
   const [detail, setDetail] = useState<MediaItem | null>(null);
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [line, setLine] = useState(0);
@@ -52,6 +53,11 @@ export default function VideoApp() {
       document.documentElement.style.setProperty('--accent2', settings.themeColor);
     }
   }, [settings.themeColor]);
+
+  // L8：切换底部 tab 时，共享滚动容器 .main 回到顶部，避免「主页上滑后切历史/收藏/设置仍停在旧位置」
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [tab]);
 
   // Android 原生返回键桥接：Kotlin MainActivity 通过 __onAndroidBack 调用此函数
   useEffect(() => {
@@ -279,7 +285,7 @@ export default function VideoApp() {
       {/* ⑬ 直播页满屏（无滚动、无 padding）改用动态 class：
           原 `.main:has(.view.live)` 在卓易通/鸿蒙 WebView 上会误匹配历史、收藏页，
           把它们的 .main 也设成 padding:0 + overflow:hidden，卡片于是顶进通知栏 */}
-      <main className={tab === 'live' ? 'main main-live' : 'main'}>
+      <main ref={mainRef} className={tab === 'live' ? 'main main-live' : 'main'}>
         {playingVideo && detail && (
           <div className="fullpage player-page">
           <ErrorBoundary name="播放器">

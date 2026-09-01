@@ -1261,7 +1261,8 @@ export function VideoPlayer({
 
       {/* S2 · 清晰度档位选择：多码率 m3u8 才出现，选中即刻生效 */}
       {levelOpen && (
-        <div className="vp-panel">
+        <div className="vp-drawer-mask" onClick={() => setLevelOpen(false)}>
+          <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
           <div className="vp-panel-head">选择清晰度
             <button className="link" onClick={() => setLevelOpen(false)}>关闭</button>
           </div>
@@ -1281,12 +1282,14 @@ export function VideoPlayer({
               </button>
             ))}
           </div>
+          </div>
         </div>
       )}
 
       {/* 字幕样式面板 */}
       {showSubStyle && (
-        <div className="vp-panel">
+        <div className="vp-drawer-mask" onClick={() => setShowSubStyle(false)}>
+          <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
           <div className="vp-panel-head">字幕样式
             <button className="link" onClick={() => setShowSubStyle(false)}>关闭</button>
           </div>
@@ -1302,6 +1305,7 @@ export function VideoPlayer({
           <div className="vp-panel-row">
             <label className="row"><input type="checkbox" checked={ss.outline} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, outline: e.target.checked } })} /> 描边</label>
             <label className="row"><input type="checkbox" checked={ss.bg} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, bg: e.target.checked } })} /> 背景条</label>
+          </div>
           </div>
         </div>
       )}

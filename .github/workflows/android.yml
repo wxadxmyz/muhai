@@ -231,14 +231,12 @@ jobs:
                                   }
                                   else -> {
                                       _stopLandscapeSensor()    // 退出横屏即停监听，不耗电
-                                      // ⑭ 竖屏改用 SENSOR_PORTRAIT（允许正竖/倒竖跟随重力，但永远不会横过来）。
-                                      //    旧实现用 PORTRAIT（值 1）会「死锁」：卓易通兼容层上一经设置就把方向写死，
-                                      //    之后请求 LANDSCAPE 被吞掉 —— 这正是 v3.1.4~v3.1.8「点横屏按钮没反应」的根因。
-                                      //    SENSOR_PORTRAIT 只约束「不横屏」，不锁死方向切换能力，因此：
-                                      //      · 竖屏播放时横着握持（躺着看）→ 不会自动转横屏 ✔
-                                      //      · 点横屏按钮 → LANDSCAPE 请求能正常生效 ✔
-                                      //      · 退出横屏 → 回到这里，同样不会自动横 ✔
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                                      // ⑭ 竖屏方向。v3.1.10 曾改为 SENSOR_PORTRAIT，但用户真机（卓易通/鸿蒙）实测：
+                                      //    设过 SENSOR_PORTRAIT 后，后续点「横屏」的 LANDSCAPE 请求被吞掉、退出横屏也回不到竖屏
+                                      //    —— 即「v3.1.8 能转横屏、v3.1.10 不能」。回退到 PORTRAIT 恢复 3.1.8 行为。
+                                      //    代价：躺着看（横握）不会自动转横屏。若卓易通上出现「点横屏没反应」，
+                                      //    优先从 JS 桥侧（orientation.ts 超时补发）解决，而非再动此处。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                                   }
                               }
                           } catch (e: Exception) { /* ignore */ }

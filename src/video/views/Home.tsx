@@ -19,18 +19,22 @@ type SectionKey = 'hot' | 'movie' | 'variety' | 'anime';
 // v3.1.12 国产内地判定（用户确认：港澳台不算内地，只留内地）。
 //   地区字段明确海外/港澳台/含海外词 → 非国产；明确国产/内地/华语 → 国产；
 //   地区字段存在但不明确 → 非国产（宁缺毋滥，避免漏网外国片）；无地区字段再走标题黑名单兜底。
+// ⑯ v3.2.0 内置「仅显示内地影片」规则（硬编码常驻，不依赖任何开关）：
+//   地区字段明确海外/港澳台/含英文名或拼音 → 一律排除；只明确 国产/内地/华语 才保留；
+//   无地区字段再走标题黑名单兜底（含单字外语标记 + 用户自定义 blocklist），仍无法确认内地 → 当非国产排除。
 function isDomestic(it: MediaItem, blocklist: string[]): boolean {
   const raw: any = it.raw ?? {};
   const area = String(raw.vod_area ?? raw.area ?? raw.region ?? '').toLowerCase();
   if (area) {
-    if (/美|韩|日|泰|英|法|俄|德|意|西|印|欧|澳|港|台|海外|欧美|日韩/.test(area)) return false;
-    if (/国产|大陆|内地|华语|中国|中剧|国产剧|cn|china/.test(area)) return true;
-    return false; // 地区字段存在但非明确国产 → 当作非国产（v3.1.12 收紧）
+    if (/美|韩|日|泰|英|法|俄|德|意|西|印|欧|澳|港|台|海外|欧美|日韩|usa|uk|us|korea|japan|japanese|thai|england|france|russia|german|italy|spain|india|hongkong|taiwan|macau|hk|tw|mo/.test(area)) return false;
+    if (/国产|大陆|内地|华语|中国|中剧|国产剧|china/.test(area)) return true;
+    return false; // 地区字段存在但非明确国产（含 cn 等模糊值）→ 当作非国产
   }
-  // 无地区字段：标题命中黑名单词（含单字韩/美/日…及 港澳台/海外 词）→ 非国产
   const t = it.title.toLowerCase();
+  // 标题黑名单兜底：港澳台/海外词 + 单字外语标记（覆盖无地区字段的外国片）
+  const titleBlock = ['韩剧','韩综','美剧','美综','日剧','日综','泰剧','英剧','法剧','印度剧','欧美','日韩','海外','韩','美','日','泰','英','法','俄','德','意','西','印','欧','港','台','澳','korean','japanese','american','english','hollywood'];
+  for (const w of titleBlock) if (w && t.includes(w)) return false;
   for (const w of blocklist) if (w && t.includes(w.toLowerCase())) return false;
-  // 否则标题含中文字符则视为国产
   return /[一-龥]/.test(it.title);
 }
 
@@ -180,17 +184,23 @@ export function Home({
   const activeStationName =
     activeStation === 'all' ? '全部站点' : (stations.find((s) => s.id === activeStation)?.name ?? '全部站点');
 
-  const PosterCard = ({ it }: { it: MediaItem }) => (
-    <div className="pcard" onClick={() => onOpenDetail(it)}>
-      <div className="pcover" style={{ background: it.cover ? undefined : gradientFor(it.title) }}>
-        {it.cover ? <ProxiedImg src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
-        {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
-        {it.score ? <span className="pscore">{it.score}</span> : null}
+  const PosterCard = ({ it }: { it: MediaItem }) => {
+    // ⑮ 封面多字段兜底：vod_pic / pic / poster / thumb / cover 任一可用
+    const raw: any = it.raw ?? {};
+    const coverUrl = it.cover || raw.vod_pic || raw.pic || raw.poster || raw.thumb || raw.cover || '';
+    const hasCover = !!coverUrl;
+    return (
+      <div className="pcard" onClick={() => onOpenDetail(it)}>
+        <div className="pcover" style={{ background: hasCover ? undefined : gradientFor(it.title) }}>
+          {hasCover ? <ProxiedImg src={coverUrl} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
+          {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
+          {it.score ? <span className="pscore">{it.score}</span> : null}
+        </div>
+        <div className="ptitle">{it.title}</div>
+        <div className="psub">{it.year ?? ''} {it.genre ? '· ' + it.genre : ''}</div>
       </div>
-      <div className="ptitle">{it.title}</div>
-      <div className="psub">{it.year ?? ''} {it.genre ? '· ' + it.genre : ''}</div>
-    </div>
-  );
+    );
+  };
 
   const Section = ({ title, items }: { title: string; items: MediaItem[] }) => (
     <section className="row-section">

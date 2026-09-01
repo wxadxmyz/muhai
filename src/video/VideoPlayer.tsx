@@ -210,7 +210,7 @@ export function VideoPlayer({
     const now = Date.now();
     // N4：timeupdate 约 250ms 一次，原来每秒写 4 次 localStorage；这里节流到 5 秒一次。
     // force=true 用于暂停 / 切集 / 退出这类"最后一次机会"的补写（N5），不受节流限制。
-    if (!force && now - lastSaveRef.current < 5000) return;
+    if (!force && now - lastSaveRef.current < 1000) return;
     lastSaveRef.current = now;
     library.setWatchProgress(key || resumeKey, t);
     library.setResumeEp(progressKey, episodeIndex); // 记录「看到第几集」，供首页/搜索/历史续播定位
@@ -287,10 +287,9 @@ export function VideoPlayer({
       didMountRef.current = true;
       return;
     }
-    // ⑭：横屏锁 landscape；竖屏/退出横屏锁 portrait。
-    //     原生桥的 portrait 已改为 SENSOR_PORTRAIT（见 android.yml）：只保证「不横屏」，
-    //     不像旧 PORTRAIT 那样死锁，所以卓易通上点横屏依然能转，同时躺着看不会自动转横屏。
-    requestOrientation(landscape ? 'landscape' : 'portrait');
+    // ③：横屏锁 landscape；退出横屏恢复重力感应 sensor（v3.1.0 行为）。
+    //     sensor 让设备随重力转回竖屏，躺着看不会自动转横屏；点横屏按钮仍能转横屏。
+    requestOrientation(landscape ? 'landscape' : 'sensor');
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
@@ -301,7 +300,7 @@ export function VideoPlayer({
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (tapTimer.current) window.clearTimeout(tapTimer.current);
       if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
-      requestOrientation('portrait');
+      requestOrientation('sensor');
     };
   }, []);
 
@@ -447,9 +446,11 @@ export function VideoPlayer({
     introDone.current = false;
     pendingIntro.current = false;
     outroDone.current = false;
+    outroJustSet.current = false; // ① 切集清空「片尾首次设定」标记
     clearOutroTimer();
     const v = videoRef.current;
-    const want = startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0);
+    // ① 下一集开局自动跳过片头：设了片头就直接跳到片头时间开始，否则沿用续播/起始进度
+    const want = introSec > 0 ? introSec : (startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0));
     if (v && v.duration > 0 && want > 0 && want < v.duration - 3) {
       v.currentTime = want;
       setLiveCur(want);
@@ -492,6 +493,7 @@ export function VideoPlayer({
   // 片尾提前连播（⑥：去掉 autoPlay 前置条件，设了片尾秒数且播到片尾即切下一集）
   // ⑮ 用户设计：进入片尾区后，继续播放 2 秒再切下一集；下一集播到片尾时间点也继续切。
   const outroDone = useRef(false);
+  const outroJustSet = useRef(false); // ① 点片尾设定那一次才「先播 2 秒再跳」，之后每次立即跳
   const outroTimer = useRef<number | undefined>(undefined);
   const clearOutroTimer = () => { if (outroTimer.current) { window.clearTimeout(outroTimer.current); outroTimer.current = undefined; } };
 
@@ -501,12 +503,14 @@ export function VideoPlayer({
     const remain = state.duration - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {
       if (!outroTimer.current) {
+        const firstSet = outroJustSet.current; // 仅首次设定那次等 2 秒，之后立即跳（300ms 给一帧渲染）
         outroTimer.current = window.setTimeout(() => {
           outroTimer.current = undefined;
+          outroJustSet.current = false;
           outroDone.current = true;
           if (detail.episodes && episodeIndex < detail.episodes.length - 1) { onSelectEpisode(episodeIndex + 1); toast('已跳过片尾'); }
           else { setEnded(true); toast('已播至片尾'); } // 末集：走 B 方案（重播浮层）
-        }, 2000);
+        }, firstSet ? 2000 : 300);
       }
     } else {
       // 离开片尾区（用户手动往回拖）→ 取消延迟，避免误切
@@ -533,6 +537,7 @@ export function VideoPlayer({
           },
         },
       });
+      if (which === 'outro' && next > 0) outroJustSet.current = true; // ① 本次设定后先播 2 秒再跳
       toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
     } catch (e: any) {
       toast('跳过设置失败：' + (e?.message || String(e)), 'error');
@@ -707,6 +712,13 @@ export function VideoPlayer({
     // 既不 preventDefault（否则会把按钮的 click 一起吞掉，点小锁没反应），
     // 也不初始化手势状态（否则点一下按钮还会顺带触发一次「控件显隐」）。
     const hitControl = !!(e.target as HTMLElement | null)?.closest?.('button, .play-ico, .bar, input, a');
+    // ⑨ 控件隐藏时，点「原按钮位置」只把控件唤出、不触发按钮：touch 阶段就吞掉，按钮收不到 touch/click
+    if (hitControl && !controlsVisible) {
+      try { e.preventDefault(); } catch { /* ignore */ }
+      setControlsVisible(true);
+      if (state.isPlaying) scheduleHide();
+      el.__sx = null; el.__moved = true; return;
+    }
     if (hitControl) { el.__sx = null; el.__moved = true; return; }
 
     // 阻止默认行为，避免移动端 touch 后触发 ghost click（否则单击显隐会被 click 再触发一次抵消）
@@ -809,11 +821,14 @@ export function VideoPlayer({
           // 第一击：记下「双击前控件是否可见」，存到 DOM 元素上（不受后续 re-render 影响）
           const wasVisible = controlsVisible;
           el.__tapVisible = wasVisible;
-          // K3：控件当前是隐藏的 → 第一下就立即唤出，不再干等 280ms
-          if (!wasVisible) { setControlsVisible(true); if (state.isPlaying) scheduleHide(); }
-          // 双击判定窗口（280ms）与单击隐藏（280ms）分离：clearTapTimer 只清单击隐藏，不误伤双击
+          // ⑩ 双击判定窗口（280ms）与单击显隐（280ms）分离。
+          //     第一击不再立即显示图标（解决「双击暂停会闪一下所有图标」）：
+          //     280ms 内无第二击 = 单击 → 可见态隐藏 / 隐藏态显示；有第二击 = 双击 → 只 toggle，不改显隐。
           tapTimer.current = window.setTimeout(() => { tapTimer.current = undefined; }, 280);
-          singleHideTimer.current = window.setTimeout(() => { singleHideTimer.current = undefined; if (wasVisible) setControlsVisible(false); }, 280);
+          singleHideTimer.current = window.setTimeout(() => {
+            singleHideTimer.current = undefined;
+            if (wasVisible) setControlsVisible(false); else setControlsVisible(true);
+          }, 280);
         }
       }
       if (el.__backing) {

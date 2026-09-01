@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSources } from '../store';
-import { useSettings, DEFAULT_BLOCKLIST } from '../lib/settings';
+import { useSettings } from '../lib/settings';
 import { SubPage } from '../components/SubPage';
 import { ImportSourcePage } from '../components/ImportSourcePage';
 import { SourceListPage } from '../components/SourceListPage';
@@ -8,6 +8,7 @@ import { Icon } from '../components/Icon';
 import { PlayerSettingsPage } from './PlayerSettingsPage';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
+import { clearProxiedCache, proxiedCacheBytes } from '../components/ProxiedImg';
 import { checkForUpdate } from '../lib/tauriBridge';
 import { useSkin, SKINS } from '../lib/theme';
 
@@ -102,27 +103,38 @@ export function SettingsPage({
     getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
   }, []);
 
-  // ⑬ 首页地区过滤：屏蔽词增删（标题含这些词 → 视为非国产内地，首页不显示）
-  const [blockDraft, setBlockDraft] = useState('');
-  const blocklist = settings.blocklist ?? [];
-  const addBlock = () => {
-    const w = blockDraft.trim();
-    if (!w) return;
-    if (!blocklist.includes(w)) update({ blocklist: [...blocklist, w] });
-    setBlockDraft('');
-  };
-  const removeBlock = (w: string) => update({ blocklist: blocklist.filter((x) => x !== w) });
+  // ⑬ 首页地区过滤入口已删除（v3.2.0）：内地过滤改由 Home.isDomestic 硬编码规则实现，无需用户维护屏蔽词。
 
-  // 清除缓存：调原生 clear_webview_cache，清掉 WebView 全部浏览数据（含前端资源缓存），
-  // 下次加载强制重新拉取 APK 内最新前端。这是根治"前端没更新"的自救按钮。
+  // ⑪ v3.2.0：清除缓存改为「前端清」——不再调原生 clear_webview_cache（它内部 clear_all_browsing_data
+  // 会在部分 ROM 上让 App 被系统回收，表现为"清完回到桌面"）。这里清 localStorage/sessionStorage/
+  // ProxiedImg 缓存/IndexedDB，点完立即生效，不提示重启。副标题实时显示缓存大小。
   const [cacheBusy, setCacheBusy] = useState(false);
   const [cacheMsg, setCacheMsg] = useState('');
+  const [cacheSize, setCacheSize] = useState(0);
+  const calcCacheSize = () => {
+    let bytes = 0;
+    try { for (const k in localStorage) bytes += (localStorage[k]?.length || 0) + k.length; } catch { /* ignore */ }
+    try { for (const k in sessionStorage) bytes += (sessionStorage[k]?.length || 0) + k.length; } catch { /* ignore */ }
+    bytes += proxiedCacheBytes();
+    return bytes;
+  };
+  const fmtCache = (b: number) => {
+    if (!b) return '0M';
+    const m = b / 1024 / 1024;
+    if (m >= 1024) return (m / 1024).toFixed(2) + 'G';
+    return (Math.round(m * 10) / 10) + 'M';
+  };
+  useEffect(() => { setCacheSize(calcCacheSize()); }, []);
   const clearCache = async () => {
     if (cacheBusy) return;
     setCacheBusy(true);
     setCacheMsg('正在清除…');
     try {
-      await invoke('clear_webview_cache'); // 只清 WebView 缓存，不动源/进度/设置
+      localStorage.clear();
+      sessionStorage.clear();
+      clearProxiedCache();
+      try { indexedDB.databases?.().then((dbs) => dbs.forEach((d) => d.name && indexedDB.deleteDatabase(d.name))); } catch { /* ignore */ }
+      setCacheSize(0);
       setCacheMsg('已清除缓存');
     } catch (e: any) {
       setCacheMsg('清除失败：' + (e?.message ?? e));
@@ -131,12 +143,13 @@ export function SettingsPage({
     }
   };
 
-  // 重置 APP：清空全部本地存储（源/历史/设置/皮肤）+ 原生清缓存，回到初始状态。
+  // ⑫ v3.2.0：重置确认改用自定义中文 Modal（window.confirm 在部分 ROM 上弹系统原生英文对话框）
   const [resetBusy, setResetBusy] = useState(false);
   const [resetMsg, setResetMsg] = useState('');
-  const resetApp = async () => {
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const doReset = () => {
+    setShowResetConfirm(false);
     if (resetBusy) return;
-    if (!window.confirm('确定重置 APP？将清空所有源、历史与设置，且不可恢复。')) return;
     setResetBusy(true);
     try {
       onReset?.(); // 清源 + 清记录 + 清缓存 + 回主页（由 VideoApp 统一处理），不提示重启
@@ -145,6 +158,10 @@ export function SettingsPage({
     } finally {
       setResetBusy(false);
     }
+  };
+  const resetApp = () => {
+    if (resetBusy) return;
+    setShowResetConfirm(true);
   };
 
   // 系统返回逐级：先关闭网盘编辑等内部子层，再交还外层（如关闭设置子页），避免直接回主页
@@ -220,17 +237,6 @@ export function SettingsPage({
           <NavRow icon="download" label="离线缓存" value="路径 / 清晰度 / 并发" onClick={() => setSub('downloads')} />
         </div>
 
-        {/* ⑬ 首页 */}
-        <div className="settings-group-title">首页</div>
-        <div className="settings-card">
-          <NavRow
-            icon="home"
-            label="首页地区过滤"
-            value={`${blocklist.length} 个屏蔽词`}
-            onClick={() => setSub('blocklist')}
-          />
-        </div>
-
         {/* 外观 */}
         <div className="settings-group-title">外观</div>
         <div className="settings-card">
@@ -257,7 +263,7 @@ export function SettingsPage({
           <div className="settings-row danger-row" onClick={clearCache}>
             <span className="ico"><Icon name="refresh" size={20} /></span>
             <span className="label">清除缓存</span>
-            <span className="value muted">{cacheBusy ? '清除中…' : '清 WebView 缓存'}</span>
+            <span className="value muted">{cacheBusy ? '清除中…' : fmtCache(cacheSize)}</span>
             <span className="chevron"><Icon name="arrow-right" size={18} /></span>
           </div>
           <div className="settings-row danger-row" onClick={resetApp}>
@@ -381,54 +387,6 @@ export function SettingsPage({
         </SubPage>
       )}
 
-      {/* ⑬ 首页地区过滤：源带地区字段按地区判；无地区字段时按这里维护的屏蔽词过滤标题 */}
-      {sub === 'blocklist' && (
-        <SubPage title="首页地区过滤" onBack={() => setSub(null)}>
-          <div className="settings-card">
-            <div className="settings-row">
-              <span className="ico"><Icon name="home" size={20} /></span>
-              <span className="label">
-                只显示国产内地
-                <small>源返回地区字段时按地区判断；源不带地区时，用下方屏蔽词过滤标题</small>
-              </span>
-            </div>
-          </div>
-          <div className="settings-group-title">屏蔽词（点标签可删除）</div>
-          <div className="settings-card">
-            <div className="bl-chips">
-              {blocklist.length === 0 && <p className="settings-note">暂无屏蔽词，首页不对标题做过滤</p>}
-              {blocklist.map((w) => (
-                <span className="chip bl-chip" key={w} onClick={() => removeBlock(w)}>
-                  {w}
-                  <Icon name="x" size={11} />
-                </span>
-              ))}
-            </div>
-            <div className="settings-row">
-              <span className="ico"><Icon name="plus" size={20} /></span>
-              <input
-                type="text"
-                className="bl-input"
-                placeholder="输入屏蔽词，如：韩剧"
-                value={blockDraft}
-                onChange={(e) => setBlockDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') addBlock(); }}
-              />
-              <button className="bl-add" onClick={addBlock}>添加</button>
-            </div>
-          </div>
-          <div className="settings-card">
-            <div className="settings-row danger-row" onClick={() => update({ blocklist: [...DEFAULT_BLOCKLIST] })}>
-              <span className="ico"><Icon name="refresh" size={20} /></span>
-              <span className="label">恢复默认屏蔽词</span>
-              <span className="value muted">{DEFAULT_BLOCKLIST.length} 个</span>
-              <span className="chevron"><Icon name="arrow-right" size={18} /></span>
-            </div>
-          </div>
-          <p className="settings-note">修改后立即生效，返回首页自动重新过滤。</p>
-        </SubPage>
-      )}
-
       {sub === 'skin' && (
         <SubPage title="皮肤" onBack={() => setSub(null)}>
           <div className="settings-card">
@@ -516,6 +474,20 @@ export function SettingsPage({
             <p className="muted sm">使用即代表同意《免责声明》。</p>
           </div>
         </SubPage>
+      )}
+
+      {/* ⑫ 重置 APP 中文确认 Modal（替代系统原生 window.confirm 英文框） */}
+      {showResetConfirm && (
+        <div className="modal-mask" onClick={() => setShowResetConfirm(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">重置 APP</div>
+            <div className="modal-text">确定要重置吗？将清空所有源、历史与设置，且不可恢复。</div>
+            <div className="modal-btns">
+              <button className="modal-btn cancel" onClick={() => setShowResetConfirm(false)}>取消</button>
+              <button className="modal-btn danger" onClick={doReset}>确定重置</button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

@@ -24,13 +24,19 @@ export function ProxiedImg({ src, alt = '', className }: { src?: string; alt?: s
       if (!alive) return;
       setDataUrl(src);
     };
-    invoke<string>('fetchimage', { url: src })
-      .then((d) => {
-        if (!alive) return;
-        cache.set(src, d);
-        setDataUrl(d);
-      })
-      .catch(() => tryNative());
+    // ⑮ 失败重试一次（部分图床偶发超时），仍失败回落原生 <img>
+    const load = (retry: boolean): Promise<void> =>
+      invoke<string>('fetchimage', { url: src })
+        .then((d) => {
+          if (!alive) return;
+          cache.set(src, d);
+          setDataUrl(d);
+        })
+        .catch(() => {
+          if (retry && alive) return load(false);
+          tryNative();
+        });
+    load(true);
     return () => {
       alive = false;
     };
@@ -38,4 +44,15 @@ export function ProxiedImg({ src, alt = '', className }: { src?: string; alt?: s
 
   if (!src) return null;
   return <img src={dataUrl ?? src} alt={alt} className={className} loading="lazy" />;
+}
+
+// ⑪ 暴露给设置页「清除缓存」：清空 base64 图片缓存
+export function clearProxiedCache() {
+  cache.clear();
+}
+// ⑪ 暴露给设置页：估算 base64 图片缓存占用的字节数（用于副标题实时显示缓存大小）
+export function proxiedCacheBytes(): number {
+  let n = 0;
+  cache.forEach((v) => { n += v.length; });
+  return n;
 }

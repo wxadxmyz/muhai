@@ -231,12 +231,10 @@ jobs:
                                   }
                                   else -> {
                                       _stopLandscapeSensor()    // 退出横屏即停监听，不耗电
-                                      // ⑭ 竖屏方向。v3.1.10 曾改为 SENSOR_PORTRAIT，但用户真机（卓易通/鸿蒙）实测：
-                                      //    设过 SENSOR_PORTRAIT 后，后续点「横屏」的 LANDSCAPE 请求被吞掉、退出横屏也回不到竖屏
-                                      //    —— 即「v3.1.8 能转横屏、v3.1.10 不能」。回退到 PORTRAIT 恢复 3.1.8 行为。
-                                      //    代价：躺着看（横握）不会自动转横屏。若卓易通上出现「点横屏没反应」，
-                                      //    优先从 JS 桥侧（orientation.ts 超时补发）解决，而非再动此处。
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                      // ③ v3.2.0：兜底也用 SENSOR（重力感应），与 "sensor" 分支一致。
+                                      //    前端竖屏/退出横屏统一传 'sensor'，恢复 v3.1.0「随重力转回竖屏」行为；
+                                      //    不再锁死 PORTRAIT，避免部分 ROM 锁死后后续 LANDSCAPE 请求被吞。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
                                   }
                               }
                           } catch (e: Exception) { /* ignore */ }

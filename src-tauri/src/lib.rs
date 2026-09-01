@@ -315,18 +315,10 @@ async fn fetchsource(url: String) -> Result<String, String> {
 // 供前端"清除缓存 / 重置 APP"调用，使下次加载强制重新拉取 APK 内打包的最新前端资源，
 // 根治"APK 升了但前端还是旧壳"的问题。
 #[tauri::command]
-async fn clear_webview_cache(app: tauri::AppHandle) -> Result<(), String> {
-    use tauri::Manager;
-    if let Some(w) = app.get_webview_window("main") {
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        {
-            let _ = w.clear_all_browsing_data();
-        }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        {
-            let _ = w.eval("try{localStorage.clear();sessionStorage.clear();}catch(e){}");
-        }
-    }
+async fn clear_webview_cache(_app: tauri::AppHandle) -> Result<(), String> {
+    // v3.2.0 ⑪：改为 no-op。原先调 clear_all_browsing_data() 会清掉 WebView 全部数据，
+    // 在部分 ROM 上导致 App 被系统回收（表现为"清完回到桌面"）。
+    // 缓存清理改由前端负责（清 localStorage/sessionStorage/ProxiedImg 缓存），见 SettingsPage.clearCache。
     Ok(())
 }
 

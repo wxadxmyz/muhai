@@ -201,7 +201,7 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ⑭ 去掉 max()：卓易通 WebView 上 max() 失效会拖垮整条规则。
    calc(var(--sat) - 22px) 在 --sat < 22px 时为负 → padding 负值非法 → 整条规则被丢弃 = 0，
    效果与 max(0px, ...) 一致，且兼容性更好。 */
-.view.library .tabs { padding-top: max(0px, calc(var(--sat) - 22px)); }
+.view.library .tabs { padding-top: calc(10px + max(0px, calc(var(--sat) - 22px))); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -248,7 +248,7 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ============ 设置页 · iOS 风分组卡片（两个 App 共用）============ */
 /* A3：设置页顶部预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
 /* ⑭ 同上：拆开写，避免 max() 失效时把左右/底部 padding 一起拖没 */
-.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(4px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
+.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(12px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
@@ -673,7 +673,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 
   /* L7：特异性 bug 修复。桌面 `.main:not(button)`(0,1,1) 压住移动端 `.main`(0,1,0) 与 `.main-live`(0,1,0)，
      导致真机左右各空 28px、顶部安全区失效、直播页整页可滚。这里用更高特异性(0,2,1)抢回覆盖。 */
-  .app .main:not(.main-live) { padding: calc(14px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
+  .app .main:not(.main-live) { padding: calc(8px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
   /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
   .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
   /* A8（v3.1.12 重做）：不再用 sticky::before 挡板（会留 14px 缝隙、且把 home-top 双重下推成「太靠下」）。
@@ -763,7 +763,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
    但 max() 在卓易通 WebView 上会整条失效（同 --sat 的坑），这里一并去掉：
    初始位置的安全区由 .main 的 padding-top（calc(14px + var(--sat))）提供，
    吸顶后顶栏贴在 header 之下，安全区由 header 承担，无需重复留白。 */
-.home-top.v25{display:flex;align-items:center;gap:10px;padding:calc(10px + max(0px, calc(var(--sat) - 22px))) 14px 10px;}
+.home-top.v25{position:sticky;top:0;z-index:60;background:var(--bg);display:flex;align-items:center;gap:10px;padding:calc(var(--sat) - 8px) 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -1419,14 +1419,14 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ============ 点播播放器 · 按 幕海视频播放器UI.html 设计文件 ============ */
 /* 点播竖屏：player-root 作为滚动容器，播放小窗 sticky 固定，下方信息区独立上下滑动 */
-.player-root { background: var(--bg); flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-x: hidden; }
+.player-root { background: var(--bg); flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-x: hidden; padding-top: var(--sat); }
 /* O 组去卡片化 + P1 固定 16:9：
    O1 去掉独立底色（跟页面连成一片）  O2 去掉圆角  O3 左右边距 16px→0（播放区满宽）
    O4 不加分隔线，播放器区与下方介绍区直接连通
    保留 position:sticky / top:0 / z-index:5 —— 上下滑动页面时播放区钉在最上边不动
    P1 aspect-ratio 16/10.5 → 16/9（16:9 片源零黑边，容器高度恒定不跳） */
 /* ⑬ top 用安全区：上滑吸顶时停在通知栏下方，不再顶进通知栏最顶 */
-.player-card { margin: var(--sat) 0 0; background: transparent; border-radius: 0; overflow: hidden; position: sticky; top: var(--sat, 0px); z-index: 5; aspect-ratio: 16 / 9; touch-action: none; }
+.player-card { margin: 0; background: transparent; border-radius: 0; overflow: hidden; position: sticky; top: 0; z-index: 5; aspect-ratio: 16 / 9; touch-action: none; }
 /* P2：去掉 padding-top: var(--sat) —— 横屏顶部那条 26px 起的黑条就是它造成的，
    视频区被人为压成 2.47:1（比屏幕 2.26:1 还宽），16:9 片源左右黑边从 10.7% 恶化到 13.9%。
    顶部安全区改由控件层 .land-top 自己处理（见下）。 */
@@ -1519,7 +1519,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.68); color: var(--accent); display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
 /* v3.1.12：竖屏底栏改纵向——进度条一行 + 时间一行；时间行两端对齐进度条（左=当前 右=总时长） */
-.player-card:not(.land) .bottom { flex-direction: column; align-items: stretch; gap: 8px; }
+.player-card:not(.land) .bottom { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 16px; }
 .player-card:not(.land) .bottom .bottom-row { display: flex; align-items: center; gap: 10px; }
 /* T6：底栏播放/暂停放大到 44px 圆钮（原无尺寸） */
 .player-card .bottom .play-ico { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; cursor: pointer; flex: 0 0 auto; }
@@ -1535,7 +1535,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方；两端对齐进度条（左=当前 右=总时长）。
    左右 padding 54px = 播放/横屏钮 44px + 间距 10px，与进度条两端精确对齐。 */
 .player-card .overlay .times {
-  position: relative; z-index: 3; margin-top: 0; padding: 2px 54px 4px;
+  position: relative; z-index: 3; margin-top: 1.5px; padding: 1.5px 54px 6px;
   display: flex; align-items: center; justify-content: space-between;
   pointer-events: none; /* 纯展示，不拦截单击显隐 */
 }
@@ -1789,3 +1789,13 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 /* 右侧竖抽屉宽度有限，选集网格从 5 列收成 4 列，避免按钮被压扁 */
 .player-root.landscape .ep-grid { grid-template-columns: repeat(4, 1fr); }
+
+/* ⑫ 重置 APP 中文确认 Modal */
+.modal-mask { position: fixed; inset: 0; z-index: 200; background: rgba(0, 0, 0, .5); display: flex; align-items: center; justify-content: center; }
+.modal-box { width: 80%; max-width: 320px; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 16px 14px; }
+.modal-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.modal-text { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
+.modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+.modal-btn { padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 14px; cursor: pointer; }
+.modal-btn.danger { background: var(--danger, #e5484d); color: #fff; border-color: transparent; }
+.modal-btn.cancel { background: var(--panel2); }

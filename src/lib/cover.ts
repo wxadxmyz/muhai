@@ -11,5 +11,6 @@ export function gradientFor(s: string): string {
 
 export function initial(s: string): string {
   const t = (s || '?').trim();
-  return t ? t.charAt(0) : '?';
+  // ⑮ v3.2.0：显示前两个字（如"庆余"），比单个大字更好看
+  return t ? t.slice(0, 2) : '?';
 }

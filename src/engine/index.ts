@@ -92,32 +92,37 @@ export async function aggregateSearch(
   return { items: Array.from(map.values()), errors };
 }
 
-// 首页聚合：并发拉取所有启用源的首页推荐，合并去重。
-// tvbox 配置先展开为子站，每配置最多取前 limit 个子站（默认 8），避免全量子站超时。
+// 首页聚合：并发拉取所有启用源首页推荐，合并去重。
+// v3.2.2：① 放开子站上限（每配置默认取前 50 个子站，仓库仍是 1 个源）；
+//         ② 渐进式渲染——每完成一个子站即通过 onPartial 推送，谁快谁先上，不等最慢；
+//         ③ 单源超时默认 20s，死/慢源更快放弃，不阻塞整页。
 export async function aggregateHome(
   sources: SourceConfig[],
-  opts: { timeout?: number; limit?: number } = {}
+  opts: { timeout?: number; limit?: number; onPartial?: (items: MediaItem[]) => void } = {}
 ): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
   const active = sources.filter((s) => s.enabled).sort((a, b) => a.priority - b.priority);
-  const expanded = await expandSources(active, { limit: opts.limit ?? 8 });
+  const expanded = await expandSources(active, { limit: opts.limit ?? 50 });
+  const errors: { sourceId: string; sourceName: string; message: string }[] = [];
   const results = await Promise.all(
     expanded.map(async (s) => {
       try {
         const src = createSource(s);
-        if (!src.home) return { ok: false as const, sourceId: (s as any).parentId ?? s.id, sourceName: s.name, message: '该源不支持首页' };
-        const items = await withTimeout(src.home(), opts.timeout ?? 30000);
-        return { ok: true as const, sourceId: (s as any).parentId ?? s.id, sourceName: s.name, items };
+        if (!src.home) {
+          const e = { sourceId: (s as any).parentId ?? s.id, sourceName: s.name, message: '该源不支持首页' };
+          errors.push(e);
+          return { ok: false as const, e };
+        }
+        const items = await withTimeout(src.home(), opts.timeout ?? 20000);
+        opts.onPartial?.(items);
+        return { ok: true as const, items };
       } catch (e: any) {
-        return { ok: false as const, sourceId: (s as any).parentId ?? s.id, sourceName: s.name, message: e?.message ?? '首页加载失败' };
+        const err = { sourceId: (s as any).parentId ?? s.id, sourceName: s.name, message: e?.message ?? '首页加载失败' };
+        errors.push(err);
+        return { ok: false as const, err };
       }
     })
   );
   const items = results.flatMap((r) => (r.ok ? r.items : []));
-  const errors = results.filter((r) => !r.ok).map((r) => ({
-    sourceId: (r as any).sourceId,
-    sourceName: (r as any).sourceName ?? (r as any).sourceId,
-    message: (r as any).message,
-  }));
   const map = new Map<string, MediaItem>();
   for (const it of items) {
     const key = `${it.title}|${it.artist ?? ''}`;
@@ -156,7 +161,7 @@ function homeWriteLocal(key: string, data: { items: MediaItem[]; errors: any[] }
 }
 export async function aggregateHomeCached(
   sources: SourceConfig[],
-  opts: { timeout?: number; limit?: number; force?: boolean } = {}
+  opts: { timeout?: number; limit?: number; force?: boolean; onPartial?: (items: MediaItem[]) => void } = {}
 ): Promise<{ items: MediaItem[]; errors: any[]; fromCache: boolean }> {
   const key = homeCacheKey(sources);
   if (!opts.force && _homeCache && _homeCache.key === key && Date.now() - _homeCache.ts < HOME_CACHE_TTL) {

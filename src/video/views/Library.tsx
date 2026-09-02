@@ -57,11 +57,14 @@ export function VideoLibrary({
             const resumeIdx = library.lib.resumeEp[key] ?? 0;
             const prog = library.lib.watchProgress[`${key}:${resumeIdx}`] ?? 0;
             const pct = it.duration ? Math.round((prog / it.duration) * 100) : 0;
+            const lraw: any = it.raw ?? {};
+            const lcover = it.cover || lraw.vod_pic || lraw.pic || lraw.poster || lraw.thumb || lraw.cover || lraw.pic_thumb || lraw.vod_pic_thumb || '';
+            const lhas = !!lcover;
             return (
               <div className="pcard" key={key}>
                 <div
                   className="pcover"
-                  style={{ background: it.cover ? undefined : gradientFor(it.title) }}
+                  style={{ background: lhas ? undefined : gradientFor(it.title) }}
                   onClick={() => onOpen(it)}
                   onTouchStart={() => startPress(it)}
                   onTouchEnd={cancelPress}
@@ -70,7 +73,7 @@ export function VideoLibrary({
                   onMouseUp={cancelPress}
                   onMouseLeave={cancelPress}
                 >
-                  {it.cover ? <ProxiedImg src={it.cover} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
+                  {lhas ? <ProxiedImg src={lcover} alt="" fallbackText={it.title} /> : <span className="ph-big">{initial(it.title)}</span>}
                   {it.episodes?.length ? <span className="eps">{it.episodes.length} 集</span> : null}
                   {/* P7：影视卡片没有总时长，百分比算不出来，直接把「看到几分几秒」标出来，
                       既能确认进度确实存住了，也是排查续播最直观的信号 */}

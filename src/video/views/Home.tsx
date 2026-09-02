@@ -142,7 +142,22 @@ export function Home({
     const used = activeStation === 'all' ? sources : stations.filter((s) => s.id === activeStation);
     const srcs = used.length ? used : sources;
     // Q26/Q27：先读缓存秒显（切 Tab / 重开不白等），再后台静默刷新
-    aggregateHomeCached(srcs, { timeout: 60000 }).then((r) => {
+    aggregateHomeCached(srcs, {
+      timeout: 20000,
+      onPartial: (batch: MediaItem[]) => {
+        if (cancelled || !batch.length) return;
+        setHomeItems((prev) => {
+          const m = new Map<string, MediaItem>();
+          for (const it of prev) m.set(`${it.sourceId}|${it.id}`, it);
+          for (const it of batch) {
+            const k = `${it.sourceId}|${it.id}`;
+            if (!m.has(k)) m.set(k, it);
+          }
+          return Array.from(m.values());
+        });
+        setHomeLoading(false);
+      },
+    }).then((r) => {
       if (cancelled) return;
       setHomeItems(r.items);
       if (!r.items.length && r.errors.length) {
@@ -187,12 +202,12 @@ export function Home({
   const PosterCard = ({ it }: { it: MediaItem }) => {
     // ⑮ 封面多字段兜底：vod_pic / pic / poster / thumb / cover 任一可用
     const raw: any = it.raw ?? {};
-    const coverUrl = it.cover || raw.vod_pic || raw.pic || raw.poster || raw.thumb || raw.cover || '';
+    const coverUrl = it.cover || raw.vod_pic || raw.pic || raw.poster || raw.thumb || raw.cover || raw.pic_thumb || raw.vod_pic_thumb || '';
     const hasCover = !!coverUrl;
     return (
       <div className="pcard" onClick={() => onOpenDetail(it)}>
         <div className="pcover" style={{ background: hasCover ? undefined : gradientFor(it.title) }}>
-          {hasCover ? <ProxiedImg src={coverUrl} alt="" /> : <span className="ph-big">{initial(it.title)}</span>}
+          {hasCover ? <ProxiedImg src={coverUrl} alt="" fallbackText={it.title} /> : <span className="ph-big">{initial(it.title)}</span>}
           {it.episodes && it.episodes.length > 1 && <span className="eps">{it.episodes.length}集</span>}
           {it.score ? <span className="pscore">{it.score}</span> : null}
         </div>

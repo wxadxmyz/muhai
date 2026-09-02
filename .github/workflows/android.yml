@@ -255,9 +255,9 @@ jobs:
                           try {
                               val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
                               val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                              // T5：第 4 个参数用 FLAG_SHOW_UI —— 调节时弹出系统音量条，用户有感知。
-                              // 原先传 0 是静默改，看起来像没反应。
-                              am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (v * max).toInt().coerceIn(0, max), android.media.AudioManager.FLAG_SHOW_UI)
+                              // v3.2.2②：去掉 FLAG_SHOW_UI，避免系统音量面板抢占触摸导致「滑一下灵、接着滑没反应」；
+                              // 音量值仍写系统媒体音量，听感照常联动，显示交给播放器自建 HUD。
+                              am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (v * max).toInt().coerceIn(0, max), 0)
                           } catch (e: Exception) { /* ignore */ }
                       }
                   }

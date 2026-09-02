@@ -5,12 +5,14 @@ import { invoke } from '@tauri-apps/api/core';
 
 const cache = new Map<string, string>();
 
-export function ProxiedImg({ src, alt = '', className }: { src?: string; alt?: string; className?: string }) {
+export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: string; alt?: string; className?: string; fallbackText?: string }) {
   const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!src) {
       setDataUrl(null);
+      setFailed(false);
       return;
     }
     const cached = cache.get(src);
@@ -22,7 +24,7 @@ export function ProxiedImg({ src, alt = '', className }: { src?: string; alt?: s
     // 非 Tauri（web 本地调试）直接原生加载
     const tryNative = () => {
       if (!alive) return;
-      setDataUrl(src);
+      setFailed(true);
     };
     // ⑮ 失败重试一次（部分图床偶发超时），仍失败回落原生 <img>
     const load = (retry: boolean): Promise<void> =>
@@ -43,6 +45,16 @@ export function ProxiedImg({ src, alt = '', className }: { src?: string; alt?: s
   }, [src]);
 
   if (!src) return null;
+  if (failed) {
+    return (
+      <div
+        className={className ? `${className} img-fallback` : 'img-fallback'}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#2b2b3e,#3a2747)', color: 'rgba(255,255,255,.82)', fontWeight: 800, fontSize: '30px', letterSpacing: '1px', userSelect: 'none' }}
+      >
+        {fallbackText ? fallbackText.slice(0, 2) : ''}
+      </div>
+    );
+  }
   return <img src={dataUrl ?? src} alt={alt} className={className} loading="lazy" />;
 }
 

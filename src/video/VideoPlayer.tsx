@@ -453,7 +453,7 @@ export function VideoPlayer({
     //   导致第二集从头播放。改法：设了片头就标记 pendingIntro，真正的 seek 交给 onLoadedMetadata 的 trySkipIntro；
     //   未设片头才走续播/从头（无片头时从头播是预期行为）。
     if (introSec > 0) {
-      if (settings.autoSkipIntroOutro) pendingIntro.current = true; // 总开关开才跳
+      pendingIntro.current = true; // 设了片头即跳（总开关已移除）
     } else {
       const want = startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0);
       if (v && v.duration > 0 && want > 0 && want < v.duration - 3) {
@@ -472,8 +472,7 @@ export function VideoPlayer({
   // 片头跳过
   const trySkipIntro = () => {
     const v = videoRef.current;
-    if (!settings.autoSkipIntroOutro) return; // v3.2.1⑥：总开关关停跳过
-    if (!v || !introSec || introDone.current) return;
+    if (!v || !introSec || introDone.current) return; // 设了片头即跳，无需总开关
     // v3.1.12：真机 player.seek() 是异步的，若立即置 introDone 会导致「永不重试/跳过无效」。
     // 改为：先发 seek 并标记 pendingIntro，待 onSeeked / onTimeUpdate 确认 currentTime 真正到达片头点后再置位。
     if (pendingIntro.current) {
@@ -506,8 +505,7 @@ export function VideoPlayer({
 
   const trySkipOutro = () => {
     const v = videoRef.current;
-    if (!settings.autoSkipIntroOutro) return; // v3.2.1⑥：总开关关停跳过
-    if (!v || !outroSec || !state.duration || outroDone.current) return;
+    if (!v || !outroSec || !state.duration || outroDone.current) return; // 设了片尾即跳，无需总开关
     const remain = state.duration - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {
       if (!outroTimer.current) {
@@ -549,6 +547,33 @@ export function VideoPlayer({
       toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
     } catch (e: any) {
       toast('跳过设置失败：' + (e?.message || String(e)), 'error');
+    }
+  };
+
+  // v3.2.2⑥：进度条拖动手势（pointer 事件，竖屏横屏通用；与现有 touch 手势不冲突——bar 是 hitControl，touch 冒泡到 stage 会被 return）
+  const barDraggingRef = useRef(false);
+  const seekToClientX = (clientX: number, el: HTMLElement) => {
+    const v = videoRef.current; if (!v || !liveDur) return;
+    const r = el.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    const target = ratio * liveDur;
+    v.currentTime = target; setLiveCur(target); player.seek(target);
+  };
+  const onBarPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    try { (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    barDraggingRef.current = true;
+    startSeekLoading(false); // ⑨：拖动用，不隐藏控件（bar 需保持可交互）
+    seekToClientX(e.clientX, e.currentTarget as HTMLDivElement);
+  };
+  const onBarPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (barDraggingRef.current) seekToClientX(e.clientX, e.currentTarget as HTMLDivElement);
+  };
+  const onBarPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (barDraggingRef.current) {
+      barDraggingRef.current = false;
+      try { (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      saveProgress(true);
+      endSeekGesture(); // ⑨：拖动结束，等 seek 到位后收圈
     }
   };
 
@@ -789,6 +814,7 @@ export function VideoPlayer({
         const target = Math.max(0, Math.min(d, cur + dir * SWIPE_STEP * crossed));
         if (v) v.currentTime = target;
         player.seek(target); // 同时更新 state.duration/progress，驱动 .fill 实时变化
+        startSeekLoading(true); // ⑨：立即起转圈（绕过 buffering 的 300ms 延迟）
         el.__accum = dx;
         el.__dir = dir;
         setSeekBubble({ dir: dir as 1 | -1, delta: Math.abs(dx), target });
@@ -951,6 +977,31 @@ export function VideoPlayer({
     if (bufferingTimer.current) { window.clearTimeout(bufferingTimer.current); bufferingTimer.current = undefined; }
     setBuffering(false);
   }, []);
+  // ⑨：用户主动快进/拖动时的加载转圈（独立于 overlay，控件隐藏也显示；控件显示时滑动则隐藏其余控件）
+  const [seekLoading, setSeekLoading] = useState(false);
+  const [seekHideControls, setSeekHideControls] = useState(false);
+  const seekLoadingTimer = useRef<number | undefined>(undefined);
+  const seekGestureActive = useRef(false);
+  const startSeekLoading = useCallback((hideControls: boolean) => {
+    if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
+    seekLoadingTimer.current = undefined;
+    seekGestureActive.current = true;
+    setSeekHideControls(hideControls);
+    setSeekLoading(true);
+  }, []);
+  const endSeekGesture = useCallback(() => {
+    seekGestureActive.current = false;
+    if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
+    // 抬手后等 seek 真正到位（onSeeked）再清；兜底 350ms
+    seekLoadingTimer.current = window.setTimeout(() => { setSeekLoading(false); setSeekHideControls(false); }, 350);
+  }, []);
+  const clearSeekLoadingOnSettled = useCallback(() => {
+    if (!seekGestureActive.current) {
+      if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
+      setSeekLoading(false);
+      setSeekHideControls(false);
+    }
+  }, []);
   // T5：进入播放器时读系统当前音量作为手势起点（"从系统当前音量接着调，不是回到 100"）
   const systemVolRef = useRef(1);
   useEffect(() => {
@@ -994,9 +1045,9 @@ export function VideoPlayer({
             onStalled={() => markBuffering()}
             // P3：用户自己拖进度条 / 手势快进时，放弃自动续播，不与用户抢位置
             onSeeking={() => { if (!autoSeekingRef.current) resumedRef.current = true; markBuffering(); }}
-            onPlaying={clearBuffering}
+            onPlaying={() => { clearBuffering(); clearSeekLoadingOnSettled(); }}
             onCanPlay={() => { clearBuffering(); tryApplyResume(); }}
-            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); trySkipIntro(); }}
+            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); trySkipIntro(); clearSeekLoadingOnSettled(); }}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
               setLiveCur(v.currentTime);
@@ -1069,11 +1120,20 @@ export function VideoPlayer({
           {/* 锁屏态隐藏投屏提示（B1：锁定后除小锁外不留任何浮层） */}
           {castDevice && !locked && <div className="vp-cast-flag"><Icon name="cast" size={14} /> 投屏中：{castDevice}</div>}
 
-          {/* 横滑快进/快退时间气泡 */}
+          {/* ⑨⑩ 快进气泡：目标时间 / 总时长（深色圆角药丸，顶部居中，差异化样式） */}
           {seekBubble && (
             <div className="seek-bubble">
-              <Icon name={seekBubble.dir === 1 ? 'arrow-right' : 'arrow-left'} size={20} />
               <span>{fmtTime(seekBubble.target)}</span>
+              <span className="sep">/</span>
+              <span>{fmtTime(liveDur || state.duration || 0)}</span>
+            </div>
+          )}
+
+          {/* ⑨ 滑动/拖动快进：独立加载中圆圈（居中，不受控件显隐影响） */}
+          {seekLoading && (
+            <div className="vp-seek-loader">
+              <div className="vp-seek-loader-circle"><span className="vp-spinner" /></div>
+              <span className="vp-seek-loader-text">加载中</span>
             </div>
           )}
 
@@ -1088,7 +1148,7 @@ export function VideoPlayer({
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
           {!landscape && (
-            <div className={'overlay' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
+            <div className={'overlay' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
               <div className="top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 <div className="ttl">
@@ -1108,22 +1168,19 @@ export function VideoPlayer({
               <div className="bottom">
                 <div className="bottom-row">
                   <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                  <span className="t cur">{fmtTime(liveCur)}</span>
                   <div className="bar" onClick={(e) => {
                     const v = videoRef.current; if (!v || !liveDur) return;
                     const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                     const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
                     v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
-                  }}>
+                  }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
                     {/* T4：已缓冲进度（浅色），复用 onTimeUpdate 兜底刷新，层级介于轨道与已播放之间 */}
                     <div className="buffered" style={{ width: `${bufPct}%` }} />
                     <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                   </div>
+                  <span className="t dur">{fmtTime(liveDur)}</span>
                   <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
-                </div>
-                {/* ⑬ 竖屏：当前/总时长在进度条下方，左=当前 右=总时长，两端对齐进度条 */}
-                <div className="times">
-                  <span className="t">{fmtTime(liveCur)}</span>
-                  <span className="t">{fmtTime(liveDur)}</span>
                 </div>
               </div>
               {/* 竖屏左中：弹幕（从右上移到左中） */}
@@ -1139,7 +1196,7 @@ export function VideoPlayer({
 
           {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
           {landscape && (
-            <div className={'overlay land-h' + (controlsVisible ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
+            <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
               {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
               <div className="land-top">
                 <button className="back" onClick={toggleLandscape} title="返回"><Icon name="arrow-left" size={18} /></button>
@@ -1186,7 +1243,7 @@ export function VideoPlayer({
                     const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
                     const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
                     v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
-                  }}>
+                  }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
                     <div className="buffered" style={{ width: `${bufPct}%` }} />
                   <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                   </div>

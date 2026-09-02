@@ -58,9 +58,6 @@ export function PlayerSettingsPage({ onBack }: { onBack: () => void }) {
           <Row icon="plug" label="线路自动探测" desc="多线路源自动选择可用线路">
             <Switch on={settings.autoDetectLine} onChange={(v) => update({ autoDetectLine: v })} />
           </Row>
-          <Row icon="fast-forward" label="自动跳过片头片尾" desc="总开关：跳过片头与片尾">
-            <Switch on={settings.autoSkipIntroOutro} onChange={(v) => update({ autoSkipIntroOutro: v })} />
-          </Row>
           <Row icon="aspect" label="画面缩放" desc="视频填充方式">
             <select
               className="value-select"

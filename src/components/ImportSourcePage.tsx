@@ -39,6 +39,11 @@ export function ImportSourcePage({
       setStatus({ type: 'ok', msg: `已成功导入 ${r.added} 个源` });
       onImported?.();
       requestDisclaimerToast();
+      // v3.2.2 ⑪：导入成功后清空输入框，避免再点按钮二次导入
+      setName('');
+      setUrl('');
+      setPaste('');
+      setLinks([]);
     } else {
       setStatus({ type: 'err', msg: r.errors.join('；') || '导入失败' });
     }

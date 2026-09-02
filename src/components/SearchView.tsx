@@ -110,7 +110,7 @@ export function SearchView({
       setExpanded(sources);
     }
     try {
-      const r = await aggregateSearch(sources, query, { timeout: 60000, mediaType });
+      const r = await aggregateSearch(sources, query, { timeout: 12000, mediaType });
       setItems(r.items);
       setErrors(r.errors);
     } catch (e: any) {

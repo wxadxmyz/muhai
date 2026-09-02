@@ -23,7 +23,6 @@ export interface AppSettings {
   hardwareDecode: boolean; // 硬解/软解
   playbackRateMemory: boolean; // 倍速记忆开关
   autoDetectLine: boolean; // 线路自动探测
-  autoSkipIntroOutro: boolean; // 自动跳过片头片尾（总开关）
   videoScale: 'contain' | 'cover' | 'stretch'; // 画面缩放（v3.2.1⑪）：适应/铺满/拉伸
   pipEnabled: boolean; // 画中画（后台播放）开关（v3.2.1⑪）
   // ⑬ 首页国产过滤黑名单：标题含这些词的影视视为「非国产内地」予以屏蔽（可在设置里增删）
@@ -60,7 +59,6 @@ const DEFAULTS: AppSettings = {
   hardwareDecode: true,
   playbackRateMemory: true,
   autoDetectLine: false,
-  autoSkipIntroOutro: false,
   videoScale: 'contain',
   pipEnabled: true,
   blocklist: [...DEFAULT_BLOCKLIST],

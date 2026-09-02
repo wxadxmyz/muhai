@@ -11,6 +11,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { createJsSource, getSpiderRaw } from './js';
+import { createNormalSource } from './normal';
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -186,10 +187,16 @@ export async function expandTvboxSpiders(cfg: SourceConfig): Promise<SourceConfi
   return collectSpiders(cfg);
 }
 
+// v3.2.2：子站按真实 type 分发——normal 走 HTTP 适配器，js 走蜘蛛适配器。
+// 之前统一 createJsSource 会把正常 HTTP 接口当蜘蛛脚本喂给 QuickJS，导致搜索/播放失败。
+function buildSubSource(c: SourceConfig): MediaSource {
+  return c.type === 'normal' ? createNormalSource(c) : createJsSource(c);
+}
+
 export function createTvboxSource(cfg: SourceConfig): MediaSource {
   async function spiders(): Promise<MediaSource[]> {
     const cfgs = await collectSpiders(cfg);
-    return cfgs.map((c) => createJsSource(c));
+    return cfgs.map(buildSubSource);
   }
 
   return {
@@ -198,7 +205,7 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
       if (!cfgs.length) {
         throw new Error('该 tvbox 配置无可用的 spider 脚本源（csp_* 蜘蛛代号需提供对应 spider 脚本）');
       }
-      const srcs = cfgs.map((c) => createJsSource(c));
+      const srcs = cfgs.map(buildSubSource);
       // v2.4.2：收集每个子站的具体错误，不再吞掉，最终抛出代表性原因，
       // 让前端"该源未连通"能直接显示为什么失败（无需 root/logcat）。
       const errors: string[] = [];
@@ -233,6 +240,7 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
       const srcs = await spiders();
       for (const s of srcs) {
+        if (!s.getPlayUrl) continue;
         try {
           const r = await s.getPlayUrl(itemId);
           if (r.url) return r;
@@ -246,6 +254,7 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
     async getDetail(itemId: string) {
       const srcs = await spiders();
       for (const s of srcs) {
+        if (!s.getDetail) continue;
         try {
           const r = await s.getDetail(itemId);
           if (r && r.title) return r;
@@ -270,10 +279,10 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
     // 首页推荐：各 spider 源首页合并（有源主页"站点推荐"用）
     async home(): Promise<MediaItem[]> {
       const cfgs = await collectSpiders(cfg);
-      const srcs = cfgs.map((c) => createJsSource(c));
+      const srcs = cfgs.map(buildSubSource);
       const errors: string[] = [];
       const results = await Promise.all(
-        cfgs.slice(0, 6).map(async (c, i) => {
+        cfgs.map(async (c, i) => {
           try {
             return await srcs[i].home!();
           } catch (e: any) {
@@ -285,7 +294,6 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
       const items = results.flat();
       if (!items.length) {
         const raws = cfgs
-          .slice(0, 6)
           .map((c) => {
             const r = getSpiderRaw(c.id);
             return r ? `${c.name}=${r.slice(0, 200)}` : null;

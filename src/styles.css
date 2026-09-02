@@ -249,6 +249,8 @@ button.fav, .fav { color: var(--danger) !important; }
 /* A3：设置页顶部预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
 /* ⑭ 同上：拆开写，避免 max() 失效时把左右/底部 padding 一起拖没 */
 .settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(12px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
+/* v3.2.1 ⑩：播放设置子页（SubPage 内）顶部去空白，首个开关贴近标题 */
+.fullpage-body .settings-scroll { padding-top: 4px; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; border-bottom: 1px solid var(--border); }
@@ -267,6 +269,8 @@ button.fav, .fav { color: var(--danger) !important; }
 .settings-row.danger-row:active { background: var(--panel2); }
 .settings-row.danger-row .ico, .settings-row.danger-row .label { color: var(--danger); }
 .settings-row input[type='text'], .settings-row input[type='number'], .settings-row select { margin-left: auto; max-width: 55%; }
+/* v3.2.1 ⑩：开关顶到最右，和影视仓/OK影视一致 */
+.settings-row .switch { margin-left: auto; flex-shrink: 0; }
 /* 开关 */
 .switch { position: relative; width: 46px; height: 28px; border-radius: 999px; background: var(--panel3); border: 1px solid var(--border); cursor: pointer; transition: .2s; flex-shrink: 0; }
 .switch.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; }
@@ -673,7 +677,9 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 
   /* L7：特异性 bug 修复。桌面 `.main:not(button)`(0,1,1) 压住移动端 `.main`(0,1,0) 与 `.main-live`(0,1,0)，
      导致真机左右各空 28px、顶部安全区失效、直播页整页可滚。这里用更高特异性(0,2,1)抢回覆盖。 */
-  .app .main:not(.main-live) { padding: calc(8px + var(--sat)) 14px calc(56px + var(--sab) + 80px); }
+  /* v3.2.1 ①②③：顶栏整体上移约 4mm（15px）。主页 .home-top / 历史收藏 .tabs / 设置 .settings-scroll 共用此容器，
+     统一把 .main 顶部 padding 从 8+sat 减到 sat-7（≈15px），三处标题同步上移，目标约 37/33/35px（sat=26 基准）。 */
+  .app .main:not(.main-live) { padding: calc(var(--sat) - 7px) 14px calc(56px + var(--sab) + 80px); }
   /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
   .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
   /* A8（v3.1.12 重做）：不再用 sticky::before 挡板（会留 14px 缝隙、且把 home-top 双重下推成「太靠下」）。
@@ -1420,6 +1426,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* ============ 点播播放器 · 按 幕海视频播放器UI.html 设计文件 ============ */
 /* 点播竖屏：player-root 作为滚动容器，播放小窗 sticky 固定，下方信息区独立上下滑动 */
 .player-root { background: var(--bg); flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-x: hidden; padding-top: var(--sat); }
+/* v3.2.1 ④：固定遮罩挡住状态栏区，点播竖屏上滑时内容停在通知栏下方、不穿到通知栏文字背后 */
+.player-root::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: var(--sat); background: var(--bg); z-index: 6; pointer-events: none; }
 /* O 组去卡片化 + P1 固定 16:9：
    O1 去掉独立底色（跟页面连成一片）  O2 去掉圆角  O3 左右边距 16px→0（播放区满宽）
    O4 不加分隔线，播放器区与下方介绍区直接连通
@@ -1535,7 +1543,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方；两端对齐进度条（左=当前 右=总时长）。
    左右 padding 54px = 播放/横屏钮 44px + 间距 10px，与进度条两端精确对齐。 */
 .player-card .overlay .times {
-  position: relative; z-index: 3; margin-top: 1.5px; padding: 1.5px 54px 6px;
+  position: relative; z-index: 3; margin-top: 7.5px; padding: 1.5px 54px 6px;
   display: flex; align-items: center; justify-content: space-between;
   pointer-events: none; /* 纯展示，不拦截单击显隐 */
 }

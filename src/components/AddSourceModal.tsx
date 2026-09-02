@@ -35,6 +35,13 @@ export function AddSourceModal({
       mountPath: type === 'alist' ? mountPath.trim() || '/' : undefined,
     });
     requestDisclaimerToast();
+    // v3.2.1 ⑨：添加成功后清空输入框（保持弹窗打开，方便连续添加多个源）
+    if (!initial) {
+      setName('');
+      setBaseUrl('');
+      setToken('');
+      setMountPath('/');
+    }
   };
 
   return (

@@ -61,6 +61,20 @@ export function PlayerSettingsPage({ onBack }: { onBack: () => void }) {
           <Row icon="fast-forward" label="自动跳过片头片尾" desc="总开关：跳过片头与片尾">
             <Switch on={settings.autoSkipIntroOutro} onChange={(v) => update({ autoSkipIntroOutro: v })} />
           </Row>
+          <Row icon="aspect" label="画面缩放" desc="视频填充方式">
+            <select
+              className="value-select"
+              value={settings.videoScale}
+              onChange={(e) => update({ videoScale: e.target.value as any })}
+            >
+              <option value="contain">适应（留黑边）</option>
+              <option value="cover">铺满（裁剪）</option>
+              <option value="stretch">拉伸（变形填满）</option>
+            </select>
+          </Row>
+          <Row icon="pip" label="画中画 / 后台播放" desc="退出 App 浮小窗继续播">
+            <Switch on={settings.pipEnabled} onChange={(v) => update({ pipEnabled: v })} />
+          </Row>
         </div>
       </div>
     </SubPage>

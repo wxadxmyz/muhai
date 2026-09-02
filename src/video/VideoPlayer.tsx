@@ -289,7 +289,7 @@ export function VideoPlayer({
     }
     // ③：横屏锁 landscape；退出横屏恢复重力感应 sensor（v3.1.0 行为）。
     //     sensor 让设备随重力转回竖屏，躺着看不会自动转横屏；点横屏按钮仍能转横屏。
-    requestOrientation(landscape ? 'landscape' : 'sensor');
+    requestOrientation(landscape ? 'landscape' : 'portrait');
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
@@ -300,7 +300,7 @@ export function VideoPlayer({
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (tapTimer.current) window.clearTimeout(tapTimer.current);
       if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
-      requestOrientation('sensor');
+      requestOrientation('portrait');
     };
   }, []);
 
@@ -449,16 +449,22 @@ export function VideoPlayer({
     outroJustSet.current = false; // ① 切集清空「片尾首次设定」标记
     clearOutroTimer();
     const v = videoRef.current;
-    // ① 下一集开局自动跳过片头：设了片头就直接跳到片头时间开始，否则沿用续播/起始进度
-    const want = introSec > 0 ? introSec : (startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0));
-    if (v && v.duration > 0 && want > 0 && want < v.duration - 3) {
-      v.currentTime = want;
-      setLiveCur(want);
-      player.seek(want);
-    } else if (v) {
-      v.currentTime = 0;
-      setLiveCur(0);
-      player.seek(0);
+    // v3.2.1 ⑥：换集时新视频元数据尚未就绪（duration 为 0/NaN），此时直接贴 currentTime 会被后续 load 覆盖，
+    //   导致第二集从头播放。改法：设了片头就标记 pendingIntro，真正的 seek 交给 onLoadedMetadata 的 trySkipIntro；
+    //   未设片头才走续播/从头（无片头时从头播是预期行为）。
+    if (introSec > 0) {
+      if (settings.autoSkipIntroOutro) pendingIntro.current = true; // 总开关开才跳
+    } else {
+      const want = startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0);
+      if (v && v.duration > 0 && want > 0 && want < v.duration - 3) {
+        v.currentTime = want;
+        setLiveCur(want);
+        player.seek(want);
+      } else if (v) {
+        v.currentTime = 0;
+        setLiveCur(0);
+        player.seek(0);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.id, episodeIndex, resumeKey]);
@@ -466,6 +472,7 @@ export function VideoPlayer({
   // 片头跳过
   const trySkipIntro = () => {
     const v = videoRef.current;
+    if (!settings.autoSkipIntroOutro) return; // v3.2.1⑥：总开关关停跳过
     if (!v || !introSec || introDone.current) return;
     // v3.1.12：真机 player.seek() 是异步的，若立即置 introDone 会导致「永不重试/跳过无效」。
     // 改为：先发 seek 并标记 pendingIntro，待 onSeeked / onTimeUpdate 确认 currentTime 真正到达片头点后再置位。
@@ -499,6 +506,7 @@ export function VideoPlayer({
 
   const trySkipOutro = () => {
     const v = videoRef.current;
+    if (!settings.autoSkipIntroOutro) return; // v3.2.1⑥：总开关关停跳过
     if (!v || !outroSec || !state.duration || outroDone.current) return;
     const remain = state.duration - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {
@@ -908,7 +916,7 @@ export function VideoPlayer({
   //   原始  none                 1:1 像素不放大，居中显示，四周留白
   //   裁剪  cover                铺满容器，裁掉溢出部分，不变形
   const videoStyle: React.CSSProperties = {
-    objectFit: (SCALE_FIT[scaleMode] ?? 'contain') as React.CSSProperties['objectFit'],
+    objectFit: (settings.videoScale ? (settings.videoScale === 'cover' ? 'cover' : settings.videoScale === 'stretch' ? 'fill' : 'contain') : (SCALE_FIT[scaleMode] ?? 'contain')) as React.CSSProperties['objectFit'],
     objectPosition: 'center', // P5-2：「原始」不放大时居中
     filter: brightness < 1 ? `brightness(${brightness})` : undefined,
   };
@@ -1012,7 +1020,7 @@ export function VideoPlayer({
               setLiveDur(v.duration || 0);
               player.setDuration(v.duration);
               if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
-              tryApplyResume(); // P3
+              tryApplyResume(); trySkipIntro(); // P3 + v3.2.1⑥：元数据就绪即尝试跳片头（解决第二集从头播）
             }}
             onDurationChange={(e) => {
               const v = e.target as HTMLVideoElement;
@@ -1124,7 +1132,7 @@ export function VideoPlayer({
               </div>
               {/* 竖屏右中：画中画（绑原生桥 enterPip） */}
               <div className="vp-side vp-side-right">
-                <button className="side-btn" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画"><Icon name="pip" size={16} /></button>
+                <button className="side-btn" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={16} /></button>
               </div>
             </div>
           )}
@@ -1155,7 +1163,7 @@ export function VideoPlayer({
               {/* 右侧边栏：投屏 / 画中画 */}
               <div className="side right">
                 <button className="icon" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={20} /></button>
-                <button className="icon" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画"><Icon name="pip" size={20} /></button>
+                <button className="icon" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={20} /></button>
               </div>
 
               {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}

@@ -119,7 +119,7 @@ export function SourceManager({
 
       <div className="hint-line">{msg}</div>
 
-      {showModal && <AddSourceModal onSubmit={(f) => { add(f); setShowModal(false); }} onClose={() => setShowModal(false)} />}
+      {showModal && <AddSourceModal onSubmit={(f) => { add(f); }} onClose={() => setShowModal(false)} />}
     </div>
   );
 }

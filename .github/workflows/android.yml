@@ -231,10 +231,9 @@ jobs:
                                   }
                                   else -> {
                                       _stopLandscapeSensor()    // 退出横屏即停监听，不耗电
-                                      // ③ v3.2.0：兜底也用 SENSOR（重力感应），与 "sensor" 分支一致。
-                                      //    前端竖屏/退出横屏统一传 'sensor'，恢复 v3.1.0「随重力转回竖屏」行为；
-                                      //    不再锁死 PORTRAIT，避免部分 ROM 锁死后后续 LANDSCAPE 请求被吞。
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                                      // v3.2.1 ⑦：强制竖屏 PORTRAIT。退出横屏/退出点播页时锁回竖屏，
+                                      //    彻底解决「返回竖屏仍卡横屏」。前端统一传 'portrait'。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                                   }
                               }
                           } catch (e: Exception) { /* ignore */ }

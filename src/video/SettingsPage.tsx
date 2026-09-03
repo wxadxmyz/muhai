@@ -12,7 +12,15 @@ import { clearProxiedCache, proxiedCacheBytes } from '../components/ProxiedImg';
 import { checkForUpdate } from '../lib/tauriBridge';
 import { useSkin, SKINS } from '../lib/theme';
 import { toast } from '../lib/toast';
-import { alistClient, AlistStorage } from '../lib/alistClient';
+import {
+  getNetdiskToken,
+  getAllNetdiskTokens,
+  clearNetdiskToken,
+  syncNetdiskTokens,
+  providerOf,
+  type NetdiskKey,
+} from '../lib/netdisk';
+import { openNetdiskLogin } from '../lib/netdiskLogin';
 import { SourceConfig } from '../engine/types';
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -21,12 +29,7 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-// ⑥ 打开网盘登录页（系统浏览器 / 外部浏览器）
-function openExternal(url: string) {
-  try { window.open(url, '_blank'); } catch { /* ignore */ }
-}
-
-// ⑥ 长按复制 token（alist 网关 token）
+// ⑥ 长按复制 token（网盘本地登录抓取的 token）
 function copyToken(token: string, name: string) {
   if (!token) { toast('该网盘没有可复制的 Token', 'err'); return; }
   const done = () => toast(`已复制 ${name} 的 Token`);
@@ -45,29 +48,16 @@ function useLongPress(onLong: () => void, ms = 600) {
   return { onTouchStart: start, onTouchEnd: clear, onTouchMove: clear, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); onLong(); } };
 }
 
-// ⑥ 已挂载列表的单个网关行：展示挂载路径 + 已挂的盘，长按/点击复制 Token
-function MountRow({ s, drives }: { s: SourceConfig; drives: AlistStorage[] }) {
-  const lp = useLongPress(() => copyToken(s.token || '', s.name || s.baseUrl));
+// C3 已挂载网盘行：展示盘名 + 状态，长按/点击复制 token，可移除
+function MountRow({ ndKey, token, onCopy, onRemove }: { ndKey: NetdiskKey; token: string; onCopy: () => void; onRemove: () => void }) {
+  const p = providerOf(ndKey);
+  const lp = useLongPress(onCopy);
   return (
-    <div>
-      <div
-        className="settings-row copyable"
-        {...lp}
-        onClick={() => { if (s.token) copyToken(s.token, s.name || s.baseUrl); }}
-      >
-        <span className="ico"><Icon name="folder" size={20} /></span>
-        <span className="label">{s.name || s.baseUrl}</span>
-        <span className="value muted">{s.baseUrl}</span>
-      </div>
-      {drives.length > 0 && (
-        <div className="mount-drives">
-          {drives.map((d) => (
-            <span className="drive-chip" key={d.id}>
-              {d.driver || '盘'}{d.mountPath && d.mountPath !== '/' ? ` · ${d.mountPath}` : ''}
-            </span>
-          ))}
-        </div>
-      )}
+    <div className="settings-row copyable" {...lp} onClick={onCopy}>
+      <span className="ico"><Icon name="folder" size={20} /></span>
+      <span className="label">{p.label}<small>{p.headerName} 鉴权</small></span>
+      <span className="value muted">已获取 Token</span>
+      <span className="btn-mini" onClick={(e) => { e.stopPropagation(); onRemove(); }}>移除</span>
     </div>
   );
 }
@@ -150,25 +140,15 @@ export function SettingsPage({
   const [updateState, setUpdateState] = useState<string>('');
   const [checking, setChecking] = useState(false);
   const { skin, selectedId, setSkinId } = useSkin();
-  const [editingNetdisk, setEditingNetdisk] = useState<string | null>(null);
-  const [ndForm, setNdForm] = useState({ name: '', baseUrl: '', token: '', mountPath: '/' });
   const [appVersion, setAppVersion] = useState(APP_VERSION_FALLBACK);
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
   }, []);
-
-  // ⑥：已挂载列表——每个 alist 网关下实际挂了哪些盘（驱动名 + 挂载路径），供"长按复制 Token"之外展示
-  const [storages, setStorages] = useState<Record<string, AlistStorage[]>>({});
-  useEffect(() => {
-    if (sub !== 'mounts') return;
-    let alive = true;
-    const list = store.sources.filter((s) => s.type === 'alist');
-    Promise.all(list.map((s) => alistClient.listStorages(s).then((d) => [s.id, d] as const)))
-      .then((entries) => { if (alive) setStorages(Object.fromEntries(entries)); })
-      .catch(() => {});
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sub, store.sources]);
+  // C3：已挂载网盘 token 状态（本地登录抓取，非 alist）。进入相关子页时刷新一次。
+  const [ndTokens, setNdTokens] = useState<Partial<Record<NetdiskKey, string>>>({});
+  const refreshNdTokens = () => setNdTokens(getAllNetdiskTokens());
+  useEffect(() => { syncNetdiskTokens(); }, []);
+  useEffect(() => { if (sub === 'mounts' || sub === 'netdisk') refreshNdTokens(); }, [sub]);
 
   // ⑬ 首页地区过滤入口已删除（v3.2.0）：内地过滤改由 Home.isDomestic 硬编码规则实现，无需用户维护屏蔽词。
 
@@ -235,37 +215,32 @@ export function SettingsPage({
   useEffect(() => {
     const prev = (window as any).__onAndroidBack;
     (window as any).__onAndroidBack = () => {
-      if (editingNetdisk) { setEditingNetdisk(null); return false; }
       return typeof prev === 'function' ? prev() : true;
     };
     // 问题 #8 修复：向 VideoApp 的 Tauri onBackButton 路径暴露"是否有内部子层可逐级退出"。
     // 否则在 settingsSub 且 editingNetdisk 时，onBackButton 会直接 setSettingsSub(null) 跳回主页。
-    (window as any).__settingsInnerBack = () => {
-      if (editingNetdisk) { setEditingNetdisk(null); return true; }
-      return false;
-    };
+    (window as any).__settingsInnerBack = () => false;
     return () => {
       (window as any).__onAndroidBack = prev;
       delete (window as any).__settingsInnerBack;
     };
-  }, [editingNetdisk]);
+  }, []);
 
-  const boundNetdisk = (key: string) => {
-    const label = NETDISKS.find((n) => n.key === key)?.label ?? '';
-    return store.sources.some((s) => s.type === 'alist' && s.name.includes(label));
+  // C3：是否已在本地抓到该盘 token
+  const boundNetdisk = (key: NetdiskKey) => !!getNetdiskToken(key);
+  // C3：打开官网登录页，登录后自动抓 token
+  const loginNetdisk = async (key: NetdiskKey) => {
+    const p = providerOf(key);
+    toast(`正在打开 ${p.label} 登录页，登录后自动获取 Token…`);
+    const token = await openNetdiskLogin(p);
+    refreshNdTokens();
+    if (token) toast(`已获取 ${p.label} Token`);
+    else toast(`${p.label} 未获取到 Token（可重试）`, 'err');
   };
-  const saveNetdisk = () => {
-    if (!ndForm.baseUrl.trim()) return;
-    const label = NETDISKS.find((n) => n.key === editingNetdisk)?.label ?? '网盘';
-    store.add({
-      name: ndForm.name.trim() || label,
-      type: 'alist',
-      baseUrl: ndForm.baseUrl.trim(),
-      token: ndForm.token.trim() || undefined,
-      mountPath: ndForm.mountPath.trim() || '/',
-    });
-    setNdForm({ name: '', baseUrl: '', token: '', mountPath: '/' });
-    setEditingNetdisk(null);
+  const unbindNetdisk = (key: NetdiskKey) => {
+    clearNetdiskToken(key);
+    refreshNdTokens();
+    toast('已移除 ' + providerOf(key).label);
   };
 
   const count = `${store.sources.length} 个`;
@@ -355,76 +330,60 @@ export function SettingsPage({
 
       {sub === 'netdisk' && (
         <SubPage title="网盘登录" onBack={() => setSub(null)}>
+          <p className="settings-note">点下面的网盘 → 在弹出的登录页完成官网登录 → 返回后自动获取 Token，无需手动填。</p>
           <div className="netdisk-grid">
             {NETDISKS.map((nd) => {
-              const bound = boundNetdisk(nd.key);
-              const gw = store.sources.find((s) => s.type === 'alist' && s.name.includes(nd.label));
+              const bound = boundNetdisk(nd.key as NetdiskKey);
               return (
                 <div
-                  className={'netdisk-item' + (editingNetdisk === nd.key ? ' active' : '')}
+                  className={'netdisk-item' + (bound ? ' active' : '')}
                   key={nd.key}
-                  onClick={() => {
-                    // ⑥：已绑定且填了 alist 地址 → 直接打开该盘的登录/挂载页（官网登录页由 alist 后台承接）；
-                    //    未绑定 → 展开手动填 alist 地址 + Token 的表单
-                    if (gw?.baseUrl) { openExternal(gw.baseUrl); toast('已打开 ' + nd.label + ' 登录页'); }
-                    else setEditingNetdisk(nd.key);
-                  }}
+                  onClick={() => loginNetdisk(nd.key as NetdiskKey)}
                 >
                   <div className="nd-icon" style={{ background: nd.color }}>
                     <Icon name={nd.icon} size={24} />
                   </div>
                   <div className="nd-name">{nd.label}</div>
-                  <div className={'nd-state' + (bound ? ' ok' : '')}>{bound ? '已绑定' : '未绑定'}</div>
+                  <div className={'nd-state' + (bound ? ' ok' : '')}>{bound ? '已登录' : '点此登录'}</div>
                 </div>
               );
             })}
           </div>
-
-          {editingNetdisk && (
-            <div className="netdisk-form">
-              <h4>绑定{NETDISKS.find((n) => n.key === editingNetdisk)?.label}</h4>
-              <p className="muted sm">
-                本机通过 alist 网关注入网盘（阿里 / 夸克 / UC 均支持）。在 alist 后台挂载对应网盘后，
-                填好下面的 alist 地址与 Token 保存，即可浏览 / 搜索 / 播放网盘视频，之后播放无需重复登录。
-              </p>
-              <label>名称</label>
-              <input value={ndForm.name} onChange={(e) => setNdForm({ ...ndForm, name: e.target.value })} placeholder="留空自动命名" />
-              <label>alist 地址</label>
-              <input value={ndForm.baseUrl} onChange={(e) => setNdForm({ ...ndForm, baseUrl: e.target.value })} placeholder="http://192.168.x.x:5244" />
-              <label>Token（alist 管理 Token）</label>
-              <input value={ndForm.token} onChange={(e) => setNdForm({ ...ndForm, token: e.target.value })} placeholder="alist-xxx" />
-              <label>挂载目录（可选）</label>
-              <input value={ndForm.mountPath} onChange={(e) => setNdForm({ ...ndForm, mountPath: e.target.value })} placeholder="/" />
-              <button className="primary block" onClick={saveNetdisk}>保存并绑定</button>
-            </div>
-          )}
-
-          <p className="settings-note">也可到「源列表 → 添加源」，类型选「云盘(alist)」手动添加。</p>
+          <p className="settings-note">
+            阿里云盘登录后从网页 localStorage 抓 token；夸克 / UC 登录后从网页 cookie 抓 token。
+            获取到的 Token 仅存本机，用于对应网盘源的播放鉴权。
+          </p>
         </SubPage>
       )}
 
       {sub === 'mounts' && (
         <SubPage title="已挂载列表" onBack={() => setSub(null)}>
           {(() => {
-            const list = store.sources.filter((s) => s.type === 'alist');
-            if (!list.length) {
+            const keys = (Object.keys(ndTokens) as NetdiskKey[]).filter((k) => ndTokens[k]);
+            if (!keys.length) {
               return (
                 <div className="empty-hint">
                   <Icon name="folder" size={40} />
-                  <p>暂无可挂载的网盘</p>
-                  <p className="muted sm">先到「网盘登录」绑定 alist 地址与 Token</p>
+                  <p>暂无已挂载的网盘</p>
+                  <p className="muted sm">先到「网盘登录」完成官网登录获取 Token</p>
                 </div>
               );
             }
             return (
               <div className="settings-card">
-                {list.map((s) => (
-                  <MountRow key={s.id} s={s} drives={storages[s.id] || []} />
+                {keys.map((k) => (
+                  <MountRow
+                    key={k}
+                    ndKey={k}
+                    token={ndTokens[k] as string}
+                    onCopy={() => copyToken(ndTokens[k] as string, providerOf(k).label)}
+                    onRemove={() => unbindNetdisk(k)}
+                  />
                 ))}
               </div>
             );
           })()}
-          <p className="settings-note">长按网盘条目即可复制其 Token（alist 网关 Token）。已挂载的盘由 alist 管理接口读取，需管理员 Token。</p>
+          <p className="settings-note">长按网盘条目即可复制其 Token（已存本机）。该 Token 用于对应网盘源的播放鉴权，移除后可重新登录获取。</p>
         </SubPage>
       )}
 

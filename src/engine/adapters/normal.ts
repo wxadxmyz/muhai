@@ -84,10 +84,10 @@ export async function resolvePlayUrl(url: string): Promise<string> {
     if (!text) return url;
     const t = text.trimStart();
     if (t.startsWith('#EXTM3U')) return url; // 已经是 m3u8 文本
-    // 常见分享页变量名：main / url / m3u8 / play_url / video_url
+    // 常见分享页变量名：main / url / m3u8 / play_url / video_url（支持 var / const / let）
     const m =
-      text.match(/var\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
-      text.match(/var\s+(?:url|m3u8|play_url|video_url)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      text.match(/(?:var|const|let)\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      text.match(/(?:var|const|let)\s+(?:url|m3u8|play_url|video_url)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/src\s*[:=]\s*["']([^"']+\.m3u8[^"']*)["']/i);
     if (m) return new URL(m[1], url).href;
     return url; // 解析不出，原样返回给播放器去尝试
@@ -131,7 +131,7 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
       const eps = toEpisodes(v.vod_play_url);
       const raw = eps[0]?.url ?? '';
       const url = await resolvePlayUrl(raw);
-      return { url };
+      return { url, headers: { Referer: endpoint + '/' } };
     },
 
     async test() {

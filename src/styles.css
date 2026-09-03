@@ -1819,3 +1819,88 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .modal-btn { padding: 8px 16px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); font-size: 14px; cursor: pointer; }
 .modal-btn.danger { background: var(--danger, #e5484d); color: #fff; border-color: transparent; }
 .modal-btn.cancel { background: var(--panel2); }
+
+/* ===================== A12 首页 TMDB 热门推荐 ===================== */
+.hot-banner {
+  position: relative;
+  margin: 12px 14px 4px;
+  height: 188px;
+  border-radius: 16px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--panel2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+.hot-banner .hb-cover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.hot-banner .hb-cover img { width: 100%; height: 100%; object-fit: cover; }
+.hot-banner .hb-mask {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(8, 14, 22, .15) 0%, rgba(8, 14, 22, .55) 55%, rgba(8, 14, 22, .92) 100%);
+}
+.hot-banner .hb-info {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 14px 16px 16px;
+  color: #fff;
+  z-index: 2;
+}
+.hot-banner .hb-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  opacity: .92;
+  margin-bottom: 6px;
+}
+.hot-banner .hb-tag .db {
+  background: #f5a623;
+  color: #1a1206;
+  font-weight: 800;
+  border-radius: 5px;
+  padding: 1px 6px;
+  letter-spacing: .3px;
+}
+.hot-banner .hb-title { font-size: 21px; font-weight: 800; line-height: 1.2; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); }
+.hot-banner .hb-rating { color: #ffcf5c; font-weight: 700; font-size: 14px; margin-top: 4px; }
+.hot-banner .hb-desc {
+  font-size: 12px;
+  opacity: .86;
+  margin-top: 6px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.hot-banner .hb-dots {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  gap: 5px;
+  z-index: 3;
+}
+.hot-banner .hb-dots span {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .4);
+  transition: width .2s, background .2s;
+}
+.hot-banner .hb-dots span.on { width: 16px; background: var(--accent, #4fa3ff); }
+.hot-row { margin-top: 18px; }
+.hot-card .eps.area {
+  left: auto; right: 6px; left: 6px;
+  background: rgba(79, 163, 255, .92);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  width: auto;
+  height: auto;
+}

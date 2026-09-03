@@ -177,34 +177,26 @@ export default function VideoApp() {
     setStartAt(0);
   };
 
-  const openDetail = (it: MediaItem) => {
-    // 直进播放页：点卡片立即进播放页，播放窗口内解析/转圈照常（不再用「加载中」占位页阻塞进入）
-    // 详情（封面/选集）后台补全：列表项常缺 episodes，补全后据此跳到续播集
+  const openDetail = async (it: MediaItem) => {
+    // 先拿详情：搜索结果列表项常缺 episodes，直接用 itemId 调 play 对 JS 源不可靠。
+    // 有 episodes 后再进播放页，避免首集解析失败/超时。
     const cfg = store.sources.find((s) => s.id === it.sourceId);
     const showKey = `${it.sourceId}:${it.id}`;
     const resumeEp = library.lib.resumeEp[showKey] ?? 0;
-    const hadEps = !!(it.episodes && it.episodes.length);
-    // 列表项已有选集 → 直接跳续播集；否则先进首集，详情回来再跳
-    // ⑬ 统一用 resumeEp 定位集（含列表项无选集但有续播记录的场景，避免先白播首集）
-    playEpisode(it, resumeEp, 0, true);
     if (cfg) {
-      createSource(cfg).getDetail(it.id).then((d) => {
-        if (!d || !d.id) return;
-        if (!(d.episodes?.length || (d as any).cover || ((d as any).raw?.vod_pic))) return;
-        // P6：详情补全只补 UI 字段（封面 / 选集 / 演职员），绝不覆盖 id 与 sourceId。
-        //     否则进度会「按详情 id 写、按列表 id 读」，两套键对不上，续播必然失效。
-        const full = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
-        if (!hadEps && resumeEp > 0) {
-          // 列表项无选集：用补全后的详情跳到续播集
-          playEpisode(full, resumeEp, 0, true);
-        } else {
-          // 仅补全封面/选集 UI，不打断当前播放
-          setDetail((prev) => (prev && prev.sourceId === it.sourceId && prev.id === it.id
-            ? { ...prev, ...full, id: prev.id, sourceId: prev.sourceId, episodes: full.episodes ?? prev.episodes }
-            : prev));
+      try {
+        const src = createSource(cfg);
+        if (src.getDetail) {
+          const d = await src.getDetail(it.id);
+          if (d?.id && (d.episodes?.length || (d as any).cover || (d as any).raw?.vod_pic)) {
+            const full = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
+            playEpisode(full, Math.min(resumeEp, (full.episodes?.length ?? 1) - 1), 0, true);
+            return;
+          }
         }
-      }).catch(() => {});
+      } catch { /* fallback：用列表项直接进 */ }
     }
+    playEpisode(it, resumeEp, 0, true);
   };
 
   const closeVideo = () => {

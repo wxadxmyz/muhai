@@ -454,6 +454,17 @@ export function VideoPlayer({
     //   未设片头才走续播/从头（无片头时从头播是预期行为）。
     if (introSec > 0) {
       pendingIntro.current = true; // 设了片头即跳（总开关已移除）
+      // C1：多集共用同一 playUrl 时 loadedmetadata 不会再次触发，onLoadedMetadata 里的 trySkipIntro 收不到。
+      //     这里主动尝试跳片头，并用短轮询兜底直到真正跳过（元数据就绪前 duration 为 0，轮询等其就绪）。
+      const trySeek = () => { const vv = videoRef.current; if (vv && vv.duration > 0) trySkipIntro(); };
+      trySeek();
+      let ticks = 0;
+      const iv = window.setInterval(() => {
+        ticks++;
+        if (introDone.current || ticks > 40) { window.clearInterval(iv); return; }
+        trySeek();
+      }, 100);
+      return () => window.clearInterval(iv); // effect 重跑/卸载时停掉轮询
     } else {
       const want = startAt > 0 ? startAt : (library.lib.watchProgress[resumeKey] ?? 0);
       if (v && v.duration > 0 && want > 0 && want < v.duration - 3) {
@@ -503,7 +514,10 @@ export function VideoPlayer({
 
   const trySkipOutro = () => {
     const v = videoRef.current;
-    const dur = state.duration || (v ? v.duration : 0) || 0; // ③：state.duration 偶发未就绪时用实时时长兜底
+    // C2：真实时长兜底优先用 <video> 实时时长（state.duration 偶发未就绪/滞后），再回退 liveDur / state.duration，
+    //     保证跨集切换后片尾判定拿到的就是当前集的真实长度，避免「第 2 集片尾不跳」。
+    const dur = (v && isFinite(v.duration) && v.duration > 0 && v.duration !== Infinity ? v.duration : 0)
+      || liveDur || state.duration || 0;
     if (!v || !outroSec || !dur || outroDone.current) return; // 设了片尾即跳，无需总开关
     const remain = dur - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {

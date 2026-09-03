@@ -4,8 +4,9 @@
 // 表现就是"有时能真横屏、有时只 CSS 铺满没真转"。
 // 方案：调用前先自检桥是否就绪；未就绪则轮询等待（每 100ms，最多 3s），就绪后立即调用。
 
-// Q1：1.5s 对慢机器 / WebView 冷启动偏短，桥还没绑上就超时放弃了 → 放宽到 3s
-const BRIDGE_WAIT_MS = 3000;
+// 桥可能比首屏晚几秒才绑上（冷启动 / Tauri 重建 WebView 后），之前 3s 硬超时会导致
+// "点一次只放大不转、再点一次才转"。放宽到 8s 且请求时会持续轮询直到真正转过去。
+const BRIDGE_WAIT_MS = 8000;
 const BRIDGE_POLL_MS = 100;
 // Q2：发完指令不校验，系统没响应前端完全不知道 → 监听 orientationchange / resize 真正转过去再收尾，
 //     并保留定时校验兜底（最多 ~2.4s）。
@@ -72,23 +73,26 @@ function verifyAndRetry(ori: string, attempt: number) {
  * 请求屏幕方向。桥未就绪时自动等待，就绪后立即调用，并在之后校验是否真的转过去了。
  * @param ori 'landscape' | 'portrait' | 'sensor'
  */
-export function requestOrientation(ori: 'landscape' | 'portrait' | 'sensor') {
-  if (bridgeReady()) {
-    callBridge(ori);
-    verifyAndRetry(ori, 1);
-    return;
-  }
+export function requestOrientation(
+  ori: 'landscape' | 'portrait' | 'sensor',
+  opts?: { silent?: boolean }
+) {
+  // portrait（退出横屏/页面清理）一律静默：CSS 铺满已兜底，且主页残留的"未就绪" toast 正是这类调用弹出的。
+  const silent = opts?.silent || ori === 'portrait';
+  const fire = () => { callBridge(ori); verifyAndRetry(ori, 1); };
+  if (bridgeReady()) { fire(); return; }
   let waited = 0;
   const timer = window.setInterval(() => {
     waited += BRIDGE_POLL_MS;
     if (bridgeReady()) {
       window.clearInterval(timer);
-      callBridge(ori);
-      verifyAndRetry(ori, 1);
+      fire();
     } else if (waited >= BRIDGE_WAIT_MS) {
-      // 超时放弃，避免无限轮询（此时同样由 CSS 铺满保底）；明确告诉用户桥没注入
       window.clearInterval(timer);
-      toast('横屏桥未就绪，已用 CSS 铺满');
+      // 仅在用户主动要横屏（landscape）且桥确实没注入时才提示；清理类调用静默。
+      if (!silent && ori === 'landscape') {
+        toast('横屏桥未就绪，已用 CSS 铺满');
+      }
     }
   }, BRIDGE_POLL_MS);
 }

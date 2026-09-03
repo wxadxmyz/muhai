@@ -24,8 +24,15 @@ const CATVOD_REQ_SHIM =
         "return fetch(url,hd,o.body||null);" +
       "};" +
     "}" +
-    "if(typeof globalThis.request!=='function'){globalThis.request=globalThis.req;}" +
+      "if(typeof globalThis.request!=='function'){globalThis.request=globalThis.req;}" +
   "})();\n";
+
+// 从 ext / api / baseUrl 提取 host，用于补 Referer
+function extractHost(input?: string): string {
+  if (!input) return '';
+  const m = String(input).match(/^https?:\/\/[^\/]+/i);
+  return m ? m[0] : '';
+}
 
 // 预处理脚本：去 ESM 顶层 import/export，前置 req 桥
 function catvodize(code: string): string {
@@ -149,14 +156,19 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
     }));
   }
 
-  // TVBox 选集格式：选集1$url1#选集2$url2
+  // TVBox 选集格式：group1$name1$url1#name2$url2$$$group2$name3$url3#...
   function toEpisodes(playUrl: string): { name: string; url: string }[] {
     if (!playUrl) return [];
-    return playUrl.split('#').map((seg) => {
-      const idx = seg.indexOf('$');
-      if (idx < 0) return { name: seg, url: seg };
-      return { name: seg.slice(0, idx), url: seg.slice(idx + 1) };
-    });
+    const out: { name: string; url: string }[] = [];
+    for (const group of playUrl.split('$$$')) {
+      for (const seg of group.split('#')) {
+        if (!seg) continue;
+        const idx = seg.indexOf('$');
+        if (idx < 0) out.push({ name: seg, url: seg });
+        else out.push({ name: seg.slice(0, idx), url: seg.slice(idx + 1) });
+      }
+    }
+    return out;
   }
 
   const hasList = (r: any) =>
@@ -179,7 +191,20 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
       let url = '';
       if (typeof data === 'string') url = data;
       else if (data && typeof data.url === 'string') url = data.url;
-      return { url };
+      // play(itemId) 未返回地址：尝试先拉 detail 取首集（搜索结果列表项常无 episodes）
+      if (!url) {
+        try {
+          const d = await callCompat('detailContent', 'detail', [itemId], hasList);
+          const list = d?.list ?? (Array.isArray(d) ? d : []);
+          const first = list[0];
+          if (first?.vod_play_url) {
+            const eps = toEpisodes(first.vod_play_url);
+            url = eps[0]?.url ?? '';
+          }
+        } catch { /* 忽略 */ }
+      }
+      const host = extractHost((cfg as any).ext || (cfg as any).api || cfg.baseUrl);
+      return { url, headers: host ? { Referer: host + '/' } : undefined };
     },
 
     async getDetail(itemId: string) {

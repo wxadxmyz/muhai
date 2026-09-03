@@ -12,6 +12,7 @@ import {
   takePendingDisclaimer,
 } from '../../lib/disclaimer';
 import { useSettings } from '../../lib/settings';
+import { fetchHot, type HotData, type HotItem } from '../../lib/hot';
 
 // v3.0.2 首页板块：电视剧 → 电影 → 综艺 → 动漫（v3.1.12 新增「动漫」块），互不串门
 type SectionKey = 'hot' | 'movie' | 'variety' | 'anime';
@@ -31,10 +32,13 @@ function isDomestic(it: MediaItem, blocklist: string[]): boolean {
     return false; // 地区字段存在但非明确国产（含 cn 等模糊值）→ 当作非国产
   }
   const t = it.title.toLowerCase();
-  // 标题黑名单兜底：港澳台/海外词 + 单字外语标记（覆盖无地区字段的外国片）
-  const titleBlock = ['韩剧','韩综','美剧','美综','日剧','日综','泰剧','英剧','法剧','印度剧','欧美','日韩','海外','韩','美','日','泰','英','法','俄','德','意','西','印','欧','港','台','澳','korean','japanese','american','english','hollywood'];
+  // A11：标题黑名单兜底 —— 只用「多字成词」的海外标记，不再用单字（旧版 '美/韩/日…' 会把
+  //     「美好的生活」「韩国人」这类纯中文片名误判为外国片而排除，导致国产剧被误杀）。
+  //     单字黑名单改由 settings.blocklist（用户可编辑）承担，这里只拦明确的外国剧/综艺词。
+  const titleBlock = ['韩剧','韩综','美剧','美综','日剧','日综','泰剧','英剧','法剧','印度剧','欧美','日韩','海外','港剧','台剧','澳剧','好莱坞','korean','japanese','american','english','hollywood'];
   for (const w of titleBlock) if (w && t.includes(w)) return false;
-  for (const w of blocklist) if (w && t.includes(w.toLowerCase())) return false;
+  // A11：单字 blocklist 一律忽略（"美/韩"会误杀纯中文片名），只拦 2 字以上的自定义词
+  for (const w of blocklist) if (w && w.length > 1 && t.includes(w.toLowerCase())) return false;
   return /[一-龥]/.test(it.title);
 }
 
@@ -59,9 +63,16 @@ function classify(it: MediaItem): SectionKey | null {
   // v3.1.12：动漫优先识别，避免「集数>1」的动漫被误归电视剧块
   if (/动漫|动画|anime|cartoon/.test(blob)) return 'anime';
   if (/综艺|variety|真人秀|选秀|脱口秀|访谈|脱口/.test(blob)) return 'variety';
-  if (/电视剧|剧集|连续剧|电视连续剧|国产剧|台剧|港剧|drama|tvb|tv series|tvshow|tv/.test(blob)
-      || /集$/.test(remarks) || (raw.vod_total && +raw.vod_total > 1)) return 'hot';
-  if (/电影|movie|film/.test(g) || it.mediaType === 'video') return 'movie';
+  // A11：电视剧判定前移且更宽 —— 类型词 / 集数>1 / 标题含「第N集·全N集·更新至N」都算电视剧，
+  //     避免「无 type 但确实是连续剧」被下面的兜底塞进电影，导致"电视剧空、电影有"。
+  const seriesMarker = /电视剧|剧集|连续剧|电视连续剧|国产剧|台剧|港剧|drama|tvb|tv series|tvshow|\btv\b/;
+  const hasEpisodes = /集$/.test(remarks)
+    || (raw.vod_total && +raw.vod_total > 1)
+    || /(第.+集|全\d+集|更新至\d+|共\d+集)/.test(t + ' ' + remarks);
+  if (seriesMarker.test(blob) || hasEpisodes) return 'hot';
+  if (/电影|movie|film|影院版/.test(g) || it.mediaType === 'video') return 'movie';
+  // A11：兜底 —— 拿不到类型信息时，有集数当电视剧、否则当电影（旧版一律当电影会掏空电视剧块）
+  if (raw.vod_total && +raw.vod_total > 1) return 'hot';
   return 'movie';
 }
 
@@ -91,6 +102,21 @@ export function Home({
   const [homeError, setHomeError] = useState('');
   const [disclaimerOn, setDisclaimerOn] = useState(false);
   const disclaimerTimer = useRef<number | null>(null);
+
+  // A12：豆瓣热门推荐（顶部 Banner + 四板块），与源站聚合相互独立，互不阻塞
+  const [hotData, setHotData] = useState<HotData | null>(null);
+  const [bannerIdx, setBannerIdx] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    fetchHot().then((d) => { if (alive && d) setHotData(d); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  // A12：Banner 自动轮播（4s 一切），仅在有 banner 时启用
+  useEffect(() => {
+    if (!hotData?.banner?.length) return;
+    const id = window.setInterval(() => setBannerIdx((i) => (i + 1) % hotData!.banner.length), 4000);
+    return () => window.clearInterval(id);
+  }, [hotData]);
 
   // v2.5.1 站点选择：列出 tvbox 源内的 spider 子站，单选用于首页聚合过滤
   const [stations, setStations] = useState<SourceConfig[]>([]);
@@ -217,6 +243,35 @@ export function Home({
     );
   };
 
+  // A12：热门推荐海报卡（来自 hot.json，无 playUrl，点击触发搜索从已导入源解析可播内容）
+  const HotPosterCard = ({ it }: { it: HotItem }) => {
+    const hasCover = !!(it.pic && it.pic.length > 4);
+    return (
+      <div className="pcard hot-card" onClick={() => onSearch(it.name)} title={it.name}>
+        <div className="pcover" style={{ background: hasCover ? undefined : gradientFor(it.name) }}>
+          {hasCover ? <ProxiedImg src={it.pic!} alt="" fallbackText={it.name} /> : <span className="ph-big">{initial(it.name)}</span>}
+          {it.area ? <span className="eps area">{(it.area || '').slice(0, 2)}</span> : null}
+          {it.rating ? <span className="pscore">{it.rating}</span> : null}
+        </div>
+        <div className="ptitle">{it.name}</div>
+        <div className="psub">{it.year ?? ''} {it.type ? '· ' + ({ tv: '剧', movie: '影', variety: '综', anime: '漫' }[it.type] ?? '') : ''}</div>
+      </div>
+    );
+  };
+
+  const HotRow = ({ title, items }: { title: string; items: HotItem[] }) => (
+    <section className="row-section hot-row">
+      <div className="row-head"><h3>{title}</h3></div>
+      {items.length === 0 ? (
+        <div className="empty sm">暂无内容</div>
+      ) : (
+        <div className="poster-grid">
+          {items.map((it) => <HotPosterCard key={it.id} it={it} />)}
+        </div>
+      )}
+    </section>
+  );
+
   const Section = ({ title, items }: { title: string; items: MediaItem[] }) => (
     <section className="row-section">
       <div className="row-head">
@@ -231,6 +286,32 @@ export function Home({
       )}
     </section>
   );
+
+  // A12：顶部「豆瓣热门」轮播大卡（评分/标签/简介），点击触发搜索从已导入源解析可播内容
+  const BannerBlock = () => {
+    const list = hotData?.banner ?? [];
+    if (!list.length) return null;
+    const idx = bannerIdx % list.length;
+    const b = list[idx];
+    const hasCover = !!(b.pic && b.pic.length > 4);
+    return (
+      <section className="hot-banner" onClick={() => onSearch(b.name)}>
+        <div className="hb-cover" style={{ background: hasCover ? undefined : gradientFor(b.name) }}>
+          {hasCover ? <ProxiedImg src={b.pic!} alt="" fallbackText={b.name} /> : <span className="ph-big">{initial(b.name)}</span>}
+          <div className="hb-mask" />
+        </div>
+        <div className="hb-info">
+          <span className="hb-tag"><span className="db">豆瓣</span> 热门推荐 · 每日精选高分</span>
+          <div className="hb-title">{b.name}{b.year ? `（${b.year}）` : ''}</div>
+          {b.rating ? <div className="hb-rating">★ {b.rating}</div> : null}
+          {b.desc ? <div className="hb-desc">{b.desc}</div> : null}
+        </div>
+        <div className="hb-dots">
+          {list.map((_, i) => <span key={i} className={i === idx ? 'on' : ''} />)}
+        </div>
+      </section>
+    );
+  };
 
   const homeTop = (
     <div className="home-top v25">
@@ -270,6 +351,17 @@ export function Home({
       {homeError && !homeLoading ? (
         <div className="empty sm" style={{ margin: '8px 14px' }}>{homeError}</div>
       ) : null}
+
+      {/* A12：豆瓣热门推荐（顶部 Banner 轮播 + 四行热门），与源站聚合相互独立、互不阻塞 */}
+      {hotData && (
+        <>
+          <BannerBlock />
+          <HotRow title="热门电视剧" items={hotData.categories.tv} />
+          <HotRow title="热门电影" items={hotData.categories.movie} />
+          <HotRow title="热门综艺" items={hotData.categories.variety} />
+          <HotRow title="热门动漫" items={hotData.categories.anime} />
+        </>
+      )}
 
       {homeLoading ? (
         // ⑩ 加载态：仅内容区，保留顶栏(logo/搜索/子站)与底部 TAB；背景跟随皮肤，中心转圈，无主题色条

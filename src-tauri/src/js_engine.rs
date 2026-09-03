@@ -89,6 +89,13 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
         globals.set("fetch", fetch_fn).map_err(|e| e.to_string())?;
 
+        // v3.2.4 修复：rquickjs 0.6 在部分目标（尤其 Android）上默认未把全局对象暴露为
+        // `globalThis`，而包装代码依赖它调用全局函数型蜘蛛。显式注入 globalThis 避免
+        // "ReferenceError: globalThis is not defined" → QuickJS Exception。
+        globals
+            .set("globalThis", globals.clone())
+            .map_err(|e| e.to_string())?;
+
         // base64 编码
         let b64enc = Function::new(ctx.clone(), |s: String| -> String { B64.encode(s.as_bytes()) })
             .map_err(|e| e.to_string())?;
@@ -197,16 +204,58 @@ const __api = {api};
 // 此前前端 JSON.stringify 一次、Rust 端 serde_json::to_string 又一次，导致注入的是
 // 双重转义字符串字面量，JSON.parse 抛错使依赖 ext 的 drpy2/csp 站点初始化失败。
 const __ext = {ext};
+const __global = (typeof globalThis !== 'undefined' && globalThis !== null) ? globalThis : this;
+
+// A3：drpy2 标准源适配 —— 社区 drpy2 规则以 `var rule = {{...}}` 形态提供，其
+//   home/search/detail/play 与我们的 spider 接口同名，但返回 AppleCMS 风格 Vod。
+//   这里统一包装为 spider 形态（search/detail 返回 list、play 返回 url/{{url,header}}），
+//   其余取源/去重/解析选集逻辑完全复用现有适配器。home 无 item 时返回 []（首页回退源站聚合）。
+function __drpyWrap(rule, api, ext) {{
+  // 合并 rule.headers 到全局 fetch（drpy2 常用 headers 携带 UA/Referer/签名）
+  try {{
+    if (rule && rule.headers) {{
+      var __rh = (typeof rule.headers === 'function') ? rule.headers() : rule.headers;
+      if (__rh && typeof __rh === 'object') {{
+        var __of = (typeof fetch === 'function') ? fetch : null;
+        if (__of) {{
+          globalThis.fetch = function(u, hd, data) {{
+            var m = {{}};
+            for (var k in __rh) m[k] = __rh[k];
+            if (hd) {{ try {{ var j = JSON.parse(hd); if (j && typeof j === 'object') {{ for (var k2 in j) m[k2] = j[k2]; }} }} catch(e) {{}} }}
+            return __of(u, JSON.stringify(m), data);
+          }};
+        }}
+      }}
+    }}
+  }} catch(e) {{}}
+  function __normVods(r) {{
+    if (!r) return [];
+    if (Array.isArray(r)) return r;
+    if (Array.isArray(r.list)) return r.list;
+    if (Array.isArray(r.data)) return r.data;
+    return [];
+  }}
+  return {{
+    home: function() {{ var h = (typeof rule.home === 'function') ? rule.home() : null; return __normVods(h); }},
+    search: function(key) {{ var s = (typeof rule.search === 'function') ? rule.search(key) : []; return __normVods(s); }},
+    detail: function(id) {{ var d = (typeof rule.detail === 'function') ? rule.detail(id) : {{list:[]}}; return {{ list: __normVods(d) }}; }},
+    play: function(input) {{ var p = (typeof rule.play === 'function') ? rule.play(input, '', '') : ''; return p; }},
+    lives: function() {{ return (typeof rule.lives === 'function') ? rule.lives() : []; }},
+  }};
+}}
+
 let __t;
 if (typeof spider !== 'undefined' && spider !== null) {{
   __t = (typeof spider === 'function') ? new spider(__api, __ext) : spider;
+}} else if (typeof rule !== 'undefined' && rule !== null) {{
+  __t = __drpyWrap(rule, __api, __ext);
 }} else if (typeof {func} === 'function') {{
-  __t = globalThis;
+  __t = __global;
 }} else {{
   throw new Error('spider 未定义且全局无函数 ' + {func});
 }}
 const __args = {args};
-const __r = (__t === globalThis) ? globalThis[{func}](...__args) : __t[{func}](...__args);
+const __r = (__t === __global) ? __global[{func}](...__args) : __t[{func}](...__args);
 JSON.stringify(__r === undefined ? null : __r);
 "#,
             api = api_lit,

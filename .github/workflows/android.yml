@@ -197,14 +197,12 @@ jobs:
               }
 
               private var _muhaiBound = false
-              // 去掉"if (_muhaiBound) return"永久守卫：Tauri 重建 WebView 后新实例必须能重新绑上接口，
-              // 否则桥永久丢失 → 横屏时灵时不灵。每次调用都重新查找并 addJavascriptInterface（重复添加幂等）。
               private fun _muhaiBind() {
+                  if (_muhaiBound) return
                   try {
                       val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
                       if (wv != null) {
                           wv.addJavascriptInterface(MuHaiAndroid, "MuHaiAndroid")
-                          _backWebView = wv
                           _muhaiBound = true
                       }
                   } catch (e: Exception) { /* 未挂载则等待下次重试 */ }
@@ -339,8 +337,6 @@ jobs:
                   window.decorView.postDelayed({ _muhaiBind() }, 600)
                   window.decorView.postDelayed({ _muhaiBind() }, 1500)
                   window.decorView.postDelayed({ _muhaiBind() }, 3000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 5000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 8000)
 
           '''
           if "fun onStart(" not in src:

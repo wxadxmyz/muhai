@@ -45,9 +45,7 @@ pub fn run() {
             spiderrun,
             dlnascan,
             castvideo,
-            clear_webview_cache,
-            open_netdisk_login,
-            close_netdisk_login
+            clear_webview_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -317,9 +315,7 @@ async fn fetchsource(url: String) -> Result<String, String> {
 // 供前端"清除缓存 / 重置 APP"调用，使下次加载强制重新拉取 APK 内打包的最新前端资源，
 // 根治"APK 升了但前端还是旧壳"的问题。
 #[tauri::command]
-async fn clear_webview_cache,
-            open_netdisk_login,
-            close_netdisk_login(_app: tauri::AppHandle) -> Result<(), String> {
+async fn clear_webview_cache(_app: tauri::AppHandle) -> Result<(), String> {
     // v3.2.0 ⑪：改为 no-op。原先调 clear_all_browsing_data() 会清掉 WebView 全部数据，
     // 在部分 ROM 上导致 App 被系统回收（表现为"清完回到桌面"）。
     // 缓存清理改由前端负责（清 localStorage/sessionStorage/ProxiedImg 缓存），见 SettingsPage.clearCache。
@@ -386,20 +382,5 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
-    Ok(())
-}
-
-// C3（v3.2.4 网盘登录，Android 兼容版）：Rust 只负责开/关窗口，
-// 抓取脚本由前端 netdiskLogin.ts 用 eval 注入（initialization_script 在 Android 编译不过）。
-#[tauri::command]
-async fn open_netdisk_login(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("netdisk-login") { let _ = w.destroy(); }
-    let webview_url = tauri::WebviewUrl::External(url::Url::parse(&url).map_err(|e| format!("URL 解析失败: {e}"))?);
-    tauri::WebviewWindowBuilder::new(&app, "netdisk-login", webview_url).title("网盘登录").build().map_err(|e| format!("创建登录窗口失败: {e}"))?;
-    Ok(())
-}
-#[tauri::command]
-async fn close_netdisk_login(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("netdisk-login") { w.destroy().map_err(|e| e.to_string())?; }
     Ok(())
 }

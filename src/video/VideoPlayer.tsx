@@ -473,9 +473,13 @@ export function VideoPlayer({
   const trySkipIntro = () => {
     const v = videoRef.current;
     if (!v || !introSec || introDone.current) return; // 设了片头即跳，无需总开关
-    // v3.1.12：真机 player.seek() 是异步的，若立即置 introDone 会导致「永不重试/跳过无效」。
-    // 改为：先发 seek 并标记 pendingIntro，待 onSeeked / onTimeUpdate 确认 currentTime 真正到达片头点后再置位。
-    if (pendingIntro.current) {
+    // v3.2.3③：只要还没到片头点就补发 seek（含「换集后 effect 已预置 pendingIntro、但元数据刚就绪
+    //   currentTime 还是 0」的情况——旧逻辑在 pendingIntro 为真时直接 return，导致第 2 集从头播、片头不跳）。
+    //   已到达片头点（seek 完成 / 本就已在片头之后）则收尾确认并置位，保证只跳一次。
+    if (v.currentTime < introSec) {
+      pendingIntro.current = true;
+      player.seek(introSec);
+      try { v.currentTime = introSec; } catch { /* ignore */ }
       if (v.currentTime >= introSec - 0.6) {
         introDone.current = true;
         pendingIntro.current = false;
@@ -483,16 +487,10 @@ export function VideoPlayer({
       }
       return;
     }
-    if (v.currentTime < introSec) {
-      pendingIntro.current = true;
-      player.seek(introSec);
-      try { v.currentTime = introSec; } catch { /* ignore */ }
-      // 同步完成（桌面/部分 WebView）：当前帧已到片头点，直接确认
-      if (v.currentTime >= introSec - 0.6) {
-        introDone.current = true;
-        pendingIntro.current = false;
-        toast('已跳过片头');
-      }
+    if (pendingIntro.current && v.currentTime >= introSec - 0.6) {
+      introDone.current = true;
+      pendingIntro.current = false;
+      toast('已跳过片头');
     }
   };
 
@@ -505,8 +503,9 @@ export function VideoPlayer({
 
   const trySkipOutro = () => {
     const v = videoRef.current;
-    if (!v || !outroSec || !state.duration || outroDone.current) return; // 设了片尾即跳，无需总开关
-    const remain = state.duration - v.currentTime;
+    const dur = state.duration || (v ? v.duration : 0) || 0; // ③：state.duration 偶发未就绪时用实时时长兜底
+    if (!v || !outroSec || !dur || outroDone.current) return; // 设了片尾即跳，无需总开关
+    const remain = dur - v.currentTime;
     if (remain <= outroSec && remain > 0.5) {
       if (!outroTimer.current) {
         const firstSet = outroJustSet.current; // 仅首次设定那次等 2 秒，之后立即跳（300ms 给一帧渲染）
@@ -546,7 +545,7 @@ export function VideoPlayer({
       if (which === 'outro' && next > 0) outroJustSet.current = true; // ① 本次设定后先播 2 秒再跳
       toast(which === 'intro' ? (next > 0 ? `已设片头：${fmtTime(next)}` : '已取消片头') : (next > 0 ? `已设片尾：${fmtTime(next)}` : '已取消片尾'));
     } catch (e: any) {
-      toast('跳过设置失败：' + (e?.message || String(e)), 'error');
+      toast('跳过设置失败：' + (e?.message || String(e)), 'err');
     }
   };
 
@@ -861,7 +860,15 @@ export function VideoPlayer({
           tapTimer.current = window.setTimeout(() => { tapTimer.current = undefined; }, 280);
           singleHideTimer.current = window.setTimeout(() => {
             singleHideTimer.current = undefined;
-            if (wasVisible) setControlsVisible(false); else setControlsVisible(true);
+            if (wasVisible) {
+              // ④：可见态单击 → 隐藏；顺手清掉可能残留的自动隐藏定时器，避免再次翻面
+              setControlsVisible(false);
+              if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = undefined; }
+            } else {
+              // ④：隐藏态单击 → 显示，并重新启动 3 秒自动隐藏倒计时（此前漏了 scheduleHide，控件一直亮着）
+              setControlsVisible(true);
+              if (state.isPlaying) scheduleHide();
+            }
           }, 280);
         }
       }
@@ -872,6 +879,10 @@ export function VideoPlayer({
         else if (landscape) toggleLandscape();
         else onClose();
       }
+      // ⑨ 滑动手势结束：收掉「加载中」转圈。左右滑动只调了 startSeekLoading（没调 endSeekGesture），
+      //    若不在这里补一刀，seekGestureActive.current 永远为 true，clearSeekLoadingOnSettled 永远清不掉圈（①）。
+      //    竖滑（亮度/音量）没起过圈，endSeekGesture 是无害空操作。
+      if (el.__moved) endSeekGesture();
       el.__sx = null; el.__sy = null; el.__accum = 0; el.__dir = 0; el.__backing = false; el.__half = null; el.__moved = false; el.__ts = 0;
       lastTouchRef.current = Date.now(); // ③ 抑制随后合成的 click
     }

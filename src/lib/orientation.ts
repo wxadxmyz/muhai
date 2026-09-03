@@ -3,14 +3,16 @@
 // 用的是可选链 —— 桥还没绑上时整行静默跳过、不报错也不重试，
 // 表现就是"有时能真横屏、有时只 CSS 铺满没真转"。
 // 方案：调用前先自检桥是否就绪；未就绪则轮询等待（每 100ms，最多 3s），就绪后立即调用。
-// 这样即便用户手速快、在重试绑定窗口内点了横屏，也能等到桥绑上再转。
 
 // Q1：1.5s 对慢机器 / WebView 冷启动偏短，桥还没绑上就超时放弃了 → 放宽到 3s
 const BRIDGE_WAIT_MS = 3000;
 const BRIDGE_POLL_MS = 100;
-// Q2：发完指令不校验，系统没响应前端完全不知道 → 隔一会儿检查实际朝向，没到位就再发一次
+// Q2：发完指令不校验，系统没响应前端完全不知道 → 监听 orientationchange / resize 真正转过去再收尾，
+//     并保留定时校验兜底（最多 ~2.4s）。
 const VERIFY_DELAY_MS = 300;
 const VERIFY_MAX_RETRY = 8; // X2：总校验窗口 ~2.4s，覆盖系统异步旋转耗时（原 3 次≈0.9s 偏短会"只放大不转"）
+
+import { toast } from './toast';
 
 function bridgeReady(): boolean {
   try {
@@ -36,20 +38,33 @@ function matches(ori: string): boolean {
   return true; // 'sensor' 交给系统，不校验
 }
 
+// 全局只绑一次旋转监听：orientationchange 发生时 innerWidth/innerHeight 随之更新，
+// 下一次 verify 轮询即可读到 matches()===true 并提前收尾（比纯定时轮询更快确认到位）。
+let verifyBound = false;
+function ensureVerifyListeners() {
+  if (verifyBound) return;
+  verifyBound = true;
+  const onChanged = () => { /* 仅触发 innerWidth 重算，verify 轮询会读到 */ };
+  window.addEventListener('orientationchange', onChanged);
+  window.addEventListener('resize', onChanged);
+}
+
 /**
- * Q2/Q3：发完指令后校验结果，没转过来就重试；重试耗尽仍失败则退回 CSS 铺满保底
- * （CSS 铺满由 .player-card.land / .live-video.fs 承担，所以即便原生没响应，画面也是横的）。
+ * Q2/Q3：发完指令后校验结果，没转过来就重试；重试耗尽仍失败 → toast 提示（桥可能没注入）。
+ * CSS 铺满（.player-card.land / .live-video.fs）始终保证画面是横的，所以即便原生没响应也只是状态栏方向不变。
  */
 function verifyAndRetry(ori: string, attempt: number) {
   if (ori === 'sensor') return; // sensor 不校验
+  ensureVerifyListeners();
   window.setTimeout(() => {
-    if (matches(ori)) return;
+    if (matches(ori)) return; // 已到位
     if (attempt < VERIFY_MAX_RETRY) {
       callBridge(ori);
       verifyAndRetry(ori, attempt + 1);
+    } else {
+      // 多次重试仍失败：CSS 铺满已保证画面横的，仅状态栏/导航栏方向不对 → 提示用户
+      toast('横屏切换失败，请检查系统是否允许旋转');
     }
-    // Q3：3 次都失败 → 什么都不做，前端 CSS 铺满已经保证画面是横的，
-    // 只是没有真的转屏（状态栏/导航栏方向不变）。这里不再无限重试，避免耗电。
   }, VERIFY_DELAY_MS);
 }
 
@@ -67,12 +82,13 @@ export function requestOrientation(ori: 'landscape' | 'portrait' | 'sensor') {
   const timer = window.setInterval(() => {
     waited += BRIDGE_POLL_MS;
     if (bridgeReady()) {
+      window.clearInterval(timer);
       callBridge(ori);
       verifyAndRetry(ori, 1);
-      window.clearInterval(timer);
     } else if (waited >= BRIDGE_WAIT_MS) {
-      // 超时放弃，避免无限轮询（此时同样由 CSS 铺满保底）
+      // 超时放弃，避免无限轮询（此时同样由 CSS 铺满保底）；明确告诉用户桥没注入
       window.clearInterval(timer);
+      toast('横屏桥未就绪，已用 CSS 铺满');
     }
   }, BRIDGE_POLL_MS);
 }

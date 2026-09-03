@@ -100,6 +100,37 @@ async function alistGetUrl(cfg: SourceConfig, path: string): Promise<string | nu
   }
 }
 
+// 已挂载的网盘（alist 管理接口 /api/admin/storage/list，需管理员 Token）
+export interface AlistStorage {
+  id: number;
+  name: string;        // 挂载名
+  mountPath: string;   // 挂载路径（如 /阿里云盘）
+  driver: string;      // 驱动（如 aliyundrive_open / quark / uc）
+}
+
+// 取某 alist 网关下已挂载的盘列表；失败/非管理员 Token 一律回退空数组（不阻塞页面）
+export async function listStorages(cfg: SourceConfig): Promise<AlistStorage[]> {
+  if (!cfg.baseUrl) return [];
+  const base = cfg.baseUrl.replace(/\/$/, '');
+  try {
+    const res = await fetch(`${base}/api/admin/storage/list`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(cfg.token ? { Authorization: cfg.token } : {}),
+      },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const content = data?.data?.content || [];
+    return content
+      .filter((s: any) => s && !s.disabled)
+      .map((s: any) => ({ id: s.id, name: s.mount_path || s.name || s.driver, mountPath: s.mount_path || '/', driver: s.driver || '' }));
+  } catch {
+    return [];
+  }
+}
+
 // 云同步结果
 export interface SyncResult {
   ok: boolean;
@@ -159,4 +190,4 @@ async function cloudRestore(cfg: SourceConfig | null): Promise<SyncResult> {
   }
 }
 
-export const alistClient = { VIDEO_EXT, list: alistList, getUrl: alistGetUrl, backup: cloudBackup, restore: cloudRestore };
+export const alistClient = { VIDEO_EXT, list: alistList, getUrl: alistGetUrl, listStorages, backup: cloudBackup, restore: cloudRestore };

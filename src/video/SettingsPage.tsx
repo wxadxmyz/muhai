@@ -11,10 +11,64 @@ import { invoke } from '@tauri-apps/api/core';
 import { clearProxiedCache, proxiedCacheBytes } from '../components/ProxiedImg';
 import { checkForUpdate } from '../lib/tauriBridge';
 import { useSkin, SKINS } from '../lib/theme';
+import { toast } from '../lib/toast';
+import { alistClient, AlistStorage } from '../lib/alistClient';
+import { SourceConfig } from '../engine/types';
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className={`switch ${on ? 'on' : ''}`} onClick={() => onChange(!on)} role="switch" aria-checked={on} />
+  );
+}
+
+// ⑥ 打开网盘登录页（系统浏览器 / 外部浏览器）
+function openExternal(url: string) {
+  try { window.open(url, '_blank'); } catch { /* ignore */ }
+}
+
+// ⑥ 长按复制 token（alist 网关 token）
+function copyToken(token: string, name: string) {
+  if (!token) { toast('该网盘没有可复制的 Token', 'err'); return; }
+  const done = () => toast(`已复制 ${name} 的 Token`);
+  const fail = () => toast('复制失败，请手动长按选择', 'err');
+  try {
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(token).then(done).catch(fail);
+    else fail();
+  } catch { fail(); }
+}
+
+// ⑥ 触摸长按手势：返回清理函数；触发时执行 onLong
+function useLongPress(onLong: () => void, ms = 600) {
+  let timer: number | undefined;
+  const start = () => { timer = window.setTimeout(onLong, ms); };
+  const clear = () => { if (timer) { window.clearTimeout(timer); timer = undefined; } };
+  return { onTouchStart: start, onTouchEnd: clear, onTouchMove: clear, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); onLong(); } };
+}
+
+// ⑥ 已挂载列表的单个网关行：展示挂载路径 + 已挂的盘，长按/点击复制 Token
+function MountRow({ s, drives }: { s: SourceConfig; drives: AlistStorage[] }) {
+  const lp = useLongPress(() => copyToken(s.token || '', s.name || s.baseUrl));
+  return (
+    <div>
+      <div
+        className="settings-row copyable"
+        {...lp}
+        onClick={() => { if (s.token) copyToken(s.token, s.name || s.baseUrl); }}
+      >
+        <span className="ico"><Icon name="folder" size={20} /></span>
+        <span className="label">{s.name || s.baseUrl}</span>
+        <span className="value muted">{s.baseUrl}</span>
+      </div>
+      {drives.length > 0 && (
+        <div className="mount-drives">
+          {drives.map((d) => (
+            <span className="drive-chip" key={d.id}>
+              {d.driver || '盘'}{d.mountPath && d.mountPath !== '/' ? ` · ${d.mountPath}` : ''}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -102,6 +156,19 @@ export function SettingsPage({
   useEffect(() => {
     getVersion().then(setAppVersion).catch(() => setAppVersion(APP_VERSION_FALLBACK));
   }, []);
+
+  // ⑥：已挂载列表——每个 alist 网关下实际挂了哪些盘（驱动名 + 挂载路径），供"长按复制 Token"之外展示
+  const [storages, setStorages] = useState<Record<string, AlistStorage[]>>({});
+  useEffect(() => {
+    if (sub !== 'mounts') return;
+    let alive = true;
+    const list = store.sources.filter((s) => s.type === 'alist');
+    Promise.all(list.map((s) => alistClient.listStorages(s).then((d) => [s.id, d] as const)))
+      .then((entries) => { if (alive) setStorages(Object.fromEntries(entries)); })
+      .catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub, store.sources]);
 
   // ⑬ 首页地区过滤入口已删除（v3.2.0）：内地过滤改由 Home.isDomestic 硬编码规则实现，无需用户维护屏蔽词。
 
@@ -291,11 +358,17 @@ export function SettingsPage({
           <div className="netdisk-grid">
             {NETDISKS.map((nd) => {
               const bound = boundNetdisk(nd.key);
+              const gw = store.sources.find((s) => s.type === 'alist' && s.name.includes(nd.label));
               return (
                 <div
                   className={'netdisk-item' + (editingNetdisk === nd.key ? ' active' : '')}
                   key={nd.key}
-                  onClick={() => setEditingNetdisk(nd.key)}
+                  onClick={() => {
+                    // ⑥：已绑定且填了 alist 地址 → 直接打开该盘的登录/挂载页（官网登录页由 alist 后台承接）；
+                    //    未绑定 → 展开手动填 alist 地址 + Token 的表单
+                    if (gw?.baseUrl) { openExternal(gw.baseUrl); toast('已打开 ' + nd.label + ' 登录页'); }
+                    else setEditingNetdisk(nd.key);
+                  }}
                 >
                   <div className="nd-icon" style={{ background: nd.color }}>
                     <Icon name={nd.icon} size={24} />
@@ -339,21 +412,19 @@ export function SettingsPage({
                 <div className="empty-hint">
                   <Icon name="folder" size={40} />
                   <p>暂无可挂载的网盘</p>
+                  <p className="muted sm">先到「网盘登录」绑定 alist 地址与 Token</p>
                 </div>
               );
             }
             return (
               <div className="settings-card">
                 {list.map((s) => (
-                  <div className="settings-row" key={s.id}>
-                    <span className="ico"><Icon name="folder" size={20} /></span>
-                    <span className="label">{s.name || s.baseUrl}</span>
-                    <span className="value muted">{s.baseUrl}</span>
-                  </div>
+                  <MountRow key={s.id} s={s} drives={storages[s.id] || []} />
                 ))}
               </div>
             );
           })()}
+          <p className="settings-note">长按网盘条目即可复制其 Token（alist 网关 Token）。已挂载的盘由 alist 管理接口读取，需管理员 Token。</p>
         </SubPage>
       )}
 

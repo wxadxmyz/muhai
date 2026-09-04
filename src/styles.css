@@ -1904,3 +1904,78 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   width: auto;
   height: auto;
 }
+
+/* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」 */
+.hot-row-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 14px 4px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.hot-row-scroll .pcard {
+  flex: 0 0 auto;
+  width: 112px;
+  scroll-snap-align: start;
+}
+.row-head .more-btn {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--accent, #4fa3ff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.row-head .more-btn:active { background: rgba(79, 163, 255, .14); }
+
+/* V3.2.5 #2：「更多」分类全屏页（仿 player-page 满屏覆盖，上下滑动） */
+.more-page {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: var(--bg, #15151f);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0 24px;
+}
+.more-page .mp-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg, #15151f);
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  z-index: 2;
+}
+.more-page .mp-back {
+  border: none;
+  background: transparent;
+  color: var(--text, #fff);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.more-page .mp-head h3 { margin: 0; font-size: 16px; }
+.more-page .mp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+/* V3.2.5 #3：Banner 切换淡入（crossfade） */
+.hot-banner { animation: hbFade .45s ease; }
+@keyframes hbFade { from { opacity: .2; } to { opacity: 1; } }
+
+/* V3.2.5 #3：图片加载中渐变占位（避免直接渲染原始图 URL 被防盗链拦截闪烁） */
+.img-loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #23232f, #33334a);
+}

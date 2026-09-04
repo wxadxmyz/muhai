@@ -38,6 +38,24 @@ export function Home({
   const [bannerIdx, setBannerIdx] = useState(0);
   const [moreView, setMoreView] = useState<{ cat: MoreCat; title: string } | null>(null);
 
+  // V3.2.7 Q6：Banner 手动横滑状态
+  const bannerTimer = useRef<number | null>(null);
+  const bannerTouch = useRef<{ x: number; y: number } | null>(null);
+  const bannerSuppressClick = useRef(false);
+  // V3.2.7 Q6：自动轮播调度（可被手动横滑重置计时）
+  const scheduleAuto = () => {
+    if (bannerTimer.current) window.clearInterval(bannerTimer.current);
+    if (!hotData?.banner?.length) return;
+    bannerTimer.current = window.setInterval(() => {
+      setBannerIdx((i) => {
+        const next = (i + 1) % hotData!.banner.length;
+        const nb = hotData!.banner[next];
+        if (nb?.pic) invoke('fetchimage', { url: nb.pic }).catch(() => {}); // 预取下一张
+        return next;
+      });
+    }, 4000);
+  };
+
   // V3.2.5.1：站点选择器（独立 UI；不影响豆瓣区）
   const [stations, setStations] = useState<SourceConfig[]>([]);
   const [activeStation, setActiveStation] = useState<string>('all');
@@ -61,19 +79,29 @@ export function Home({
     fetchHot().then((d) => { if (alive && d) setHotData(d); }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  // A12：Banner 自动轮播（4s 一切）；切走前预取下一张图，避免切换闪烁（V3.2.5 #3）
+  // A12：Banner 自动轮播调度入口（V3.2.7 Q6：切数据源时重排；scheduleAuto 可被手动横滑重置）
   useEffect(() => {
     if (!hotData?.banner?.length) return;
-    const id = window.setInterval(() => {
-      setBannerIdx((i) => {
-        const next = (i + 1) % hotData!.banner.length;
-        const nb = hotData!.banner[next];
-        if (nb?.pic) invoke('fetchimage', { url: nb.pic }).catch(() => {}); // 预取，命中 ProxiedImg 缓存
-        return next;
-      });
-    }, 4000);
-    return () => window.clearInterval(id);
+    scheduleAuto();
+    return () => {
+      if (bannerTimer.current) window.clearInterval(bannerTimer.current);
+      bannerTimer.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hotData]);
+
+  // V3.2.7 Q5/Q7：更多页打开时接管系统返回——首次返回关更多页回主页，再返回才退桌面
+  useEffect(() => {
+    if (!moreView) return;
+    const prev = (window as any).__onAndroidBack;
+    (window as any).__onAndroidBack = () => {
+      setMoreView(null);
+      return false; // JS 约定：false=已消费(拦截)，不退出 App
+    };
+    return () => {
+      (window as any).__onAndroidBack = prev;
+    };
+  }, [moreView]);
 
   // 「使用须知」提示：添加源成功后弹一次（2s 自动消失），localStorage 保证只弹一次。
   useEffect(() => {
@@ -137,8 +165,37 @@ export function Home({
     const idx = bannerIdx % list.length;
     const b = list[idx];
     const hasCover = !!(b.pic && b.pic.length > 4);
+    // V3.2.7 Q6：手动左右横滑切 Banner（阈值 48px，横向占优才切）
+    const onDown = (e: any) => {
+      bannerTouch.current = { x: e.clientX, y: e.clientY };
+    };
+    const onUp = (e: any) => {
+      const t = bannerTouch.current;
+      bannerTouch.current = null;
+      if (!t || !hotData?.banner?.length) return;
+      const dx = e.clientX - t.x;
+      const dy = e.clientY - t.y;
+      if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
+        bannerSuppressClick.current = true; // 滑动后吞掉紧随的 click
+        const n = hotData.banner.length;
+        setBannerIdx((i) => {
+          const next = (((dx < 0 ? i + 1 : i - 1) % n) + n) % n;
+          const nb = hotData!.banner[next];
+          if (nb?.pic) invoke('fetchimage', { url: nb.pic }).catch(() => {});
+          return next;
+        });
+        scheduleAuto(); // 手动切换后重置自动轮播计时
+      }
+    };
+    const onClickBanner = () => {
+      if (bannerSuppressClick.current) {
+        bannerSuppressClick.current = false;
+        return;
+      }
+      onSearch(b.name);
+    };
     return (
-      <section className="hot-banner" key={idx} onClick={() => onSearch(b.name)}>
+      <section className="hot-banner" key={idx} onClick={onClickBanner} onPointerDown={onDown} onPointerUp={onUp}>
         <div className="hb-cover" style={{ background: hasCover ? undefined : gradientFor(b.name) }}>
           {hasCover ? <ProxiedImg src={b.pic!} alt="" fallbackText={b.name} /> : <span className="ph-big">{initial(b.name)}</span>}
           <div className="hb-mask" />

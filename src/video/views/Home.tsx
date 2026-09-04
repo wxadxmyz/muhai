@@ -1,4 +1,4 @@
-import { MediaItem, SourceConfig } from '../../engine/types';
+import { MediaItem, expandSources, SourceConfig } from '../../engine';
 import { useLibrary } from '../../lib/library';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
@@ -37,6 +37,24 @@ export function Home({
   const [hotData, setHotData] = useState<HotData | null>(null);
   const [bannerIdx, setBannerIdx] = useState(0);
   const [moreView, setMoreView] = useState<{ cat: MoreCat; title: string } | null>(null);
+
+  // V3.2.5.1：站点选择器（独立 UI；不影响豆瓣区）
+  const [stations, setStations] = useState<SourceConfig[]>([]);
+  const [activeStation, setActiveStation] = useState<string>('all');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  useEffect(() => {
+    if (sources.length === 0) {
+      setStations([]);
+      return;
+    }
+    expandSources(sources)
+      .then((ex) => setStations(ex))
+      .catch(() => setStations([]));
+  }, [sources]);
+  const activeStationName =
+    activeStation === 'all'
+      ? '全部站点'
+      : stations.find((s) => s.id === activeStation)?.name ?? '全部站点';
 
   useEffect(() => {
     let alive = true;
@@ -145,6 +163,12 @@ export function Home({
         <Icon name="search" size={16} />
         <span className="ht-search-ph">搜索电影/剧集/演员…</span>
       </button>
+      {/* V3.2.5.1：站点选择按钮（独立 UI，与豆瓣区无关） */}
+      <button className="ht-source" onClick={() => setSheetOpen(true)} title={activeStationName}>
+        <span className="dot" />
+        <span className="name">{activeStationName}</span>
+        <span className="caret">▼</span>
+      </button>
     </div>
   );
 
@@ -207,6 +231,40 @@ export function Home({
           </div>
           <div className="mp-grid">
             {(hotData.categories[moreView.cat] ?? []).map((it) => <HotPosterCard key={it.id} it={it} />)}
+          </div>
+        </div>
+      )}
+
+      {/* V3.2.5.1：站点选择面板（来自已导入源，不内置任何资源） */}
+      {sheetOpen && (
+        <div className="station-mask" onClick={() => setSheetOpen(false)}>
+          <div className="station-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="station-head">
+              <span>选择站点</span>
+              <button className="station-close" onClick={() => setSheetOpen(false)}>✕</button>
+            </div>
+            <div className="station-list">
+              <div
+                className={'station-item' + (activeStation === 'all' ? ' on' : '')}
+                onClick={() => { setActiveStation('all'); setSheetOpen(false); }}
+              >
+                <span className="si-name">全部站点</span>
+                <span className="si-sub">聚合所有已开启源</span>
+                {activeStation === 'all' && <span className="si-check">✓</span>}
+              </div>
+              {stations.map((st) => (
+                <div
+                  key={st.id}
+                  className={'station-item' + (activeStation === st.id ? ' on' : '')}
+                  onClick={() => { setActiveStation(st.id); setSheetOpen(false); }}
+                >
+                  <span className="si-name">{st.name}</span>
+                  <span className="si-sub">{((st as any).parentName ?? '') || '子站'}</span>
+                  {activeStation === st.id && <span className="si-check">✓</span>}
+                </div>
+              ))}
+            </div>
+            <p className="station-note">站点来自你导入的源配置，App 不提供任何影视资源。</p>
           </div>
         </div>
       )}

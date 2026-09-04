@@ -1917,7 +1917,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」 */
 .hot-row-scroll {
   display: flex;
-  gap: 6px; /* V3.2.8：卡间距 = 左右留白(均6px)，更窄更大 */
+  gap: 2px; /* V3.2.9：照 v3.1.11，紧凑 2px 缝，卡片更大 */
   overflow-x: auto;
   padding: 0 6px 4px;
   scroll-snap-type: x mandatory;
@@ -1928,7 +1928,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .hot-row-scroll::-webkit-scrollbar { display: none; } /* V3.2.7 Q2：WebKit 隐藏滚动条 */
 .hot-row-scroll .pcard {
   flex: 0 0 auto;
-  width: calc((100vw - 24px) / 3); /* V3.2.8：2×6(左右留白) + 2×6(两条缝) = 24 */
+  /* V3.2.9：用 100% 替代 100vw（100vw 忽略 .main 的 14px padding，导致卡片偏小）。
+     父容器(.view.home 已 margin -14px 抵消 .main padding)满宽，padding 0 6px + 2px 缝 ×2 = 16px */
+  width: calc((100% - 16px) / 3);
   scroll-snap-align: start;
 }
 .row-head .more-btn {
@@ -1951,6 +1953,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   z-index: 120;
   background: var(--bg, #15151f);
   overflow-y: auto;
+  overflow-x: hidden; /* V3.2.9：锁横向，彻底不能左右滑动 */
   -webkit-overflow-scrolling: touch;
   padding: 0 0 24px;
 }
@@ -1976,9 +1979,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .more-page .mp-head h3 { margin: 0; font-size: 16px; }
 .more-page .mp-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr); /* V3.2.7 Q4：每排正好 3 张，同主页视觉 */
-  gap: 6px; /* V3.2.8：卡间距 = 左右留白(均6px) */
-  padding: 12px 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); /* V3.2.9：minmax(0,1fr) 强制等分，图片撑不爆 */
+  gap: 2px; /* V3.2.9：照 v3.1.11 紧凑缝，卡片更大 */
+  padding: 12px 2px;
   grid-auto-rows: 1fr; /* V3.2.8：每行等高，杜绝个别卡突出来 */
 }
 /* V3.2.8：更多页封面锁 2:3 + 裁剪填充，与主页表现一致 */

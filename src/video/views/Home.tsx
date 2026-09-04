@@ -195,7 +195,7 @@ export function Home({
       onSearch(b.name);
     };
     return (
-      <section className="hot-banner" key={idx} onClick={onClickBanner} onPointerDown={onDown} onPointerUp={onUp}>
+      <section className="hot-banner" onClick={onClickBanner} onPointerDown={onDown} onPointerUp={onUp}>
         <div className="hb-cover" style={{ background: hasCover ? undefined : gradientFor(b.name) }}>
           {hasCover ? <ProxiedImg src={b.pic!} alt="" fallbackText={b.name} /> : <span className="ph-big">{initial(b.name)}</span>}
           <div className="hb-mask" />

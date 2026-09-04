@@ -57,7 +57,16 @@ export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: s
       </div>
     );
   }
-  return <img src={dataUrl ?? src} alt={alt} className={className} loading="lazy" />;
+  if (!dataUrl) {
+    // V3.2.5 #3：加载中显示渐变占位，避免直接渲染原始图 URL 被防盗链/CORS 拦截导致闪烁
+    return (
+      <div
+        className={className ? `${className} img-loading` : 'img-loading'}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#23232f,#33334a)' }}
+      />
+    );
+  }
+  return <img src={dataUrl} alt={alt} className={className} loading="lazy" />;
 }
 
 // ⑪ 暴露给设置页「清除缓存」：清空 base64 图片缓存

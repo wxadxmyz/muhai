@@ -328,7 +328,7 @@ export default function VideoApp() {
         )}
 
         {searchOpen && (
-          <div className="fullpage">
+          <div className="fullpage search-layer"> {/* V3.2.7 Q7：搜索容器层级高于更多页，更多页点卡片打开的搜索可见 */}
             <ErrorBoundary name="搜索">
             <SearchView
               onClose={() => setSearchOpen(false)}

@@ -50,7 +50,7 @@ button:focus:not(:focus-visible) { outline: none; }
 /* ============ 布局 ============ */
 .app { display: flex; height: 100vh; }
 /* S5/S6：全局 .main 是布局容器，但播放器圆钮也用了 class="main"，加 :not(button) 避免 padding 把按钮撑成椭圆 */
-.main:not(button) { flex: 1; overflow: auto; padding: 22px 28px 110px; position: relative; }
+.main:not(button) { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 22px 28px 110px; position: relative; } /* V3.2.7 Q1：锁横向，防横幅横滑带动整页位移 */
 .main { position: relative; }
 /* ⑬ 直播视图：锁满屏、整页不滚，仅内部选台列表独立滚（小窗固定）
    改用 .main-live 由 VideoApp 按 tab 动态添加 —— 不再用 :has()（鸿蒙/卓易通 WebView 支持不稳，
@@ -610,7 +610,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .detail-view { animation: fade .15s; }
 
 /* 播放器页 / 详情页：全屏覆盖层，层级高于搜索页（z90），保证逐级返回时正确叠放 */
-.player-page { z-index: 120; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.player-page { z-index: 130; overflow-y: auto; -webkit-overflow-scrolling: touch; } /* V3.2.7 Q7：高于更多页(120) */
 .player-page .video-player {
   flex: 1 1 auto; display: flex; flex-direction: column; height: auto; min-height: 0;
   margin: 0; border-radius: 0; box-shadow: none; background: #000;
@@ -1827,6 +1827,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   height: 188px;
   border-radius: 16px;
   overflow: hidden;
+  touch-action: pan-y; /* V3.2.7 Q1/Q6：横幅消费横向手势、纵向才滚页面 */
   cursor: pointer;
   background: var(--panel2);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
@@ -1921,10 +1922,13 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   padding: 0 14px 4px;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* V3.2.7 Q2：隐藏滚动条但保留滑动 */
+  -ms-overflow-style: none;
 }
+.hot-row-scroll::-webkit-scrollbar { display: none; } /* V3.2.7 Q2：WebKit 隐藏滚动条 */
 .hot-row-scroll .pcard {
   flex: 0 0 auto;
-  width: 124px; /* V3.2.5.1：主页卡加大 */
+  width: calc((100vw - 44px) / 3); /* V3.2.7 Q3：正好 3 张 + 左右14px边距 + 两条8px缝 */
   scroll-snap-align: start;
 }
 .row-head .more-btn {
@@ -1972,14 +1976,17 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .more-page .mp-head h3 { margin: 0; font-size: 16px; }
 .more-page .mp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); /* V3.2.5.1：更多页卡加大，自适应列 */
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr); /* V3.2.7 Q4：每排正好 3 张，同主页视觉 */
+  gap: 8px;
   padding: 12px 14px;
 }
 
 /* V3.2.5 #3：Banner 切换淡入（crossfade） */
 .hot-banner { animation: hbFade .45s ease; }
 @keyframes hbFade { from { opacity: .2; } to { opacity: 1; } }
+
+/* V3.2.7 Q7：搜索页容器层级提到更多页(120)之上，更多页点卡片打开搜索可见 */
+.search-layer { z-index: 130; }
 
 /* V3.2.5 #3：图片加载中渐变占位（避免直接渲染原始图 URL 被防盗链拦截闪烁） */
 .img-loading {

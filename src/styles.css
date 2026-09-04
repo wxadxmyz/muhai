@@ -1917,9 +1917,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」 */
 .hot-row-scroll {
   display: flex;
-  gap: 8px;
+  gap: 6px; /* V3.2.8：卡间距 = 左右留白(均6px)，更窄更大 */
   overflow-x: auto;
-  padding: 0 14px 4px;
+  padding: 0 6px 4px;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none; /* V3.2.7 Q2：隐藏滚动条但保留滑动 */
@@ -1928,7 +1928,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .hot-row-scroll::-webkit-scrollbar { display: none; } /* V3.2.7 Q2：WebKit 隐藏滚动条 */
 .hot-row-scroll .pcard {
   flex: 0 0 auto;
-  width: calc((100vw - 44px) / 3); /* V3.2.7 Q3：正好 3 张 + 左右14px边距 + 两条8px缝 */
+  width: calc((100vw - 24px) / 3); /* V3.2.8：2×6(左右留白) + 2×6(两条缝) = 24 */
   scroll-snap-align: start;
 }
 .row-head .more-btn {
@@ -1977,13 +1977,17 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .more-page .mp-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr); /* V3.2.7 Q4：每排正好 3 张，同主页视觉 */
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 6px; /* V3.2.8：卡间距 = 左右留白(均6px) */
+  padding: 12px 6px;
+  grid-auto-rows: 1fr; /* V3.2.8：每行等高，杜绝个别卡突出来 */
 }
+/* V3.2.8：更多页封面锁 2:3 + 裁剪填充，与主页表现一致 */
+.more-page .mp-grid .pcard { aspect-ratio: 2 / 3; }
+.more-page .mp-grid .pcard .pcover { width: 100%; height: 100%; object-fit: cover; }
 
-/* V3.2.5 #3：Banner 切换淡入（crossfade） */
-.hot-banner { animation: hbFade .45s ease; }
-@keyframes hbFade { from { opacity: .2; } to { opacity: 1; } }
+/* V3.2.8：去掉整块 hbFade 透明度动画——避免切页半透明漏出下方卡片造成闪动。
+   banner 容器 opacity 恒为 1，仅内层封面图层做轻淡入；配合 Home.tsx 去掉 key 重挂载 */
+.hot-banner .hb-cover { transition: opacity .3s ease; }
 
 /* V3.2.7 Q7：搜索页容器层级提到更多页(120)之上，更多页点卡片打开搜索可见 */
 .search-layer { z-index: 130; }

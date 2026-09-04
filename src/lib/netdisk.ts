@@ -87,8 +87,31 @@ function writeStore(map: TokenMap) {
   (window as any).__netdiskTokens = { ...(window as any).__netdiskTokens, ...map };
 }
 
-/** 启动时调用：把已存 token 挂到 window，供 spider 引擎读取 */
+/** 启动时调用：把已存 token 挂到 window，供 spider 引擎读取。
+ *  选项 B（V3.2.5）：若 URL query 携带网盘登录回传的 token（主 WebView 跳回 App 时带入，
+ *  形如 ?ndtok=<provider>:<token>），先消费并写入，再清除参数，避免重复消费。 */
 export function syncNetdiskTokens() {
+  try {
+    const m = (window.location.search || '').match(/ndtok=([^&]+)/);
+    if (m) {
+      const raw = decodeURIComponent(m[1]);
+      const ci = raw.indexOf(':');
+      if (ci > 0) {
+        const key = raw.slice(0, ci) as NetdiskKey;
+        const token = raw.slice(ci + 1);
+        if (token) {
+          const map = readStore();
+          map[key] = token;
+          writeStore(map);
+        }
+      }
+      // 清除 ?ndtok，避免下次 startup 重复消费
+      try {
+        const cleaned = window.location.search.replace(/[?&]ndtok=[^&]+/, '').replace(/\?$/, '');
+        history.replaceState(null, '', window.location.pathname + cleaned + window.location.hash);
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
   (window as any).__netdiskTokens = readStore();
 }
 
@@ -134,6 +157,35 @@ export function buildCaptureScript(p: NetdiskProvider): string {
       var payload = { provider: ${JSON.stringify(p.key)}, token: t };
       try { window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.emit('netdisk-captured', payload); } catch(e){}
       try { window.opener && window.opener.postMessage({ __netdisk: payload }, '*'); } catch(e2){}
+    }
+  }, 1000);
+})();`;
+}
+
+/**
+ * 选项 B（V3.2.5，Android 兼容）抓取脚本：
+ * 与 buildCaptureScript 同源，但抓到 token 后不再依赖事件回传——因为主 WebView 已跳转到
+ * 登录页，App 原先的监听上下文已被卸载。改为直接把主 WebView 导航回 App，并把 token 带在
+ * URL query 中（?ndtok=<provider>:<token>），由 startup 的 syncNetdiskTokens 消费写入。
+ * @param appHref 进入登录页前记录的 App 地址（不含 hash），用于跳回
+ */
+export function buildCaptureNavScript(p: NetdiskProvider, appHref: string): string {
+  const must = JSON.stringify(p.mustMatch || '');
+  const getter =
+    p.captureMode === 'localStorage'
+      ? `(function(){try{var v=localStorage.getItem(${JSON.stringify(p.lsKey)});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';})()`
+      : `(function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';})()`;
+  const back = JSON.stringify(appHref.split('#')[0]);
+  const sep = back.includes('?') ? '&' : '?';
+  return `(function(){
+  if (window.__ndPoll) return;
+  window.__ndPoll = setInterval(function(){
+    var t = ${getter};
+    if (t) {
+      clearInterval(window.__ndPoll);
+      var payload = { provider: ${JSON.stringify(p.key)}, token: t };
+      try { window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.emit('netdisk-captured', payload); } catch(e){}
+      try { window.location.href = ${back} + ${JSON.stringify(sep)} + 'ndtok=' + encodeURIComponent(payload.provider + ':' + payload.token); } catch(e2){}
     }
   }, 1000);
 })();`;

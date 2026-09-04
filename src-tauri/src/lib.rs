@@ -328,16 +328,26 @@ async fn clear_webview_cache(_app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn fetchimage(url: String) -> Result<String, String> {
     use base64::Engine;
-    let ua = "okhttp/4.10.0";
+    // V3.2.5 #4：豆瓣图床（*.doubanio.com）防盗链严格（Referer/UA 校验），
+    // 用浏览器 UA + 豆瓣 Referer 才能取到图；其余源沿用 okhttp UA + lziapi Referer。
+    let is_douban = url.contains("doubanio.com");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
-    let resp = client
-        .get(&url)
-        .header("User-Agent", ua)
-        .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-        .header("Referer", "https://cj.lziapi.com/")
+    let mut req = client.get(&url);
+    if is_douban {
+        req = req
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            .header("Referer", "https://movie.douban.com/");
+    } else {
+        req = req
+            .header("User-Agent", "okhttp/4.10.0")
+            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            .header("Referer", "https://cj.lziapi.com/");
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| e.to_string())?;

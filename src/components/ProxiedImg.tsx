@@ -46,12 +46,14 @@ export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: s
 
   if (!src) return null;
   if (failed) {
+    // V3.2.5 #4：封面加载失败兜底改为“渐变 + 完整标题”文字卡，
+    // 个别图床挂了也像有设计感的卡片，而非原先的“2 字破块”。
     return (
       <div
         className={className ? `${className} img-fallback` : 'img-fallback'}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#2b2b3e,#3a2747)', color: 'rgba(255,255,255,.82)', fontWeight: 800, fontSize: '30px', letterSpacing: '1px', userSelect: 'none' }}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'linear-gradient(135deg,#2b2b3e,#3a2747)', color: 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: '14px', lineHeight: 1.35, textAlign: 'center', letterSpacing: '0.3px', userSelect: 'none', overflow: 'hidden' }}
       >
-        {fallbackText ? fallbackText.slice(0, 2) : ''}
+        {fallbackText || ''}
       </div>
     );
   }

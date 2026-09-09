@@ -1098,7 +1098,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .search-poster {
   position: relative;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 2 / 3; /* V3.3.0：照参考样式改 2:3 竖海报 */
   background: var(--panel2);
   overflow: hidden;
 }
@@ -1140,20 +1140,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   padding: 2px 7px; border-radius: 5px;
   z-index: 1;
 }
-.search-card-meta {
-  padding: 8px 10px 10px;
-}
-.search-card-title {
-  font-size: 13px; font-weight: 600;
-  color: var(--text);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.search-card-sub {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+/* V3.3.0：搜索卡片名字条已内嵌封面底部（.cover-name），下方 meta 区整块移除 */
 
 /* 选中错误源时显示的占位 */
 .search-grid-error {
@@ -1917,9 +1904,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 /* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」 */
 .hot-row-scroll {
   display: flex;
-  gap: 2px; /* V3.2.9：照 v3.1.11，紧凑 2px 缝，卡片更大 */
+  gap: 2px; /* 照 v3.1.11/历史页：紧凑 2px 缝 */
   overflow-x: auto;
-  padding: 0 6px 4px;
+  padding: 0 0 4px; /* V3.3.0：去掉左右 6px 边距，三卡满宽贴边（同历史页） */
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none; /* V3.2.7 Q2：隐藏滚动条但保留滑动 */
@@ -1928,9 +1915,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .hot-row-scroll::-webkit-scrollbar { display: none; } /* V3.2.7 Q2：WebKit 隐藏滚动条 */
 .hot-row-scroll .pcard {
   flex: 0 0 auto;
-  /* V3.2.9：用 100% 替代 100vw（100vw 忽略 .main 的 14px padding，导致卡片偏小）。
-     父容器(.view.home 已 margin -14px 抵消 .main padding)满宽，padding 0 6px + 2px 缝 ×2 = 16px */
-  width: calc((100% - 16px) / 3);
+  /* V3.3.0：100% 已是扣掉容器 padding 的内容区宽，只需再扣 2 条 2px 缝。
+     （V3.2.9 的 -16px 重复扣了 padding，导致每卡少 4px、第 4 张露边条） */
+  width: calc((100% - 4px) / 3);
   scroll-snap-align: start;
 }
 .row-head .more-btn {
@@ -1978,15 +1965,87 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .more-page .mp-head h3 { margin: 0; font-size: 16px; }
 .more-page .mp-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)); /* V3.2.9：minmax(0,1fr) 强制等分，图片撑不爆 */
-  gap: 2px; /* V3.2.9：照 v3.1.11 紧凑缝，卡片更大 */
-  padding: 12px 2px;
-  grid-auto-rows: 1fr; /* V3.2.8：每行等高，杜绝个别卡突出来 */
+  /* V3.3.0：弃 grid 改 flex——Android WebView 在 fixed 容器内对 grid 均分(minmax(0,1fr))
+     存在兼容问题（列宽被封面原图撑爆→溢出被裁→卡片"叠起来"）。
+     flex + 百分比宽度与主页横排同机制，真机已验证稳定。 */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px; /* 照历史页：紧凑 2px 缝 */
+  padding: 12px 0;
 }
-/* V3.2.8：更多页封面锁 2:3 + 裁剪填充，与主页表现一致 */
-.more-page .mp-grid .pcard { aspect-ratio: 2 / 3; }
+/* V3.3.0：更多页卡片——满宽三等分 + 整卡锁 2:3 + 名字条内嵌封面底部 */
+.more-page .mp-grid .pcard {
+  width: calc((100% - 4px) / 3);
+  min-width: 0;
+  aspect-ratio: 2 / 3;
+  position: relative;
+}
 .more-page .mp-grid .pcard .pcover { width: 100%; height: 100%; object-fit: cover; }
+
+/* V3.3.0：封面底部内嵌名字条（更多页/搜索页通用）——深色渐变 + 白字 */
+.cover-name {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 20px 8px 6px;
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, .78));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* V3.3.0：banner 多图层堆叠 crossfade——旧图垫底、新图加载完才淡入，杜绝空窗露底闪黑 */
+.hot-banner .hb-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity .35s ease;
+}
+
+/* V3.3.0：播放地址解析中（点击搜索结果立即进页、详情后台补齐时） */
+.vp-resolving {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #0b0b14;
+  color: rgba(255, 255, 255, .75);
+  font-size: 13px;
+}
+.vp-resolving .spin {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(255, 255, 255, .18);
+  border-top-color: #4fa3ff;
+  border-radius: 50%;
+  animation: vpresSpin 1s linear infinite;
+}
+@keyframes vpresSpin { to { transform: rotate(360deg); } }
+
+/* V3.3.0：详情加载骨架（选集/介绍未到时占位，替代整块空白） */
+.skel-block { padding: 4px 0; }
+.skel-line {
+  height: 34px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .12), rgba(255, 255, 255, .05));
+  background-size: 200% 100%;
+  animation: skelShimmer 1.2s ease infinite;
+}
+.skel-line.w60 { width: 60%; height: 16px; }
+.skel-line.w40 { width: 40%; height: 16px; }
+@keyframes skelShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.intro-empty { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
 
 /* V3.2.8：去掉整块 hbFade 透明度动画——避免切页半透明漏出下方卡片造成闪动。
    banner 容器 opacity 恒为 1，仅内层封面图层做轻淡入；配合 Home.tsx 去掉 key 重挂载 */

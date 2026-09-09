@@ -9,9 +9,10 @@
 const BRIDGE_WAIT_MS = 8000;
 const BRIDGE_POLL_MS = 100;
 // Q2：发完指令不校验，系统没响应前端完全不知道 → 监听 orientationchange / resize 真正转过去再收尾，
-//     并保留定时校验兜底（最多 ~2.4s）。
-const VERIFY_DELAY_MS = 300;
-const VERIFY_MAX_RETRY = 8; // X2：总校验窗口 ~2.4s，覆盖系统异步旋转耗时（原 3 次≈0.9s 偏短会"只放大不转"）
+//     并保留定时校验兜底。V3.3.0 #7：校验窗口 2.4s → 6s（慢机型系统异步旋转更久），
+//     期间每 400ms 重发一次指令，直到 matches() 为 true。
+const VERIFY_DELAY_MS = 400;
+const VERIFY_MAX_RETRY = 15; // V3.3.0 #7：总校验窗口 ~6s
 
 import { toast } from './toast';
 
@@ -91,7 +92,7 @@ export function requestOrientation(
       window.clearInterval(timer);
       // 仅在用户主动要横屏（landscape）且桥确实没注入时才提示；清理类调用静默。
       if (!silent && ori === 'landscape') {
-        toast('横屏桥未就绪，已用 CSS 铺满');
+        toast('旋转服务启动中，请稍候 1~2 秒再点横屏'); // V3.3.0 #7：更明确的引导文案
       }
     }
   }, BRIDGE_POLL_MS);

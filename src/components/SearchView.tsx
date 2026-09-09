@@ -277,12 +277,8 @@ export function SearchView({
                             {it.episodes.length > 1 ? `更新至 ${it.episodes.length} 集` : it.episodes[0].name || '全集'}
                           </span>
                         )}
-                      </div>
-                      <div className="search-card-meta">
-                        <div className="search-card-title">{it.title}</div>
-                        <div className="search-card-sub">
-                          {it.year ?? (it.episodes && it.episodes.length > 1 ? `${it.episodes.length} 集` : '')}
-                        </div>
+                        {/* V3.3.0 #3：名字条内嵌封面底部（深色渐变+白字），下方 meta 白区整块移除 */}
+                        <div className="cover-name">{it.title}</div>
                       </div>
                     </div>
                   ))}

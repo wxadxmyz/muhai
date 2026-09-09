@@ -37,6 +37,7 @@ export default function VideoApp() {
   const [tab, setTab] = useState<Tab>('home');
   const mainRef = useRef<HTMLElement>(null);
   const [detail, setDetail] = useState<MediaItem | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false); // V3.3.0 #6：详情后台解析中（播放页显示骨架）
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [line, setLine] = useState(0);
   const [startAt, setStartAt] = useState(0);
@@ -178,11 +179,14 @@ export default function VideoApp() {
   };
 
   const openDetail = async (it: MediaItem) => {
-    // 先拿详情：搜索结果列表项常缺 episodes，直接用 itemId 调 play 对 JS 源不可靠。
-    // 有 episodes 后再进播放页，避免首集解析失败/超时。
-    const cfg = store.sources.find((s) => s.id === it.sourceId);
+    // V3.3.0 #5：点击「立即」用列表项进播放页（有 url 直接播；无 url 播放器显示「解析中」），
+    // 详情接口后台补齐——不再让用户干等 2~5 秒无反馈。
     const showKey = `${it.sourceId}:${it.id}`;
     const resumeEp = library.lib.resumeEp[showKey] ?? 0;
+    setDetailLoading(true);
+    playEpisode(it, Math.max(Math.min(resumeEp, (it.episodes?.length ?? 1) - 1), 0), 0, true);
+    // 后台拉详情：成功且数据有效 → 用完整数据重进（补齐剧集/介绍）；失败保持列表项继续
+    const cfg = store.sources.find((s) => s.id === it.sourceId);
     if (cfg) {
       try {
         const src = createSource(cfg);
@@ -190,13 +194,15 @@ export default function VideoApp() {
           const d = await src.getDetail(it.id);
           if (d?.id && (d.episodes?.length || (d as any).cover || (d as any).raw?.vod_pic)) {
             const full = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
-            playEpisode(full, Math.min(resumeEp, (full.episodes?.length ?? 1) - 1), 0, true);
-            return;
+            const stillOnThis = state.current?.id === it.id && state.current?.sourceId === it.sourceId;
+            if (stillOnThis) {
+              playEpisode(full, Math.max(Math.min(resumeEp, (full.episodes?.length ?? 1) - 1), 0), 0, true);
+            }
           }
         }
-      } catch { /* fallback：用列表项直接进 */ }
+      } catch { /* 保持列表项 */ }
     }
-    playEpisode(it, resumeEp, 0, true);
+    setDetailLoading(false);
   };
 
   const closeVideo = () => {
@@ -286,6 +292,7 @@ export default function VideoApp() {
             episodeIndex={episodeIndex}
             line={line}
             startAt={startAt}
+            detailLoading={detailLoading}
             onLineChange={(l) => playEpisode(detail, episodeIndex, l)}
             onSelectEpisode={(i) => playEpisode(detail, i)}
             onClose={closeVideo}

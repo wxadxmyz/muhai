@@ -36,23 +36,60 @@ export function Home({
   // A12：豆瓣热门推荐（顶部 Banner + 四板块），与源站聚合相互独立
   const [hotData, setHotData] = useState<HotData | null>(null);
   const [bannerIdx, setBannerIdx] = useState(0);
+  // V3.3.0 #4：banner 图预加载缓存（base64）——显示层任意时刻都有一张实心图，杜绝切换空窗闪黑
+  const [bannerImgs, setBannerImgs] = useState<Record<string, string>>({});
+  const bannerIdxRef = useRef(0); // 定时器/手势共用，避免闭包读到旧 idx
   const [moreView, setMoreView] = useState<{ cat: MoreCat; title: string } | null>(null);
 
   // V3.2.7 Q6：Banner 手动横滑状态
   const bannerTimer = useRef<number | null>(null);
   const bannerTouch = useRef<{ x: number; y: number } | null>(null);
   const bannerSuppressClick = useRef(false);
+
+  // V3.3.0 #4：切换到第 nextRaw 张——目标图已加载完才切；未加载先取图、加载完再切（期间旧图垫底不闪）
+  const switchBanner = (nextRaw: number) => {
+    const list = hotData?.banner ?? [];
+    const n = list.length;
+    if (!n) return;
+    const next = ((nextRaw % n) + n) % n;
+    const target = list[next];
+    const go = () => {
+      bannerIdxRef.current = next;
+      setBannerIdx(next);
+      scheduleAuto();
+    };
+    if (!target?.pic || bannerImgs[target.pic]) { go(); return; }
+    invoke<string>('fetchimage', { url: target.pic })
+      .then((d) => { setBannerImgs((prev) => ({ ...prev, [target.pic!]: d })); go(); })
+      .catch(() => go()); // 取图失败也切（有渐变兜底）
+  };
+
+  // V3.3.0 #4：顺序预加载全部 banner 图（自动轮播 4s 间隔足够前几张就绪）
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const list = hotData?.banner ?? [];
+      for (const b of list) {
+        if (!alive) return;
+        if (!b.pic) continue;
+        try {
+          const d = await invoke<string>('fetchimage', { url: b.pic });
+          if (!alive) return;
+          setBannerImgs((prev) => (prev[b.pic!] === d ? prev : { ...prev, [b.pic!]: d }));
+        } catch { /* 单张失败忽略，该图层保留渐变兜底 */ }
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hotData]);
+
   // V3.2.7 Q6：自动轮播调度（可被手动横滑重置计时）
   const scheduleAuto = () => {
     if (bannerTimer.current) window.clearInterval(bannerTimer.current);
     if (!hotData?.banner?.length) return;
     bannerTimer.current = window.setInterval(() => {
-      setBannerIdx((i) => {
-        const next = (i + 1) % hotData!.banner.length;
-        const nb = hotData!.banner[next];
-        if (nb?.pic) invoke('fetchimage', { url: nb.pic }).catch(() => {}); // 预取下一张
-        return next;
-      });
+      // V3.3.0 #4：轮播也走 switchBanner——目标图未就绪会等加载完再切，不闪黑
+      switchBanner(bannerIdxRef.current + 1);
     }, 4000);
   };
 
@@ -126,7 +163,7 @@ export function Home({
   }, []);
 
   // A12：热门推荐海报卡（来自 hot.json，无 playUrl，点击触发搜索从已导入源解析可播内容）
-  const HotPosterCard = ({ it }: { it: HotItem }) => {
+  const HotPosterCard = ({ it, inlineTitle }: { it: HotItem; inlineTitle?: boolean }) => {
     const hasCover = !!(it.pic && it.pic.length > 4);
     return (
       <div className="pcard hot-card" onClick={() => onSearch(it.name)} title={it.name}>
@@ -134,9 +171,11 @@ export function Home({
           {hasCover ? <ProxiedImg src={it.pic!} alt="" fallbackText={it.name} /> : <span className="ph-big">{initial(it.name)}</span>}
           {it.area ? <span className="eps area">{(it.area || '').slice(0, 2)}</span> : null}
           {it.rating ? <span className="pscore">{it.rating}</span> : null}
+          {/* V3.3.0 #2：名字条内嵌封面底部（更多页用），深色渐变 + 白字 */}
+          {inlineTitle ? <div className="cover-name">{it.name}</div> : null}
         </div>
-        <div className="ptitle">{it.name}</div>
-        <div className="psub">{it.year ?? ''} {it.type ? '· ' + ({ tv: '剧', movie: '影', variety: '综', anime: '漫' }[it.type] ?? '') : ''}</div>
+        {!inlineTitle && <div className="ptitle">{it.name}</div>}
+        {!inlineTitle && <div className="psub">{it.year ?? ''} {it.type ? '· ' + ({ tv: '剧', movie: '影', variety: '综', anime: '漫' }[it.type] ?? '') : ''}</div>}
       </div>
     );
   };
@@ -158,13 +197,14 @@ export function Home({
     </section>
   );
 
-  // A12：顶部「豆瓣热门」轮播大卡；key 绑定 idx 实现切换淡入（V3.2.5 #3 crossfade）
+  // A12：顶部「豆瓣热门」轮播大卡
+  // V3.3.0 #4：改为多图层堆叠 crossfade——所有已加载的 banner 图常驻 DOM，
+  // 切换仅变 opacity（.hb-layer .35s），旧图垫底直到新图完全盖住，杜绝空窗露底闪黑
   const BannerBlock = () => {
     const list = hotData?.banner ?? [];
     if (!list.length) return null;
     const idx = bannerIdx % list.length;
     const b = list[idx];
-    const hasCover = !!(b.pic && b.pic.length > 4);
     // V3.2.7 Q6：手动左右横滑切 Banner（阈值 48px，横向占优才切）
     const onDown = (e: any) => {
       bannerTouch.current = { x: e.clientX, y: e.clientY };
@@ -177,14 +217,7 @@ export function Home({
       const dy = e.clientY - t.y;
       if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy)) {
         bannerSuppressClick.current = true; // 滑动后吞掉紧随的 click
-        const n = hotData.banner.length;
-        setBannerIdx((i) => {
-          const next = (((dx < 0 ? i + 1 : i - 1) % n) + n) % n;
-          const nb = hotData!.banner[next];
-          if (nb?.pic) invoke('fetchimage', { url: nb.pic }).catch(() => {});
-          return next;
-        });
-        scheduleAuto(); // 手动切换后重置自动轮播计时
+        switchBanner(bannerIdxRef.current + (dx < 0 ? 1 : -1)); // V3.3.0：目标图就绪才切，不闪
       }
     };
     const onClickBanner = () => {
@@ -196,8 +229,23 @@ export function Home({
     };
     return (
       <section className="hot-banner" onClick={onClickBanner} onPointerDown={onDown} onPointerUp={onUp}>
-        <div className="hb-cover" style={{ background: hasCover ? undefined : gradientFor(b.name) }}>
-          {hasCover ? <ProxiedImg src={b.pic!} alt="" fallbackText={b.name} /> : <span className="ph-big">{initial(b.name)}</span>}
+        <div className="hb-cover" style={{ background: gradientFor(b.name) }}>
+          {list.map((item, i) => {
+            const src = item.pic ? bannerImgs[item.pic] : undefined;
+            if (!src) return null; // 未加载完的图层不渲染（旧图继续垫底）
+            return (
+              <img
+                key={(item.pic ?? '') + i}
+                className="hb-layer"
+                src={src}
+                alt=""
+                style={{ opacity: i === idx ? 1 : 0 }}
+              />
+            );
+          })}
+          {list[idx] && !(list[idx].pic && bannerImgs[list[idx].pic!]) ? (
+            <span className="ph-big">{initial(b.name)}</span>
+          ) : null}
           <div className="hb-mask" />
         </div>
         <div className="hb-info">
@@ -287,7 +335,7 @@ export function Home({
             <h3>{moreView.title}</h3>
           </div>
           <div className="mp-grid">
-            {(hotData.categories[moreView.cat] ?? []).map((it) => <HotPosterCard key={it.id} it={it} />)}
+            {(hotData.categories[moreView.cat] ?? []).map((it) => <HotPosterCard key={it.id} it={it} inlineTitle />)}
           </div>
         </div>
       )}

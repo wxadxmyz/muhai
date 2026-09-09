@@ -88,6 +88,7 @@ export function VideoPlayer({
   episodeIndex,
   line,
   startAt = 0,
+  detailLoading = false,
   onLineChange,
   onSelectEpisode,
   onClose,
@@ -99,6 +100,7 @@ export function VideoPlayer({
   episodeIndex: number;
   line: number;
   startAt?: number;
+  detailLoading?: boolean; // V3.3.0 #6：详情后台解析中（选集/介绍显示骨架）
   onLineChange: (i: number) => void;
   onSelectEpisode: (i: number) => void;
   onClose: () => void;
@@ -356,6 +358,13 @@ export function VideoPlayer({
   // 切换剧集/线路：解析并加载
   useEffect(() => {
     if (!state.current) return;
+    // V3.3.0 #5：无播放地址（点击搜索结果立即进页、详情后台补齐中）→ 保持「解析中」转圈，
+    // 不发起加载；playUrl 就绪后本 effect 因依赖变化重新执行、走正常流程。
+    if (!state.current.playUrl) {
+      setResolving(true);
+      setErr(null);
+      return;
+    }
     const v = videoRef.current;
     if (!v) return;
     let alive = true;
@@ -1117,6 +1126,12 @@ export function VideoPlayer({
             }}
           />
 
+          {!state.current?.playUrl && !err && (
+            <div className="vp-resolving">
+              <div className="spin" />
+              <span>正在解析播放地址…</span>
+            </div>
+          )}
           {resolving && !err && (
             <div className="vp-loading">
               <div className="vp-spinner" />
@@ -1377,7 +1392,34 @@ export function VideoPlayer({
           {(() => {
             const raw = detail.raw as any;
             const intro = raw?.vod_blurb || raw?.vod_content || raw?.desc;
-            return intro ? <div className="intro"><div className="sec-head"><span className="sec-title">介绍</span></div><p>{String(intro)}</p></div> : null;
+            // V3.3.0 #6：详情解析中 → 选集/介绍位置显示骨架；确认无介绍 → 「暂无介绍」占位，不再整块空白
+            const noEpisodes = !detail.episodes || detail.episodes.length === 0;
+            return (
+              <>
+                {detailLoading && noEpisodes && (
+                  <div className="section">
+                    <div className="sec-head"><span className="sec-title">选集</span></div>
+                    <div className="skel-block"><div className="skel-line" /><div className="skel-line" /><div className="skel-line" /><div className="skel-line w60" /></div>
+                  </div>
+                )}
+                {(intro || detailLoading) && (
+                  <div className="intro">
+                    <div className="sec-head"><span className="sec-title">介绍</span></div>
+                    {intro ? (
+                      <p>{String(intro)}</p>
+                    ) : (
+                      <div className="skel-block"><div className="skel-line w60" /><div className="skel-line" /><div className="skel-line w40" /></div>
+                    )}
+                  </div>
+                )}
+                {!intro && !detailLoading && (
+                  <div className="intro">
+                    <div className="sec-head"><span className="sec-title">介绍</span></div>
+                    <p className="intro-empty">暂无介绍</p>
+                  </div>
+                )}
+              </>
+            );
           })()}
         </div>
       )}

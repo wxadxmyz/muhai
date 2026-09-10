@@ -24,7 +24,7 @@ export function DetailView({
       <button className="link" onClick={onBack}><Icon name="arrow-left" size={16} /> 返回</button>
       <div className="detail-grid">
         <div className="detail-poster" style={{ background: detail.cover ? undefined : gradientFor(detail.title) }}>
-          {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <span className="ph-big">{initial(detail.title)}</span>}
+          {detail.cover ? <ProxiedImg src={detail.cover} alt="" fallbackText={detail.title} /> : <span className="ph-big">{initial(detail.title)}</span>}
         </div>
         <div className="detail-info">
           <h1>{detail.title}</h1>

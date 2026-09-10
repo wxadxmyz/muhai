@@ -6,8 +6,8 @@
 // 比例统一 3:4（V3.3.0：用户要求"矮一点"，比原 2:3 矮约 11%）。
 import { useCallback, useRef, useState } from 'react';
 
-export function useCardGrid(opts: { cols: number; gap: number; pad?: number }) {
-  const { cols, gap, pad = 0 } = opts;
+export function useCardGrid(opts: { cols: number; gap: number; pad?: number; mode?: 'grid' | 'row' }) {
+  const { cols, gap, pad = 0, mode = 'grid' } = opts;
   const [width, setWidth] = useState(0);
   const roRef = useRef<ResizeObserver | null>(null);
   const elRef = useRef<HTMLElement | null>(null);
@@ -35,9 +35,21 @@ export function useCardGrid(opts: { cols: number; gap: number; pad?: number }) {
     [measure]
   );
 
-  // clientWidth 含容器左右 padding（pad 由容器内联样式设置），扣掉得到内容区
-  const inner = Math.max(width - pad * 2 - gap * (cols - 1), 0);
-  const cardW = inner > 0 ? Math.floor(inner / cols) : 0;
+  // V3.3.1 Q1：两种排布各算各的可用宽——
+  //   grid（更多页/网格）：两侧都留边，扣 pad*2 + (cols-1) 个缝。
+  //   row（主页横排）：只扣左侧边 + cols 个缝（比 grid 多扣一个缝）。
+  //     多扣的这一个缝是关键：第 cols+1 张卡的左边缘 = pad + cols*cardW + cols*gap
+  //     = pad + inner + cols*gap…… 令 inner = width - pad - cols*gap，则该值恰好 = width，
+  //     即第 cols+1 张卡的左边缘正好压在屏幕右边界上——屏幕里只见 cols 张，
+  //     第 cols+1 张必须滑动才出现（旧公式两侧都留边，右留的 10px 装不下 8px 的缝，
+  //     导致第 4 张卡探进屏幕 2px，就是反馈里"露个边"的那 2px）。
+  const inner =
+    mode === 'row'
+      ? Math.max(width - pad - gap * cols, 0)
+      : Math.max(width - pad * 2 - gap * (cols - 1), 0);
+  // V3.3.1 Q1：不再 Math.floor——取整丢掉的余数会让第 cols+1 张卡最多再露出 ~2px。
+  // 保留两位小数，cols 张卡加缝仍精确等于 inner，不累积误差。
+  const cardW = inner > 0 ? Math.round((inner / cols) * 100) / 100 : 0;
   const cardH = cardW > 0 ? Math.round((cardW * 4) / 3) : 0; // 3:4
   return { ref, ready: cardW > 0, cardW, cardH };
 }

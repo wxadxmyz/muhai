@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { aggregateSearch, aggregateSuggest, expandSources, MediaItem, MediaType, SourceConfig, SuggestItem } from '../engine';
+import { aggregateSearch, expandSources, MediaItem, MediaType, SourceConfig } from '../engine';
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
@@ -11,16 +11,6 @@ type SourceState =
   | { kind: 'error'; message: string };
 
 const ALL_KEY = '__all__';
-
-// 联想条目左侧类型徽章配色（影视仓是纯灰文字标签，我们用彩色徽章做差异化，只借"信息布局"这个通用思路）
-function badgeCls(t: string): string {
-  if (/电影|影|片/.test(t)) return 'b-movie';
-  if (/综/.test(t)) return 'b-show';
-  if (/动|漫/.test(t)) return 'b-anime';
-  if (/音|歌|曲/.test(t)) return 'b-music';
-  if (/剧|连续/.test(t)) return 'b-tv';
-  return 'b-tv';
-}
 
 function parentIdOf(src: SourceConfig): string {
   return ((src as any).parentId as string) || src.id;
@@ -55,12 +45,6 @@ export function SearchView({
   const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
 
-  // V3.3.1 #7：搜索联想
-  const [sugg, setSugg] = useState<SuggestItem[]>([]);
-  const [suggOpen, setSuggOpen] = useState(false);
-  const kwRef = useRef(kw); // 用于丢弃"输入已变"的迟到联想结果
-  kwRef.current = kw;
-  const suggTimer = useRef<number | null>(null);
   // #8：中文输入法组字中（拼音还没上屏）——此时按搜索键不能拿拼音去搜
   const composingRef = useRef(false);
 
@@ -112,94 +96,6 @@ export function SearchView({
   }, [expanded, items, errors]);
 
   const showHints = !searched && kw.trim() === '';
-  // 联想面板：有联想结果且处于"输入态"就整块顶掉下面的历史/结果区
-  const panelOpen = suggOpen && sugg.length > 0;
-
-  // V3.3.1 #7：输入防抖 250ms 拉联想。
-  // 源没实现 suggest 就返回空数组，联想面板自然不出现，正常搜索不受影响。
-  useEffect(() => {
-    if (suggTimer.current) window.clearTimeout(suggTimer.current);
-    const q = kw.trim();
-    // 少于 2 个字不发联想：单字命中太多、价值低，还会白白打一堆请求（#5 反应慢）
-    if (q.length < 2) {
-      setSugg([]);
-      setSuggOpen(false);
-      return;
-    }
-    suggTimer.current = window.setTimeout(async () => {
-      try {
-        const r = await aggregateSuggest(sources, q, { timeout: 6000 });
-        if (kwRef.current !== kw) return; // 期间又输入了新内容 → 丢弃这次结果
-        setSugg(r);
-        if (r.length) setSuggOpen(true);
-      } catch {
-        /* 联想失败不影响正常搜索 */
-      }
-    }, 250);
-    return () => {
-      if (suggTimer.current) window.clearTimeout(suggTimer.current);
-    };
-  }, [kw, sources]);
-
-  // 该片上次看到第几集（0-based 集序号，展示时 +1）；undefined = 没看过
-  const resumeOf = (s: SuggestItem): number | undefined => {
-    if (!s.id || !s.sourceId) return undefined;
-    const v = library.lib.resumeEp[`${s.sourceId}:${s.id}`];
-    return typeof v === 'number' ? v : undefined;
-  };
-
-  // 总集数：从观看历史里取（联想接口不返回总集数，取不到就不画进度环，不编造假比例）
-  const totalOf = (s: SuggestItem): number => {
-    if (!s.id || !s.sourceId) return 0;
-    const key = `${s.sourceId}:${s.id}`;
-    const h = library.lib.history.find((x) => `${x.sourceId}:${x.id}` === key);
-    return h?.episodes?.length ?? 0;
-  };
-
-  // 联想条目 → 可播放的 MediaItem（openDetail 会按 resumeEp 自动续播）
-  const toMedia = (s: SuggestItem): MediaItem | null => {
-    if (!s.id || !s.sourceId) return null;
-    return {
-      id: s.id,
-      sourceId: s.sourceId,
-      sourceName: s.sourceName ?? sources.find((c) => c.id === s.sourceId)?.name ?? '',
-      title: s.name,
-      cover: s.cover,
-      year: s.year,
-      mediaType: mediaType ?? 'video',
-      episodes: [], // openDetail 会后台拉详情补齐剧集，并按 resumeEp 跳到对应集
-    };
-  };
-
-  // 关键词高亮：切成 [前, 命中, 后] 三段，避免用 dangerouslySetInnerHTML
-  const hl = (text: string) => {
-    const q = kw.trim();
-    if (!q) return <>{text}</>;
-    const i = text.toLowerCase().indexOf(q.toLowerCase());
-    if (i < 0) return <>{text}</>;
-    return (
-      <>
-        {text.slice(0, i)}
-        <span className="sugg-hl">{text.slice(i, i + q.length)}</span>
-        {text.slice(i + q.length)}
-      </>
-    );
-  };
-
-  const suggClick = (s: SuggestItem) => {
-    setKw(s.name);
-    setSuggOpen(false);
-    run(s.name);
-  };
-
-  const suggPlay = (s: SuggestItem) => {
-    (document.activeElement as HTMLElement | null)?.blur(); // 收起输入法
-    const m = toMedia(s);
-    if (!m) { suggClick(s); return; } // 联想没带 id（兜底来源）→ 退化成普通搜索
-    setSuggOpen(false);
-    setSearched(true);
-    onPlay(m); // → openDetail：看过就从上次那集续播，没看过就第 1 集
-  };
 
   const run = async (q?: string) => {
     const query = (q ?? kw).trim();
@@ -207,7 +103,6 @@ export function SearchView({
     setKw(query);
     setLoading(true);
     setSearched(true);
-    setSuggOpen(false); // #7：开始搜索就收起联想面板
     setActiveSource(ALL_KEY);
     library.addSearch(query);
     // 展开 tvbox 子站（左侧源栏用）
@@ -266,7 +161,7 @@ export function SearchView({
         <div className="sinput">
           <span className="search-ico"><Icon name="search" size={18} /></span>
           {/*
-            V3.3.1 #8：
+            #8：
             - type="search" + enterKeyHint="search" → 安卓/鸿蒙输入法右下角显示「搜索」键（不是换行）
             - 回车时先 blur() 主动收起软键盘，再执行搜索（旧版键盘不消失）
             - compositionstart/end：中文拼音还没上屏（组字中）时按搜索键不触发，
@@ -292,64 +187,11 @@ export function SearchView({
             }}
             placeholder={placeholder}
           />
-          {kw ? <span className="sclear" onClick={() => { setKw(''); setSuggOpen(false); }}>×</span> : null}
+          {kw ? <span className="sclear" onClick={() => setKw('')}>×</span> : null}
         </div>
         <button className="primary" onClick={() => run()}>搜索</button>
       </div>
 
-      {/* V3.3.1 #7：全屏联想面板。一出现就把「最近搜索 / 结果区」整块顶掉（不是叠加） */}
-      {panelOpen ? (
-        <div className="sugg-panel" role="listbox" aria-label="搜索联想">
-          {sugg.map((s, i) => {
-            const ep = resumeOf(s);          // 0-based 集序号；undefined = 没看过
-            const total = totalOf(s);        // 观看历史里查到的总集数（0 = 未知 → 不画环）
-            const C = 2 * Math.PI * 15.5;
-            const ratio = ep !== undefined && total > 0 ? Math.min((ep + 1) / total, 1) : 0;
-            return (
-              <div
-                className="sugg-item"
-                key={`${s.sourceId ?? 'x'}:${s.id ?? s.name}:${i}`}
-                onClick={() => suggClick(s)}
-                role="option"
-                aria-selected={false}
-              >
-                {s.type ? <span className={'sugg-badge ' + badgeCls(s.type)}>{s.type}</span> : null}
-                <div className="sugg-main">
-                  <div className="sugg-title">{hl(s.name)}</div>
-                  <div className="sugg-meta">
-                    {s.sourceName ? <span className="sugg-chip">{s.sourceName}</span> : null}
-                    {s.year ? <span>{s.year}</span> : null}
-                    {ep !== undefined ? (
-                      <span className="sugg-resume">
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3.2 2" />
-                        </svg>
-                        看到第 {ep + 1} 集
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <button
-                  className={'sugg-play' + (ep !== undefined ? ' has-hist' : '')}
-                  onClick={(e) => { e.stopPropagation(); suggPlay(s); }}
-                  aria-label={ep !== undefined ? `继续播放第 ${ep + 1} 集` : `播放第 1 集`}
-                >
-                  {ratio > 0 ? (
-                    <svg className="sugg-ring" viewBox="0 0 34 34" aria-hidden="true">
-                      <circle className="track" cx="17" cy="17" r="15.5" />
-                      <circle className="prog" cx="17" cy="17" r="15.5" strokeDasharray={C} strokeDashoffset={C * (1 - ratio)} />
-                    </svg>
-                  ) : null}
-                  <svg className="sugg-tri" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M8 5v14l11-7z" fill="currentColor" />
-                  </svg>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <>
       {!showHints && (
         <div className="search-count">
           <span>
@@ -466,7 +308,7 @@ export function SearchView({
                             {it.episodes.length > 1 ? `更新至 ${it.episodes.length} 集` : it.episodes[0].name || '全集'}
                           </span>
                         )}
-                        {/* V3.3.0 #3：名字条内嵌封面底部（深色渐变+白字），下方 meta 白区整块移除 */}
+                        {/* 名字条内嵌封面底部（深色渐变+白字） */}
                         <div className="cover-name">{it.title}</div>
                       </div>
                     </div>
@@ -484,8 +326,6 @@ export function SearchView({
           </main>
         </div>
         )}
-        </>
-      )}
     </div>
   );
 }

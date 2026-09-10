@@ -119,13 +119,17 @@ export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: s
     );
   }
 
-  // 加载中占位（#5：ref 挂在这里做视口观察）
+  // 加载中占位（#5：ref 挂在这里做视口观察）。
+  // V3.3.2 #3：占位即显示片名文字，不再是一块纯空白渐变——
+  // 封面 URL 失效/慢时，用户至少能立刻看到片名而不是"深紫空白"。
   return (
     <div
       ref={holderRef}
       className={className ? `${className} img-loading` : 'img-loading'}
-      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#23232f,#33334a)' }}
-    />
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'linear-gradient(135deg,#23232f,#33334a)', color: 'rgba(255,255,255,.82)', fontWeight: 700, fontSize: '14px', lineHeight: 1.35, textAlign: 'center', overflow: 'hidden', userSelect: 'none' }}
+    >
+      {fallbackText || ''}
+    </div>
   );
 }
 

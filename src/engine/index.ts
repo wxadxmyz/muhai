@@ -6,7 +6,7 @@ import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
 import { createJsSource } from './adapters/js';
 import { createNormalSource } from './adapters/normal';
 import { withTimeout } from './http';
-import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType, SuggestItem } from './types';
+import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
 
 export * from './types';
 
@@ -102,55 +102,6 @@ export async function aggregateSearch(
   let items = dedupe(buckets.flat());
   if (opts.mediaType) items = items.filter((it) => it.mediaType === opts.mediaType);
   return { items, errors };
-}
-
-// V3.3.1 #7：跨源搜索联想。并发问所有启用源，谁快谁先出（渐进式），按名字去重。
-// 源没实现 suggest 就跳过；全部失败只返回空数组——前端回落成"不显示联想"，
-// 正常搜索完全不受影响。
-export async function aggregateSuggest(
-  sources: SourceConfig[],
-  keyword: string,
-  opts: { timeout?: number; onPartial?: (items: SuggestItem[]) => void } = {}
-): Promise<SuggestItem[]> {
-  const q = keyword.trim();
-  if (!q) return [];
-  const active = sources
-    .filter((s) => s.enabled)
-    .sort((a, b) => a.priority - b.priority);
-
-  const out: SuggestItem[] = [];
-  const seen = new Set<string>();
-
-  const push = (arr: SuggestItem[]) => {
-    for (const it of arr) {
-      const k = (it.name ?? '').trim();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      // 补上来源信息：用于查续播进度和一键播放
-      out.push(it);
-    }
-    opts.onPartial?.(out.slice());
-  };
-
-  await Promise.all(
-    active.map(async (s) => {
-      let src: MediaSource;
-      try {
-        src = createSource(s);
-      } catch {
-        return;
-      }
-      if (!src.suggest) return; // 该源不支持联想
-      try {
-        const r = await withTimeout(src.suggest(q), opts.timeout ?? 6000);
-        if (Array.isArray(r) && r.length) push(r);
-      } catch {
-        /* 单个源联想失败不影响其它源 */
-      }
-    })
-  );
-
-  return out;
 }
 
 // 首页聚合：并发拉取所有启用源首页推荐，合并去重。

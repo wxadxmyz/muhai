@@ -625,6 +625,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .detail-info h1 { margin: 0 0 12px; font-size: 26px; }
 .detail-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 .detail-desc { line-height: 1.8; color: var(--text); opacity: .9; max-width: 640px; }
+.detail-note { margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .detail-actions { display: flex; gap: 12px; margin-top: 20px; }
 .detail-actions .fav { background: var(--panel2); border: 1px solid var(--border); }
 .detail-episodes h3 { font-size: 15px; margin: 0 0 12px; }
@@ -1171,104 +1172,6 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   text-align: center;
   font-size: 14px;
 }
-
-/* ============ V3.3.1 #7 搜索联想面板（全屏，顶掉最近搜索/结果区） ============ */
-.sugg-panel {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  background: var(--bg);
-  padding: 4px 0 calc(12px + var(--sab, 0px));
-}
-.sugg-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border);
-  -webkit-tap-highlight-color: transparent;
-  cursor: pointer;
-}
-.sugg-item:active { background: var(--panel2); }
-.sugg-badge {
-  flex: none;
-  min-width: 22px;
-  padding: 2px 5px;
-  border-radius: 5px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  color: #fff;
-}
-.sugg-badge.b-movie { background: #e0574f; }
-.sugg-badge.b-tv    { background: #4a7fe0; }
-.sugg-badge.b-show  { background: #d99a2b; }
-.sugg-badge.b-anime { background: #8b5cd6; }
-.sugg-badge.b-music { background: #2ea36b; }
-.sugg-main { flex: 1 1 auto; min-width: 0; }
-.sugg-title {
-  font-size: 15px;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sugg-hl { color: var(--accent); font-weight: 600; }
-.sugg-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-}
-.sugg-chip {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--panel2);
-  border: 1px solid var(--border);
-  font-size: 10px;
-}
-.sugg-resume {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--accent);
-}
-/* 右侧一键播放：SVG 三角 + 续播进度环 */
-.sugg-play {
-  position: relative;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--panel2);
-  color: var(--text);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  cursor: pointer;
-}
-.sugg-play.has-hist { color: var(--accent); border-color: var(--accent); }
-.sugg-play:active { transform: scale(.92); }
-.sugg-tri { width: 17px; height: 17px; display: block; }
-.sugg-ring {
-  position: absolute;
-  inset: 0;
-  width: 34px;
-  height: 34px;
-  transform: rotate(-90deg);
-  pointer-events: none;
-}
-.sugg-ring circle { fill: none; stroke-width: 1.8; stroke-linecap: round; }
-.sugg-ring .track { stroke: rgba(127, 127, 140, .28); }
-.sugg-ring .prog { stroke: currentColor; }
 
 /* ============ 媒体查询 · 搜索页在小屏微调 ============ */
 @media (max-width: 380px) {

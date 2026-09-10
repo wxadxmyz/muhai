@@ -218,16 +218,21 @@ jobs:
                               // 就转不动，表现正是「有时能横有时不能」。
                               when (orientation) {
                                   "landscape" -> {
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                      _startLandscapeSensor()   // 再交给传感器，左右两个方向都能横
+                                      _stopLandscapeSensor()
+                                      // V3.3.2 #2：改用 SENSOR_LANDSCAPE——横向传感器，左右两个方向都能横，
+                                      // 且不受系统「自动旋转」开关影响（开关关着也能强制横屏）。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                   }
                                   "landscape-reverse" -> {
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-                                      _startLandscapeSensor()
+                                      _stopLandscapeSensor()
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                   }
                                   "sensor" -> {
                                       _stopLandscapeSensor()
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                                      // V3.3.2 #2：FULL_SENSOR——应用内无视系统「自动旋转」开关，
+                                      // 跟随重力在横/竖/左右间自由旋转（用户反馈"不能自动旋转"的根因：
+                                      // 旧用 SCREEN_ORIENTATION_SENSOR，开关关着就完全不转）。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                   }
                                   else -> {
                                       _stopLandscapeSensor()    // 退出横屏即停监听，不耗电

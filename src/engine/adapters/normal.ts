@@ -8,29 +8,7 @@
 // 与 tvbox 蜘蛛源的区别：tvbox 配置里"站点 api 是标准 http 接口、无 spider"的源，
 // 以前被 collectSpiders 的 `continue` 跳过；本适配器让它们可用，从而主页/搜索能出内容。
 import { invoke } from '@tauri-apps/api/core';
-import { MediaItem, MediaSource, PlayUrl, SourceConfig, SuggestItem } from '../types';
-
-// V3.3.1 #7：把接口的原始条目转成联想词。
-// 兼容三种返回形态：字符串数组 / {list:[{vod_name}]} / {list:["词"]}。
-// 带出 vod_id 很关键——有它前端才能查 resumeEp 显示"看到第 N 集"并一键续播。
-function toSuggest(list: any[], cfg: SourceConfig): SuggestItem[] {
-  if (!Array.isArray(list)) return [];
-  const out: SuggestItem[] = [];
-  for (const v of list) {
-    const name = typeof v === 'string' ? v : v?.vod_name ?? v?.name ?? v?.title ?? '';
-    if (!name) continue;
-    out.push({
-      name: String(name).trim(),
-      id: v && v.vod_id != null ? String(v.vod_id) : undefined,
-      sourceId: cfg.id,
-      sourceName: cfg.name,
-      type: typeof v === 'string' ? undefined : v?.type_name,
-      year: typeof v === 'string' ? undefined : v?.vod_year,
-      cover: typeof v === 'string' ? undefined : v?.vod_pic,
-    });
-  }
-  return out;
-}
+import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -77,6 +55,35 @@ function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
     mediaType: 'video' as const,
     raw: v,
   }));
+}
+
+// 详情字段兼容：不同站点返回的字段名千奇百怪（vod_pic/pic、vod_content/vod_blurb、
+// vod_class/vod_tag、vod_score/vod_douban_score…），这里统一映射 + 空值兜底，
+// 保证详情页不会因为某个字段缺失而整片空白（V3.3.2 #3 修复点）。
+function toDetail(raw: any, cfg: SourceConfig): MediaItem {
+  const cover =
+    raw?.vod_pic || raw?.vod_pic_slide?.split?.('$$$')?.[0] || raw?.pic || '';
+  const desc =
+    raw?.vod_content || raw?.vod_blurb || raw?.vod_remarks || '';
+  const genre = raw?.vod_class || raw?.vod_tag || '';
+  const year = raw?.vod_year || raw?.vod_pubdate || '';
+  const score = raw?.vod_score || raw?.vod_douban_score || '';
+  const episodes = raw?.vod_play_url ? toEpisodes(raw.vod_play_url) : [];
+  return {
+    id: String(raw?.vod_id ?? raw?.id ?? ''),
+    sourceId: cfg.id,
+    sourceName: cfg.name,
+    title: raw?.vod_name ?? raw?.name ?? '未命名',
+    artist: raw?.vod_remarks ?? raw?.type_name ?? '',
+    cover,
+    year,
+    genre,
+    score,
+    mediaType: 'video' as const,
+    episodes,
+    desc,
+    raw,
+  };
 }
 
 // 选集格式：group1$url1#url2$$$group2$url3#url4
@@ -131,33 +138,10 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
       return toItems(data?.list ?? [], cfg);
     },
 
-    // V3.3.1 #7：搜索联想。先试标准 ac=suggest；源不支持（返回非 JSON 或空列表）
-    // 就回落到 ac=search 取前 8 条——几乎所有 CMS 都支持搜索，保证联想不至于全空。
-    async suggest(keyword: string): Promise<SuggestItem[]> {
-      const q = keyword.trim();
-      if (q.length < 2) return []; // 单字不发请求
-      try {
-        const data = await apiJson(endpoint, { ac: 'suggest', wd: q });
-        const items = toSuggest(Array.isArray(data) ? data : data?.list ?? [], cfg);
-        if (items.length) return items;
-      } catch {
-        /* 该源没有 suggest 接口 → 走下面的搜索兜底 */
-      }
-      try {
-        const data = await apiJson(endpoint, { ac: 'search', wd: q, pg: '1' });
-        return toSuggest(data?.list ?? [], cfg).slice(0, 8);
-      } catch {
-        return [];
-      }
-    },
-
     async getDetail(itemId: string) {
       const data = await apiJson(endpoint, { ac: 'detail', ids: itemId });
-      const items = toItems(data?.list ?? [], cfg);
-      const it = items[0];
-      if (it && it.raw?.vod_play_url) {
-        it.episodes = toEpisodes(it.raw.vod_play_url);
-      }
+      const list = data?.list ?? [];
+      const it = list[0] ? toDetail(list[0], cfg) : null;
       return (
         it ?? {
           id: itemId,
@@ -170,14 +154,26 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
     },
 
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
-      // 普通解析源的播放地址在详情 vod_play_url 中；取首条线路首集
+      // 普通解析源的播放地址在详情 vod_play_url 中；vod_play_url 形如
+      //  线路1$url1#url2#url3$$$线路2$url4#url5#url6
+      // 不同线路/集数的真实可播地址可能不同（有的要解析 share 页、有的直链）。
+      // 轮询所有集直到某条能 resolve 出有效 m3u8/直链——避免"首条线路死了整源都播不了"
+      // （V3.3.2 #3 修复点：百度源首集死链导致整源「解码失败」）。
       const data = await apiJson(endpoint, { ac: 'detail', ids: itemId });
       const v = (data?.list ?? [])[0];
       if (!v?.vod_play_url) return { url: '' };
       const eps = toEpisodes(v.vod_play_url);
+      for (const ep of eps) {
+        try {
+          const url = await resolvePlayUrl(ep.url);
+          if (url) return { url, headers: { Referer: endpoint + '/' } };
+        } catch {
+          /* 这条解不出，试下一条 */
+        }
+      }
+      // 全部失败：退回首集原始地址，交给播放器兜底报错（至少能显示"地址解析失败"而非黑屏）
       const raw = eps[0]?.url ?? '';
-      const url = await resolvePlayUrl(raw);
-      return { url, headers: { Referer: endpoint + '/' } };
+      return { url: await resolvePlayUrl(raw), headers: { Referer: endpoint + '/' } };
     },
 
     async test() {

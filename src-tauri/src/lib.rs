@@ -11,6 +11,25 @@ use tauri::tray::TrayIconBuilder;
 // v2.3.0 统一 JS 沙箱引擎（幕海/律云共用）
 mod js_engine;
 
+// V3.3.1 #5：全局复用的 HTTP 客户端（连接池）。
+// 旧实现里 fetchsource / fetchimage 每次调用都 Client::builder().build() 新建一个客户端，
+// 客户端不复用 = 连接池不复用 = 每个请求都要重走 DNS + TCP + TLS 握手。首页二十多张封面
+// 就是二十多次完整握手，点详情、解析播放地址又各来一轮，是"点什么都慢"的主因之一。
+// 这里改成进程内单例：连接常驻复用，超时改为按请求单独设置（各自业务需要不同时长）。
+use std::sync::OnceLock;
+
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            // 空闲连接保留 90s，单 host 最多 8 条，够首页一屏封面并发复用
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .pool_max_idle_per_host(8)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
 // P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），
 // 并建立系统托盘。全局快捷键与更新检查由前端通过 @tauri-apps JS 插件调用，
 // 此处只负责初始化插件与托盘菜单。
@@ -292,12 +311,9 @@ async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
 #[tauri::command]
 async fn fetchsource(url: String) -> Result<String, String> {
     let ua = "okhttp/4.10.0";
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let resp = client
+    let resp = http_client()
         .get(&url)
+        .timeout(std::time::Duration::from_secs(30))
         .header("User-Agent", ua)
         .header("Accept", "*/*")
         .send()
@@ -331,11 +347,9 @@ async fn fetchimage(url: String) -> Result<String, String> {
     // V3.2.5 #4：豆瓣图床（*.doubanio.com）防盗链严格（Referer/UA 校验），
     // 用浏览器 UA + 豆瓣 Referer 才能取到图；其余源沿用 okhttp UA + lziapi Referer。
     let is_douban = url.contains("doubanio.com");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| e.to_string())?;
-    let mut req = client.get(&url);
+    // V3.3.1 Q2：超时 20s → 8s（判定失败更快，随即转 webview 原生再试）；
+    // #5：客户端改用全局单例复用连接，超时按请求单独设置。
+    let mut req = http_client().get(&url).timeout(std::time::Duration::from_secs(8));
     if is_douban {
         req = req
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")

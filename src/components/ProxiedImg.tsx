@@ -6,7 +6,9 @@ import { invoke } from '@tauri-apps/api/core';
 const cache = new Map<string, string>();
 
 export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: string; alt?: string; className?: string; fallbackText?: string }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  // V3.3.0 #6：useState 惰性初始化直接读模块级 cache——缓存命中时首帧渲染就是真图，
+  // 不再出现"先渐变占位一帧再变图"的闪烁（useEffect 在首次绘制之后才跑，靠它恢复必闪）。
+  const [dataUrl, setDataUrl] = useState<string | null>(() => (src ? cache.get(src) ?? null : null));
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {

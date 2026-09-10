@@ -331,12 +331,15 @@ jobs:
               src = src[:brace + 1] + bridge + src[brace + 1:]
           # 绑桥时机：onStart 内 postDelayed 重试（WebView 在 onCreate 后才挂进 decorView），
           # onResume 再兜底一次，确保 window.MuHaiAndroid 一定存在。不新增 onCreate，避免与 Tauri 自带 onCreate 冲突。
-          # Q20：更长的重试序列（600/1500/3000ms），确保任意时机进入播放器桥都已挂上
+          # Q20：更长的重试序列；V3.3.0 #7：加长到 600/1500/3000/6000/10000ms——
+          #      慢机型 WebView 挂载可晚于 3s，之前 3s 内绑不上，点横屏就只剩 CSS 放大。
           bind_code = '''
                   _muhaiBind()
                   window.decorView.postDelayed({ _muhaiBind() }, 600)
                   window.decorView.postDelayed({ _muhaiBind() }, 1500)
                   window.decorView.postDelayed({ _muhaiBind() }, 3000)
+                  window.decorView.postDelayed({ _muhaiBind() }, 6000)
+                  window.decorView.postDelayed({ _muhaiBind() }, 10000)
 
           '''
           if "fun onStart(" not in src:
@@ -346,6 +349,9 @@ jobs:
                   _muhaiBind()
                   window.decorView.postDelayed({ _muhaiBind() }, 600)
                   window.decorView.postDelayed({ _muhaiBind() }, 1500)
+                  window.decorView.postDelayed({ _muhaiBind() }, 3000)
+                  window.decorView.postDelayed({ _muhaiBind() }, 6000)
+                  window.decorView.postDelayed({ _muhaiBind() }, 10000)
               }
 
               '''
@@ -359,6 +365,8 @@ jobs:
                   super.onResume()
                   _muhaiBind()
                   window.decorView.postDelayed({ _muhaiBind() }, 600)
+                  window.decorView.postDelayed({ _muhaiBind() }, 3000)
+                  window.decorView.postDelayed({ _muhaiBind() }, 6000)
               }
 
               '''

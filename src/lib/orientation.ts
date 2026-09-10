@@ -4,10 +4,12 @@
 // 表现就是"有时能真横屏、有时只 CSS 铺满没真转"。
 // 方案：调用前先自检桥是否就绪；未就绪则轮询等待（每 100ms，最多 3s），就绪后立即调用。
 
-// 桥可能比首屏晚几秒才绑上（冷启动 / Tauri 重建 WebView 后），之前 3s 硬超时会导致
-// "点一次只放大不转、再点一次才转"。放宽到 8s 且请求时会持续轮询直到真正转过去。
-const BRIDGE_WAIT_MS = 8000;
+// 桥可能比首屏晚几秒才绑上（冷启动 / Tauri 重建 WebView 后）。原生侧在 onStart/onResume/
+// onWindowFocusChanged 里 postDelayed 重试绑桥（V3.3.0 #7 加长到 10s），前端这边同步放宽等待：
+const BRIDGE_WAIT_MS = 12000; // V3.3.0 #7：8s → 12s，慢机型 WebView 挂载更晚
 const BRIDGE_POLL_MS = 100;
+// V3.3.0 #7：等桥 3s 仍未就绪先给一条"连接中"提示——别让用户点了横屏毫无反馈干等
+const WAIT_HINT_AT_MS = 3000;
 // Q2：发完指令不校验，系统没响应前端完全不知道 → 监听 orientationchange / resize 真正转过去再收尾，
 //     并保留定时校验兜底。V3.3.0 #7：校验窗口 2.4s → 6s（慢机型系统异步旋转更久），
 //     期间每 400ms 重发一次指令，直到 matches() 为 true。
@@ -70,6 +72,11 @@ function verifyAndRetry(ori: string, attempt: number) {
   }, VERIFY_DELAY_MS);
 }
 
+// V3.3.0 #7：同一时刻只保留一个"等桥轮询"——新请求取消旧请求。
+// 场景：进播放页先发 'sensor'（静默等桥），3 秒后用户点横屏按钮发 'landscape'，
+// 若不取消，sensor 的旧轮询在桥就绪后会把方向又改回 sensor，覆盖横屏指令。
+let pendingWait: number | null = null;
+
 /**
  * 请求屏幕方向。桥未就绪时自动等待，就绪后立即调用，并在之后校验是否真的转过去了。
  * @param ori 'landscape' | 'portrait' | 'sensor'
@@ -78,24 +85,33 @@ export function requestOrientation(
   ori: 'landscape' | 'portrait' | 'sensor',
   opts?: { silent?: boolean }
 ) {
-  // portrait（退出横屏/页面清理）一律静默：CSS 铺满已兜底，且主页残留的"未就绪" toast 正是这类调用弹出的。
-  const silent = opts?.silent || ori === 'portrait';
+  // portrait/sensor（进入页面/清理类调用）一律静默；landscape 是用户主动要的，失败要提示。
+  const silent = opts?.silent || ori === 'portrait' || ori === 'sensor';
   const fire = () => { callBridge(ori); verifyAndRetry(ori, 1); };
+  if (pendingWait !== null) {
+    window.clearInterval(pendingWait);
+    pendingWait = null;
+  }
   if (bridgeReady()) { fire(); return; }
   let waited = 0;
+  let hinted = false;
   const timer = window.setInterval(() => {
     waited += BRIDGE_POLL_MS;
     if (bridgeReady()) {
-      window.clearInterval(timer);
+      if (pendingWait !== null) { window.clearInterval(pendingWait); pendingWait = null; }
       fire();
     } else if (waited >= BRIDGE_WAIT_MS) {
-      window.clearInterval(timer);
+      if (pendingWait !== null) { window.clearInterval(pendingWait); pendingWait = null; }
       // 仅在用户主动要横屏（landscape）且桥确实没注入时才提示；清理类调用静默。
       if (!silent && ori === 'landscape') {
-        toast('旋转服务启动中，请稍候 1~2 秒再点横屏'); // V3.3.0 #7：更明确的引导文案
+        toast('旋转服务未就绪，请退出播放页重新进入后再点横屏'); // V3.3.0 #7：给出可操作的恢复路径
       }
+    } else if (!silent && ori === 'landscape' && !hinted && waited >= WAIT_HINT_AT_MS) {
+      hinted = true;
+      toast('旋转服务连接中…');
     }
   }, BRIDGE_POLL_MS);
+  pendingWait = timer;
 }
 
 // ② 原生系统级画中画：点按钮即退出 App、桌面浮 16:9 小窗（A 方案）。

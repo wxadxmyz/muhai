@@ -8,7 +8,29 @@
 // 与 tvbox 蜘蛛源的区别：tvbox 配置里"站点 api 是标准 http 接口、无 spider"的源，
 // 以前被 collectSpiders 的 `continue` 跳过；本适配器让它们可用，从而主页/搜索能出内容。
 import { invoke } from '@tauri-apps/api/core';
-import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
+import { MediaItem, MediaSource, PlayUrl, SourceConfig, SuggestItem } from '../types';
+
+// V3.3.1 #7：把接口的原始条目转成联想词。
+// 兼容三种返回形态：字符串数组 / {list:[{vod_name}]} / {list:["词"]}。
+// 带出 vod_id 很关键——有它前端才能查 resumeEp 显示"看到第 N 集"并一键续播。
+function toSuggest(list: any[], cfg: SourceConfig): SuggestItem[] {
+  if (!Array.isArray(list)) return [];
+  const out: SuggestItem[] = [];
+  for (const v of list) {
+    const name = typeof v === 'string' ? v : v?.vod_name ?? v?.name ?? v?.title ?? '';
+    if (!name) continue;
+    out.push({
+      name: String(name).trim(),
+      id: v && v.vod_id != null ? String(v.vod_id) : undefined,
+      sourceId: cfg.id,
+      sourceName: cfg.name,
+      type: typeof v === 'string' ? undefined : v?.type_name,
+      year: typeof v === 'string' ? undefined : v?.vod_year,
+      cover: typeof v === 'string' ? undefined : v?.vod_pic,
+    });
+  }
+  return out;
+}
 
 async function fetchText(url: string): Promise<string> {
   try {
@@ -88,7 +110,11 @@ export async function resolvePlayUrl(url: string): Promise<string> {
     const m =
       text.match(/(?:var|const|let)\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/(?:var|const|let)\s+(?:url|m3u8|play_url|video_url)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
-      text.match(/src\s*[:=]\s*["']([^"']+\.m3u8[^"']*)["']/i);
+      text.match(/src\s*[:=]\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      // V3.3.1 Q3：更宽的兜底——不管变量名叫什么，页面里只要出现引号包裹的 m3u8 路径就取它。
+      // 各家分享页模板的赋值名千奇百怪（已见过 main / playurl / data-url / 直接写在
+      // player 配置对象里），按名匹配漏一个就等于整条线路播不了。
+      text.match(/["']([^"'\s]*\.m3u8[^"'\s]*)["']/i);
     if (m) return new URL(m[1], url).href;
     return url; // 解析不出，原样返回给播放器去尝试
   } catch {
@@ -103,6 +129,26 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
     async search(keyword: string) {
       const data = await apiJson(endpoint, { ac: 'search', wd: keyword, pg: '1' });
       return toItems(data?.list ?? [], cfg);
+    },
+
+    // V3.3.1 #7：搜索联想。先试标准 ac=suggest；源不支持（返回非 JSON 或空列表）
+    // 就回落到 ac=search 取前 8 条——几乎所有 CMS 都支持搜索，保证联想不至于全空。
+    async suggest(keyword: string): Promise<SuggestItem[]> {
+      const q = keyword.trim();
+      if (q.length < 2) return []; // 单字不发请求
+      try {
+        const data = await apiJson(endpoint, { ac: 'suggest', wd: q });
+        const items = toSuggest(Array.isArray(data) ? data : data?.list ?? [], cfg);
+        if (items.length) return items;
+      } catch {
+        /* 该源没有 suggest 接口 → 走下面的搜索兜底 */
+      }
+      try {
+        const data = await apiJson(endpoint, { ac: 'search', wd: q, pg: '1' });
+        return toSuggest(data?.list ?? [], cfg).slice(0, 8);
+      } catch {
+        return [];
+      }
     },
 
     async getDetail(itemId: string) {

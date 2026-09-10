@@ -118,8 +118,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
 /* 标题仍留一点左缩进，卡片则贴屏幕左右边 */
 .view.home .row-head, .view.library .row-head { padding-left: 14px; }
-/* ⑬ padding-top 双保险：滚动内容与 sticky tabs 之间保留间距，卡片不会顶到通知栏 */
-.view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; padding-top: 12px; gap: 2px; }
+/* ⑬ padding-top 双保险：滚动内容与 sticky tabs 之间保留间距，卡片不会顶到通知栏
+   V3.3.0 #5：网格左右留 10px、缝 8px（历史/收藏页不再贴屏幕边） */
+.view.home .poster-grid, .view.library .poster-grid { padding-left: 10px; padding-right: 10px; padding-top: 12px; gap: 8px; }
 
 .row-section { margin-top: 26px; }
 .row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -163,7 +164,7 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ============ 海报网格（影视）============ */
 .poster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; grid-auto-rows: 1fr; }
 .pcard { cursor: pointer; display: flex; flex-direction: column; height: 100%; }
-.pcover { position: relative; aspect-ratio: 2/3; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; }
+.pcover { position: relative; aspect-ratio: 3/4; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; } /* V3.3.0 #5：2:3→3:4，矮一点 */
 .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
 .ph-big { font-weight: 800; }
@@ -610,7 +611,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .detail-view { animation: fade .15s; }
 
 /* 播放器页 / 详情页：全屏覆盖层，层级高于搜索页（z90），保证逐级返回时正确叠放 */
-.player-page { z-index: 130; overflow-y: auto; -webkit-overflow-scrolling: touch; } /* V3.2.7 Q7：高于更多页(120) */
+.player-page { z-index: 140; overflow-y: auto; -webkit-overflow-scrolling: touch; } /* V3.3.0 #3：提到 140，高于搜索层(130)——之前同为 130 且搜索层在 DOM 靠后，把刚挂载的播放器整个盖住，造成"搜索点击不跳转" */
 .player-page .video-player {
   flex: 1 1 auto; display: flex; flex-direction: column; height: auto; min-height: 0;
   margin: 0; border-radius: 0; box-shadow: none; background: #000;
@@ -707,8 +708,9 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   .view.home, .view.library { margin-left: -14px; margin-right: -14px; }
   .view.home .row-section, .view.library .row-section { padding-left: 0; padding-right: 0; }
   .view.home .row-head, .view.library .row-head { padding-left: 12px; }
-  /* ⑬ padding-top 双保险：滚动内容与 sticky tabs 之间保留间距，卡片不会顶到通知栏 */
-.view.home .poster-grid, .view.library .poster-grid { padding-left: 0; padding-right: 0; padding-top: 12px; gap: 2px; }
+  /* ⑬ padding-top 双保险：滚动内容与 sticky tabs 之间保留间距，卡片不会顶到通知栏
+     V3.3.0 #5：网格左右留 10px、缝 8px（历史/收藏页不再贴屏幕边） */
+.view.home .poster-grid, .view.library .poster-grid { padding-left: 10px; padding-right: 10px; padding-top: 12px; gap: 8px; }
 
   /* 底部 Tab 导航 */
   .bottom-nav {
@@ -741,7 +743,7 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
   /* 网格变窄 */
   .cards { grid-template-columns: 1fr; }
   .row-cards { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); }
-  .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
+  .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } /* V3.3.0 #1：缝统一 8px */
   .cloud-grid { grid-template-columns: 1fr; }
 
   /* 触控目标放大（避免手指误触） */
@@ -1080,7 +1082,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .search-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 8px; /* V3.3.0 #1：缝统一 8px */
 }
 .search-card {
   background: var(--panel);
@@ -1098,7 +1100,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .search-poster {
   position: relative;
-  aspect-ratio: 2 / 3; /* V3.3.0：照参考样式改 2:3 竖海报 */
+  aspect-ratio: 3 / 4; /* V3.3.0 #2：2:3→3:4 矮一点（用户要求搜索卡别扁长） */
   background: var(--panel2);
   overflow: hidden;
 }
@@ -1901,12 +1903,15 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   border-radius: 0;
 }
 
-/* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」 */
+/* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」
+   V3.3.0 #1：尺寸全部 JS 实测——该真机 WebView 对 flex 内 calc(100% - Xpx) 解析不可靠
+   （实测缝被撑到 25px），横排容器缝/边距与卡宽均由 Home 的 useCardGrid 内联 px 控制，
+   这里的 CSS 只作 JS 未生效时的一帧兜底。 */
 .hot-row-scroll {
   display: flex;
-  gap: 2px; /* 照 v3.1.11/历史页：紧凑 2px 缝 */
+  gap: 8px; /* V3.3.0 #1：8px 缝（用户要求缝小一些） */
   overflow-x: auto;
-  padding: 0 0 4px; /* V3.3.0：去掉左右 6px 边距，三卡满宽贴边（同历史页） */
+  padding: 0 10px 4px; /* V3.3.0 #5：左右留 10px，不贴屏幕边 */
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none; /* V3.2.7 Q2：隐藏滚动条但保留滑动 */
@@ -1915,9 +1920,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .hot-row-scroll::-webkit-scrollbar { display: none; } /* V3.2.7 Q2：WebKit 隐藏滚动条 */
 .hot-row-scroll .pcard {
   flex: 0 0 auto;
-  /* V3.3.0：100% 已是扣掉容器 padding 的内容区宽，只需再扣 2 条 2px 缝。
-     （V3.2.9 的 -16px 重复扣了 padding，导致每卡少 4px、第 4 张露边条） */
-  width: calc((100% - 4px) / 3);
+  padding: 0;      /* V3.3.0 #1：卡内不留白（覆盖移动端 .pcard 12px） */
+  height: auto;    /* 覆盖全局 pcard height:100%，高度由内联封面 px 决定 */
+  /* 卡宽不再用 calc——JS 实测容器宽后内联 px（V3.3.0 #1） */
   scroll-snap-align: start;
 }
 .row-head .more-btn {
@@ -1965,22 +1970,22 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 }
 .more-page .mp-head h3 { margin: 0; font-size: 16px; }
 .more-page .mp-grid {
-  /* V3.3.0：弃 grid 改 flex——Android WebView 在 fixed 容器内对 grid 均分(minmax(0,1fr))
-     存在兼容问题（列宽被封面原图撑爆→溢出被裁→卡片"叠起来"）。
-     flex + 百分比宽度与主页横排同机制，真机已验证稳定。 */
+  /* V3.3.0 #4：flex + JS 实测 px 卡宽/卡高内联——弃 calc 与 aspect-ratio：
+     该真机 WebView 对 flex 内 calc 解析不可靠、flex item 上的 aspect-ratio 失效
+     （卡片被 align-items:stretch 拉到整屏高，高≈宽×7）。
+     align-items:flex-start 禁掉 stretch，卡片高度完全由内联封面 px 决定。 */
   display: flex;
   flex-wrap: wrap;
-  gap: 2px; /* 照历史页：紧凑 2px 缝 */
-  padding: 12px 0;
+  align-items: flex-start;
+  gap: 8px; /* V3.3.0 #1：统一 8px 缝 */
+  padding: 12px 10px; /* V3.3.0 #5：左右留 10px */
 }
-/* V3.3.0：更多页卡片——满宽三等分 + 整卡锁 2:3 + 名字条内嵌封面底部 */
+/* V3.3.0 #4：更多页卡片尺寸由 JS 内联 px（useCardGrid），这里只做兜底 */
 .more-page .mp-grid .pcard {
-  width: calc((100% - 4px) / 3);
-  min-width: 0;
-  aspect-ratio: 2 / 3;
-  position: relative;
+  padding: 0;
+  height: auto; /* 覆盖全局 height:100% + stretch，杜绝拉长 */
 }
-.more-page .mp-grid .pcard .pcover { width: 100%; height: 100%; object-fit: cover; }
+.more-page .mp-grid .pcard .pcover { width: 100%; object-fit: cover; }
 
 /* V3.3.0：封面底部内嵌名字条（更多页/搜索页通用）——深色渐变 + 白字 */
 .cover-name {

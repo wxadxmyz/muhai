@@ -9,7 +9,7 @@
 //
 // 抓取统一走 Rust 后端 fetchsource 代理，绕开 Android WebView 的 CORS 与明文 HTTP 限制。
 import { invoke } from '@tauri-apps/api/core';
-import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
+import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig, SuggestItem } from '../types';
 import { createJsSource, getSpiderRaw } from './js';
 import { createNormalSource } from './normal';
 
@@ -182,6 +182,19 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   return out;
 }
 
+// V3.3.1 #5：站点配置缓存（5 分钟）。
+// 之前每次搜索/联想都要重新下载一遍 tvbox 配置 JSON（几 KB~几十 KB + 一次完整握手），
+// 这是"点开一个东西要等一下"的隐形大头。配置改动最多 5 分钟后生效。
+const spiderCache = new Map<string, { at: number; cfgs: SourceConfig[] }>();
+const SPIDER_TTL = 5 * 60 * 1000;
+async function collectSpidersCached(cfg: SourceConfig): Promise<SourceConfig[]> {
+  const hit = spiderCache.get(cfg.id);
+  if (hit && Date.now() - hit.at < SPIDER_TTL && hit.cfgs.length) return hit.cfgs;
+  const cfgs = await collectSpiders(cfg);
+  if (cfgs.length) spiderCache.set(cfg.id, { at: Date.now(), cfgs });
+  return cfgs;
+}
+
 // 供前端使用的子站展开入口（无缓存版本，需上层做整体缓存）
 export async function expandTvboxSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   return collectSpiders(cfg);
@@ -195,13 +208,42 @@ function buildSubSource(c: SourceConfig): MediaSource {
 
 export function createTvboxSource(cfg: SourceConfig): MediaSource {
   async function spiders(): Promise<MediaSource[]> {
-    const cfgs = await collectSpiders(cfg);
+    const cfgs = await collectSpidersCached(cfg);
     return cfgs.map(buildSubSource);
   }
 
   return {
+    // V3.3.1 #7：联想只问 normal 子站（标准 ac=suggest），js 蜘蛛源无 suggest 直接跳过；
+    // 最多问 5 个子站，避免一次输入打出几十个请求。
+    async suggest(keyword: string): Promise<SuggestItem[]> {
+      const q = keyword.trim();
+      if (q.length < 2) return [];
+      let cfgs: SourceConfig[] = [];
+      try {
+        cfgs = await collectSpidersCached(cfg);
+      } catch {
+        return [];
+      }
+      const normals = cfgs.filter((c) => c.type === 'normal').slice(0, 5);
+      if (!normals.length) return [];
+      const out: SuggestItem[] = [];
+      await Promise.all(
+        normals.map(async (c) => {
+          try {
+            const s = createNormalSource(c);
+            if (!s.suggest) return;
+            const r = await s.suggest(q);
+            if (Array.isArray(r) && r.length) out.push(...r.slice(0, 6));
+          } catch {
+            /* 单个子站联想失败不影响其它子站 */
+          }
+        })
+      );
+      return out;
+    },
+
     async search(keyword: string): Promise<MediaItem[]> {
-      const cfgs = await collectSpiders(cfg);
+      const cfgs = await collectSpidersCached(cfg);
       if (!cfgs.length) {
         throw new Error('该 tvbox 配置无可用的 spider 脚本源（csp_* 蜘蛛代号需提供对应 spider 脚本）');
       }

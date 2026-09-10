@@ -1172,6 +1172,104 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   font-size: 14px;
 }
 
+/* ============ V3.3.1 #7 搜索联想面板（全屏，顶掉最近搜索/结果区） ============ */
+.sugg-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  padding: 4px 0 calc(12px + var(--sab, 0px));
+}
+.sugg-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+.sugg-item:active { background: var(--panel2); }
+.sugg-badge {
+  flex: none;
+  min-width: 22px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  color: #fff;
+}
+.sugg-badge.b-movie { background: #e0574f; }
+.sugg-badge.b-tv    { background: #4a7fe0; }
+.sugg-badge.b-show  { background: #d99a2b; }
+.sugg-badge.b-anime { background: #8b5cd6; }
+.sugg-badge.b-music { background: #2ea36b; }
+.sugg-main { flex: 1 1 auto; min-width: 0; }
+.sugg-title {
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sugg-hl { color: var(--accent); font-weight: 600; }
+.sugg-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sugg-chip {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  font-size: 10px;
+}
+.sugg-resume {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+}
+/* 右侧一键播放：SVG 三角 + 续播进度环 */
+.sugg-play {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.sugg-play.has-hist { color: var(--accent); border-color: var(--accent); }
+.sugg-play:active { transform: scale(.92); }
+.sugg-tri { width: 17px; height: 17px; display: block; }
+.sugg-ring {
+  position: absolute;
+  inset: 0;
+  width: 34px;
+  height: 34px;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.sugg-ring circle { fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.sugg-ring .track { stroke: rgba(127, 127, 140, .28); }
+.sugg-ring .prog { stroke: currentColor; }
+
 /* ============ 媒体查询 · 搜索页在小屏微调 ============ */
 @media (max-width: 380px) {
   .search-source { padding: 6px 10px; }
@@ -1912,7 +2010,11 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   gap: 8px; /* V3.3.0 #1：8px 缝（用户要求缝小一些） */
   overflow-x: auto;
   padding: 0 10px 4px; /* V3.3.0 #5：左右留 10px，不贴屏幕边 */
-  scroll-snap-type: x mandatory;
+  /* V3.3.1 Q1：吸附口也要留边，否则第一张卡被吸到 x=0 贴死左边；
+     proximity 而非 mandatory，避免个别 WebView 不支持 scroll-padding 时吸到错位置。
+     （Home 里已内联同样两值，这里是 JS 未生效时的一帧兜底） */
+  scroll-padding: 0 10px;
+  scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none; /* V3.2.7 Q2：隐藏滚动条但保留滑动 */
   -ms-overflow-style: none;
@@ -1924,6 +2026,14 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   height: auto;    /* 覆盖全局 pcard height:100%，高度由内联封面 px 决定 */
   /* 卡宽不再用 calc——JS 实测容器宽后内联 px（V3.3.0 #1） */
   scroll-snap-align: start;
+}
+/* V3.3.1 #6：按下反馈。点封面（不只是标题）也会立刻缩一下并描边，
+   让用户确认"我点中了"，不再因为搜索结果出得慢而以为没点到、反复点两三次。 */
+.hot-card { -webkit-tap-highlight-color: transparent; }
+.hot-card:active .pcover {
+  transform: scale(.955);
+  border: 1px solid var(--accent);
+  transition: transform .09s ease;
 }
 .row-head .more-btn {
   margin-left: auto;

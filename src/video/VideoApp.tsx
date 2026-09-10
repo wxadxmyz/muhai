@@ -340,10 +340,13 @@ export default function VideoApp() {
             <SearchView
               onClose={() => setSearchOpen(false)}
               sources={store.sources}
-              // V3.3.0 #3：点击结果先关搜索层再进播放页。根因：搜索层与播放层 z-index 同为
-              // 130 且搜索层在 DOM 靠后，把刚挂载的播放器整个盖住——播放器其实已打开，
-              // 用户却看不到（V3.2.10"点击秒进"后 100% 复现）。现在双层修复：关层 + .player-page 提到 140。
-              onPlay={(it) => { setSearchOpen(false); openDetail(it); }}
+              // V3.3.1 Q4：去掉 V3.3.0 在这里加的 setSearchOpen(false)。
+              //   关搜索层确实治好了"点了没反应"，但它顺手把搜索页从返回栈里抹掉了：
+              //   播放器一关，底下垫着的是主页而不是搜索结果，系统返回只能一步跳回主页。
+              //   真正的修复是 .player-page 层级提到 140 盖在搜索层之上——那一条已独立成立，
+              //   播放器盖在搜索页上方、关闭后自然露出搜索结果，返回就能一级一级往上：
+              //   播放器 → 详情 → 搜索结果 → 主页。
+              onPlay={(it) => openDetail(it)}
               library={library}
               mediaType="video"
               placeholder="搜索电影 / 剧集 / 演员…"

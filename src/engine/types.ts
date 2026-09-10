@@ -74,11 +74,25 @@ export interface PlayUrl {
   headers?: Record<string, string>;
 }
 
+// V3.3.1 #7：搜索联想词（输入过程中实时提示，不是搜索结果）
+// id + sourceId 同时有值时，前端才能查 resumeEp 显示"看到第 N 集"并一键续播。
+export interface SuggestItem {
+  name: string; // 联想词（片名）
+  type?: string; // 剧 / 影 / 综 / 漫
+  sourceId?: string;
+  id?: string;
+  sourceName?: string;
+  year?: string;
+  cover?: string;
+}
+
 export interface MediaSource {
   search(keyword: string, page?: number): Promise<MediaItem[]>;
   getPlayUrl(itemId: string): Promise<PlayUrl>;
   getDetail?(itemId: string): Promise<MediaItem>;
   test(): Promise<boolean>;
+  // V3.3.1 #7：搜索联想（可选能力；不实现的源自动跳过，不影响其它源）
+  suggest?(keyword: string): Promise<SuggestItem[]>;
   // 首页/推荐：返回各站点最新内容（有源主页"站点推荐"用）
   home?(): Promise<MediaItem[]>;
   // 直播源：返回 m3u/txt 直播线路（直播 Tab 用）

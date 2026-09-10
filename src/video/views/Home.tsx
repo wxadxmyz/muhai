@@ -69,7 +69,8 @@ function HotRow({ title, items, onMore, onSearch }: {
   onMore?: () => void;
   onSearch: (q: string) => void;
 }) {
-  const grid = useCardGrid({ cols: 3, gap: 8, pad: 10 });
+  // V3.3.1 Q1：mode 'row' —— 第 4 张卡左边缘压在屏幕右边界上，不探进屏幕
+  const grid = useCardGrid({ cols: 3, gap: 8, pad: 10, mode: 'row' });
   return (
     <section className="row-section hot-row">
       <div className="row-head">
@@ -79,7 +80,20 @@ function HotRow({ title, items, onMore, onSearch }: {
       {items.length === 0 ? (
         <div className="empty sm">暂无内容</div>
       ) : (
-        <div className="hot-row-scroll" ref={grid.ref} style={{ gap: 8, padding: '0 10px 4px' }}>
+        <div
+          className="hot-row-scroll"
+          ref={grid.ref}
+          style={{
+            gap: 8,
+            padding: '0 10px 4px',
+            // V3.3.1 Q1：snap 吸附只对「吸附口」（滚动口减 scroll-padding）对齐，
+            // 完全无视容器的 padding——不给吸附口留边，第一张卡就会被拽到 x=0 贴死左边。
+            scrollPadding: '0 10px',
+            // proximity 而非 mandatory：个别 WebView 对 scroll-padding 支持不佳时，
+            // 强制吸附会把卡吸到错误位置；就近吸附最坏只是不吸附，不会错位。
+            scrollSnapType: 'x proximity',
+          }}
+        >
           {items.slice(0, 6).map((it) => (
             <HotPosterCard key={it.id} it={it} w={grid.cardW} h={grid.cardH} onSearch={onSearch} />
           ))}

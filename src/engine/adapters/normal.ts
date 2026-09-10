@@ -63,12 +63,16 @@ function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
 function toDetail(raw: any, cfg: SourceConfig): MediaItem {
   const cover =
     raw?.vod_pic || raw?.vod_pic_slide?.split?.('$$$')?.[0] || raw?.pic || '';
+  // V3.3.3：简介/年份/类型/评分/播放地址 兼容更多苹果CMS变体字段名（LZ等站点字段命名不统一）。
   const desc =
-    raw?.vod_content || raw?.vod_blurb || raw?.vod_remarks || '';
-  const genre = raw?.vod_class || raw?.vod_tag || '';
-  const year = raw?.vod_year || raw?.vod_pubdate || '';
-  const score = raw?.vod_score || raw?.vod_douban_score || '';
-  const episodes = raw?.vod_play_url ? toEpisodes(raw.vod_play_url) : [];
+    raw?.vod_content || raw?.vod_blurb || raw?.vod_remarks || raw?.vod_des || raw?.des || raw?.vod_plot || raw?.remark || '';
+  const genre = raw?.vod_class || raw?.vod_tag || raw?.type_name || '';
+  const year = raw?.vod_year || raw?.vod_pubdate || raw?.year || '';
+  const score = raw?.vod_score || raw?.vod_douban_score || raw?.vod_rate || '';
+  // 播放地址：不同站点字段名不同（vod_play_url / vod_url / play_url / vod_play / vod_down_url），全量兜底
+  const playRaw =
+    raw?.vod_play_url || raw?.vod_url || raw?.play_url || raw?.vod_play || raw?.vod_down_url || '';
+  const episodes = playRaw ? toEpisodes(playRaw) : [];
   return {
     id: String(raw?.vod_id ?? raw?.id ?? ''),
     sourceId: cfg.id,

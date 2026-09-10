@@ -281,15 +281,14 @@ export function VideoPlayer({
   // X1：改用共享工具，桥未就绪时自动等待最多 1.5s 再调用，解决"有时横屏有时不横"
   const requestOrientation = requestOrientationShared;
 
-  // 屏幕方向：V3.3.0 #7 重做——
-  //   竖屏态（含进入播放页）= 'sensor'：系统级重力跟随，竖着拿=竖屏、横过来=整个系统
-  //   真旋转（状态栏一起转，不受系统"自动旋转"开关影响）。之前竖屏锁死 PORTRAIT，
-  //   手机怎么转都不跟 = 用户反馈的"不能自动旋转"。
-  //   点横屏按钮 = 'landscape'：强制锁定横屏 + 传感器管左右方向。
+  // 屏幕方向：V3.3.3 重做——
+  //   竖屏态（含进入播放页）= 'portrait'：锁定竖屏，行为确定、不依赖系统传感器兼容性。
+  //   点横屏按钮 = 'landscape'：原生桥直接锁 LANDSCAPE + 手动加速度传感器监听切左右方向
+  //     （不再用 SENSOR_LANDSCAPE，华为/鸿蒙 WebView 上经常失效、状态栏不跟着转）。
   //   卸载（返回/关页）= 'portrait'：保证回到主页一定是竖屏。
-  // 不再跳过首次：进入播放页即发 sensor，桥未就绪则由共享工具静默等待。
+  // 不再跳过首次：进入播放页即发 portrait，桥未就绪则由共享工具静默等待。
   useEffect(() => {
-    requestOrientation(landscape ? 'landscape' : 'sensor', { silent: !landscape });
+    requestOrientation(landscape ? 'landscape' : 'portrait', { silent: !landscape });
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
@@ -1389,9 +1388,10 @@ export function VideoPlayer({
             </div>
           )}
 
-          {detail.episodes && detail.episodes.length > 0 && (
-            <div className="section">
-              <div className="sec-head"><span className="sec-title">选集</span><span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span></div>
+          {/* V3.3.3：选集区块始终显示——有集数渲染网格，无集数显示「暂无选集」占位，不再整块消失 */}
+          <div className="section">
+            <div className="sec-head"><span className="sec-title">选集</span>{detail.episodes && detail.episodes.length > 1 && <span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>}</div>
+            {detail.episodes && detail.episodes.length > 0 ? (
               <div className="ep-grid">
                 {(() => {
                   const order = asc ? detail.episodes!.map((_, i) => i) : detail.episodes!.map((_, i) => detail.episodes!.length - 1 - i);
@@ -1403,36 +1403,28 @@ export function VideoPlayer({
                   });
                 })()}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="detail-note">该源未提供选集列表，可尝试切换线路或换其它源。</p>
+            )}
+          </div>
 
           {(() => {
             const raw = detail.raw as any;
-            const intro = raw?.vod_blurb || raw?.vod_content || raw?.desc;
-            // V3.3.0 #6：详情解析中 → 选集/介绍位置显示骨架；确认无介绍 → 「暂无介绍」占位，不再整块空白
-            const noEpisodes = !detail.episodes || detail.episodes.length === 0;
+            // V3.3.3：优先读 detail.desc（toDetail 已统一字段映射），再从 raw 兜底，确保简介能显示
+            const intro = detail.desc || raw?.vod_content || raw?.vod_blurb || raw?.vod_remarks || raw?.vod_des || raw?.desc;
+            // 详情解析中 → 介绍位置显示骨架；确认无介绍 → 「暂无介绍」占位
             return (
               <>
-                {detailLoading && noEpisodes && (
-                  <div className="section">
-                    <div className="sec-head"><span className="sec-title">选集</span></div>
-                    <div className="skel-block"><div className="skel-line" /><div className="skel-line" /><div className="skel-line" /><div className="skel-line w60" /></div>
-                  </div>
-                )}
-                {(intro || detailLoading) && (
+                {detailLoading && (
                   <div className="intro">
                     <div className="sec-head"><span className="sec-title">介绍</span></div>
-                    {intro ? (
-                      <p>{String(intro)}</p>
-                    ) : (
-                      <div className="skel-block"><div className="skel-line w60" /><div className="skel-line" /><div className="skel-line w40" /></div>
-                    )}
+                    <div className="skel-block"><div className="skel-line w60" /><div className="skel-line" /><div className="skel-line w40" /></div>
                   </div>
                 )}
-                {!intro && !detailLoading && (
+                {!detailLoading && (
                   <div className="intro">
                     <div className="sec-head"><span className="sec-title">介绍</span></div>
-                    <p className="intro-empty">暂无介绍</p>
+                    {intro ? <p>{String(intro)}</p> : <p className="intro-empty">暂无介绍</p>}
                   </div>
                 )}
               </>

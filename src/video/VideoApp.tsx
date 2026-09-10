@@ -192,7 +192,10 @@ export default function VideoApp() {
         const src = createSource(cfg);
         if (src.getDetail) {
           const d = await src.getDetail(it.id);
-          if (d?.id && (d.episodes?.length || (d as any).cover || (d as any).raw?.vod_pic)) {
+          // V3.3.3：放宽合并条件——只要详情接口返回了有效对象（含 id 或 raw）就合并进播放器，
+          // 不再要求必须带 episodes/cover 才刷新。这样即便源只回了简介，播放页也能显示「介绍/暂无选集」
+          // 而非整片空白（根因：旧条件过窄，LZ 等源 detail 回的字段不满足就被丢弃，播放器一直用搜索列表项）。
+          if (d && (d.id || (d as any).raw)) {
             const full = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
             const stillOnThis = state.current?.id === it.id && state.current?.sourceId === it.sourceId;
             if (stillOnThis) {

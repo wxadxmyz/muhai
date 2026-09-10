@@ -356,16 +356,35 @@ export function VideoPlayer({
   // 切换剧集/线路：解析并加载
   useEffect(() => {
     if (!state.current) return;
-    // V3.3.0 #5：无播放地址（点击搜索结果立即进页、详情后台补齐中）→ 保持「解析中」转圈，
-    // 不发起加载；playUrl 就绪后本 effect 因依赖变化重新执行、走正常流程。
+    let alive = true;
+    // V3.3.0 #5：无播放地址（点击搜索结果立即进页、详情后台补齐中）→ 保持「解析中」转圈。
+    // V3.3.1 Q3：死锁修复——旧代码在这里「转圈 → 直接 return」，而负责把地址解析出来的
+    //   ensureResolved 就写在这个 return 之后，地址为空时永远执行不到：地址恒空 → 圈恒转
+    //   → 连报错都不给。任何源只要剧集列表没取到（请求慢或失败）都会中招，表现为一点播放
+    //   就无限转「正在解析播放地址…」。改为在本分支内主动发起解析：拿到地址写回 store，
+    //   playUrl 变化触发本 effect 重跑，自然接上下面正常的加载流程；解析不出则明确报错。
     if (!state.current.playUrl) {
       setResolving(true);
       setErr(null);
-      return;
+      ensureResolved(state.current)
+        .then((it) => {
+          if (!alive) return;
+          if (it.playUrl) {
+            player.updateCurrent(it); // playUrl 变化 → 本 effect 重跑 → 走正常加载
+          } else {
+            setResolving(false);
+            setErr('未取到可播放地址，换个线路或换个源试试。');
+          }
+        })
+        .catch(() => {
+          if (!alive) return;
+          setResolving(false);
+          setErr('解析播放地址失败，请换个源试试。');
+        });
+      return () => { alive = false; };
     }
     const v = videoRef.current;
     if (!v) return;
-    let alive = true;
     // P3：每次（重新）加载都重设续播目标与状态，换集 / 换线路 / 重试都走这里。
     //     startAt 由上层按「列表项 id + 集数」读出，为 0 时再用本组件自己的 resumeKey 兜一次，
     //     这样即便上层读键与写入键不一致（id 漂移），本地仍能救回续播。
@@ -1318,7 +1337,7 @@ export function VideoPlayer({
             <div className="info-title">{detail.title}</div>
             <div className="info-main">
               <div className="info-poster">
-                {detail.cover ? <ProxiedImg src={detail.cover} alt="" /> : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
+                {detail.cover ? <ProxiedImg src={detail.cover} alt="" fallbackText={detail.title} /> : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
               </div>
               <div className="info-body">
                 <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>

@@ -281,17 +281,15 @@ export function VideoPlayer({
   // X1：改用共享工具，桥未就绪时自动等待最多 1.5s 再调用，解决"有时横屏有时不横"
   const requestOrientation = requestOrientationShared;
 
-  // 屏幕方向：挂载时跟随系统重力感应（竖屏可自动旋转）；进入横屏锁横屏；退出横屏锁竖屏（一下回竖屏）。
-  // 不再用 landBySensor 守卫 —— 否则点返回/手势退出时方向 effect 被拦住，原生屏卡在横屏。
-  const didMountRef = useRef(false);
+  // 屏幕方向：V3.3.0 #7 重做——
+  //   竖屏态（含进入播放页）= 'sensor'：系统级重力跟随，竖着拿=竖屏、横过来=整个系统
+  //   真旋转（状态栏一起转，不受系统"自动旋转"开关影响）。之前竖屏锁死 PORTRAIT，
+  //   手机怎么转都不跟 = 用户反馈的"不能自动旋转"。
+  //   点横屏按钮 = 'landscape'：强制锁定横屏 + 传感器管左右方向。
+  //   卸载（返回/关页）= 'portrait'：保证回到主页一定是竖屏。
+  // 不再跳过首次：进入播放页即发 sensor，桥未就绪则由共享工具静默等待。
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-    // ③：横屏锁 landscape；退出横屏恢复重力感应 sensor（v3.1.0 行为）。
-    //     sensor 让设备随重力转回竖屏，躺着看不会自动转横屏；点横屏按钮仍能转横屏。
-    requestOrientation(landscape ? 'landscape' : 'portrait');
+    requestOrientation(landscape ? 'landscape' : 'sensor', { silent: !landscape });
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);

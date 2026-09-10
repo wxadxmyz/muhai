@@ -6,7 +6,7 @@ import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
 import { createJsSource } from './adapters/js';
 import { createNormalSource } from './adapters/normal';
 import { withTimeout } from './http';
-import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
+import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType, SuggestItem } from './types';
 
 export * from './types';
 
@@ -52,44 +52,105 @@ export async function expandSources(
   return out;
 }
 
-// 跨源搜索：并发请求所有启用源，按优先级合并
-export async function aggregateSearch(
-  sources: SourceConfig[],
-  keyword: string,
-  opts: { timeout?: number; mediaType?: MediaType } = {}
-): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
-  const active = sources
-    .filter((s) => s.enabled)
-    .sort((a, b) => a.priority - b.priority);
-
-  const results = await Promise.all(
-    active.map(async (s) => {
-      try {
-        const items = await withTimeout(createSource(s).search(keyword, 1), opts.timeout ?? 30000);
-        return { ok: true as const, sourceId: s.id, items };
-      } catch (e: any) {
-        return { ok: false as const, sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' };
-      }
-    })
-  );
-
-  let items = results.flatMap((r) => (r.ok ? r.items : []));
-  if (opts.mediaType) items = items.filter((it) => it.mediaType === opts.mediaType);
-  const errors = results
-    .filter((r) => !r.ok)
-    .map((r) => ({
-      sourceId: (r as any).sourceId,
-      sourceName: (r as any).sourceName ?? (r as any).sourceId,
-      message: (r as any).message,
-    }));
-
-  // 同名同艺术家去重，保留多源备选
+// 同名同艺术家去重，保留多源备选
+function dedupe(items: MediaItem[]): MediaItem[] {
   const map = new Map<string, MediaItem>();
   for (const it of items) {
     const key = `${it.title}|${it.artist ?? ''}`;
     if (!map.has(key)) map.set(key, it);
   }
-  return { items: Array.from(map.values()), errors };
+  return Array.from(map.values());
+}
+
+// 跨源搜索：并发请求所有启用源，按优先级合并。
+// V3.3.1 #5：加 onPartial —— 每完成一个源就把当前已有结果推给调用方，
+// 谁快谁先上，不再干等最慢的源（旧实现 Promise.all 全部回来才一次性渲染，
+// 只要有一个源慢/死，用户就得对着空白转圈等满超时）。单源超时 30s → 10s。
+export async function aggregateSearch(
+  sources: SourceConfig[],
+  keyword: string,
+  opts: { timeout?: number; mediaType?: MediaType; onPartial?: (items: MediaItem[]) => void } = {}
+): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
+  const active = sources
+    .filter((s) => s.enabled)
+    .sort((a, b) => a.priority - b.priority);
+
+  // 按源下标分桶：emit 时按下标（= 优先级）顺序展开，
+  // 这样"谁快谁先上"的同时，最终列表顺序不会被响应速度打乱。
+  const buckets: MediaItem[][] = active.map(() => []);
+  const errors: { sourceId: string; sourceName: string; message: string }[] = [];
+
+  const emit = () => {
+    if (!opts.onPartial) return;
+    const list = buckets.flat();
+    const shown = opts.mediaType ? list.filter((it) => it.mediaType === opts.mediaType) : list;
+    opts.onPartial(dedupe(shown));
+  };
+
+  await Promise.all(
+    active.map(async (s, i) => {
+      try {
+        const items = await withTimeout(createSource(s).search(keyword, 1), opts.timeout ?? 10000);
+        buckets[i] = items;
+        emit(); // 这个源一回来就先把它的结果显示出去
+      } catch (e: any) {
+        errors.push({ sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' });
+      }
+    })
+  );
+
+  let items = dedupe(buckets.flat());
+  if (opts.mediaType) items = items.filter((it) => it.mediaType === opts.mediaType);
+  return { items, errors };
+}
+
+// V3.3.1 #7：跨源搜索联想。并发问所有启用源，谁快谁先出（渐进式），按名字去重。
+// 源没实现 suggest 就跳过；全部失败只返回空数组——前端回落成"不显示联想"，
+// 正常搜索完全不受影响。
+export async function aggregateSuggest(
+  sources: SourceConfig[],
+  keyword: string,
+  opts: { timeout?: number; onPartial?: (items: SuggestItem[]) => void } = {}
+): Promise<SuggestItem[]> {
+  const q = keyword.trim();
+  if (!q) return [];
+  const active = sources
+    .filter((s) => s.enabled)
+    .sort((a, b) => a.priority - b.priority);
+
+  const out: SuggestItem[] = [];
+  const seen = new Set<string>();
+
+  const push = (arr: SuggestItem[]) => {
+    for (const it of arr) {
+      const k = (it.name ?? '').trim();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      // 补上来源信息：用于查续播进度和一键播放
+      out.push(it);
+    }
+    opts.onPartial?.(out.slice());
+  };
+
+  await Promise.all(
+    active.map(async (s) => {
+      let src: MediaSource;
+      try {
+        src = createSource(s);
+      } catch {
+        return;
+      }
+      if (!src.suggest) return; // 该源不支持联想
+      try {
+        const r = await withTimeout(src.suggest(q), opts.timeout ?? 6000);
+        if (Array.isArray(r) && r.length) push(r);
+      } catch {
+        /* 单个源联想失败不影响其它源 */
+      }
+    })
+  );
+
+  return out;
 }
 
 // 首页聚合：并发拉取所有启用源首页推荐，合并去重。

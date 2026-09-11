@@ -17,6 +17,19 @@ import { useSources } from '../store';
 import { crossSourceCover, cachedCrossCover } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
 
+// V3.3.6 八·二：子站无 logo 时的六边形兜底图案（白色描边六边形 + 源名 hash 固定配色，同源同色）
+const SUBSITE_PALETTE: [string, string][] = [
+  ['#3b82f6', '#2563eb'], ['#a855f7', '#7c3aed'], ['#06b6d4', '#0891b2'], ['#10b981', '#059669'],
+  ['#f97316', '#ea580c'], ['#ef4444', '#dc2626'], ['#ec4899', '#db2777'], ['#6366f1', '#4f46e5'],
+  ['#f59e0b', '#d97706'], ['#14b8a6', '#0d9488'], ['#e11d48', '#be123c'], ['#0ea5e9', '#0284c7'],
+];
+const subsiteColor = (name: string): string => {
+  let h = 5381;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) | 0;
+  const [a, b] = SUBSITE_PALETTE[Math.abs(h) % SUBSITE_PALETTE.length];
+  return `linear-gradient(135deg, ${a}, ${b})`;
+};
+
 // ===== 播放器选项（持久化到 localStorage） =====
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 // 解码循环：系统 → 硬解 → 软解 → Exo（文字仅需显示这四个，不带 IJK 前缀）
@@ -143,7 +156,6 @@ export function VideoPlayer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimer = useRef<number | undefined>(undefined);
   const [asc, setAsc] = useState(true);
-  const [metaExpanded, setMetaExpanded] = useState(false);
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
   const seekBubbleTimer = useRef<number | undefined>(undefined);
@@ -179,6 +191,9 @@ export function VideoPlayer({
   // V3.3.5 B4：多源封面回退——本源封面被网络阻断时，用其它启用源的同名封面顶上（仅展示层）
   // （组件 props 已有 sources=当前详情的源 id，这里取名 allSources 表示「全部已启用源列表」）
   const { sources: allSources } = useSources('video');
+  // V3.3.6 八·二：当前子站（用于子站指示的 logo / 名称；无 logo 用六边形兜底）
+  const curSource = allSources.find((s) => s.id === detail.sourceId);
+  const curSourceName = curSource?.name ?? detail.sourceName ?? '';
   const [coverFallback, setCoverFallback] = useState<string | null>(null);
   const coverTried = useRef(''); // 已触发过跨源回退的 detail.id，防重复搜索
   useEffect(() => {
@@ -320,23 +335,9 @@ export function VideoPlayer({
     requestImmersive(landscape);
   }, [landscape]);
 
-  // V3.3.5 A2：布局同步（V3.3.2 缺失的短板）——
-  // 竖屏态是 FULL_SENSOR 跟重力，用户横握手机时系统会把屏幕转过去，但 React 的 landscape 状态
-  // 还停留在 false → 「屏幕已经横了、布局还是竖屏的小窗」。这里监听 resize/orientationchange，
-  // 物理方向变了就把布局状态跟上去。仅 Tauri 真机生效：桌面浏览器拖窗口不会误判成横屏。
-  useEffect(() => {
-    if (!isTauri()) return;
-    const sync = () => {
-      const isLand = window.innerWidth > window.innerHeight;
-      setLandscape((v) => (v === isLand ? v : isLand));
-    };
-    window.addEventListener('resize', sync);
-    window.addEventListener('orientationchange', sync);
-    return () => {
-      window.removeEventListener('resize', sync);
-      window.removeEventListener('orientationchange', sync);
-    };
-  }, []);
+  // V3.3.6 一：删除 V3.3.5 的「布局同步」自写监听——它会在旋转动画中间帧（视口尚未变横）把 landscape
+  // 反向设回 false，导致手动横屏被自身监听作废。对齐 FongMi：横屏纯靠按钮触发的原生 SENSOR_LANDSCAPE，
+  // 不加任何自写传感器监听。
 
   // V3.3.5 A3：竖屏选集浮层打开后，把面板滚动位置定位到当前集附近（115 集的剧不用手动翻）。
   // 手动算 scrollTop 而不用 scrollIntoView：后者可能把外层信息区一起带着滚。
@@ -1068,11 +1069,7 @@ export function VideoPlayer({
   };
   // 需要锁容器比例的两档；其余档保持容器原样（竖屏 16:9 / 横屏全屏）
   const lockRatio = SCALE_RATIO[scaleMode] || '';
-  const tags: string[] = Array.isArray(detail.raw?.tags)
-    ? (detail.raw!.tags as string[]).slice(0, 5)
-    : Array.isArray(detail.raw?.genres)
-    ? (detail.raw!.genres as string[]).slice(0, 5)
-    : [];
+  // V3.3.6 八·二：genre 标签整行删除，改由子站指示 [图标]│[子站名] 代替
   const vr = detail.raw as any;
   const filmYear = vr?.vod_year || vr?.year;
   const director = vr?.vod_director || vr?.director;
@@ -1082,11 +1079,18 @@ export function VideoPlayer({
   // 现改为原文显示（「更新至第157集」/「已完结」），只过滤 HD 这类无集数信息的占位值。
   const rawRemarks = String(vr?.vod_remarks || '').trim();
   const statusTag = rawRemarks && !/^(hd|hd高清|高清|tc|ts)$/i.test(rawRemarks) ? rawRemarks : '';
-  // Q5：无数据时保底标签，避免该行空着（年份/类型占位 或 固定 HD）
-  const hasAnyTag = !!statusTag || tags.length > 0 || quality === '4K' || audioMode !== '关闭';
-  const fallbackTags: string[] = hasAnyTag ? [] : [(filmYear ? String(filmYear) : '影视'), 'HD'];
+  // V3.3.6 八·二：genre/4K/杜比 标签整行删除（由子站指示取代）；statusTag 改放「选集」标题右侧
 
-  const epName = detail.episodes?.[episodeIndex]?.name ?? `第${episodeIndex + 1}集`;
+  // V3.3.6 二：集数去汉字、去前导 0、从 1 开始——「第01集」→「1」、「第108集」→「108」；
+  // 非数字特殊名（如「预告片」「会员专属」）保留原样；无名字时回退为序号。
+  const cleanEp = (name?: string, idx?: number): string => {
+    if (name) {
+      const m = name.replace(/^第/, '').replace(/集$/, '').match(/\d+/);
+      if (m) return String(parseInt(m[0], 10));
+    }
+    return idx != null ? String(idx + 1) : '';
+  };
+  const epName = cleanEp(detail.episodes?.[episodeIndex]?.name, episodeIndex);
 
   // ===== T 组：缓冲状态 =====
   const [buffering, setBuffering] = useState(false);
@@ -1297,7 +1301,7 @@ export function VideoPlayer({
               </div>
               <div className="bottom">
                 <div className="bottom-row">
-                  <span className="play-ico" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                  {/* V3.3.6 十二：删竖屏底栏左侧播放/暂停钮——播放/暂停改点中间大按钮或轻触画面 */}
                   <span className="t cur">{fmtTime(liveCur)}</span>
                   <div className="bar" onClick={(e) => {
                     const v = videoRef.current; if (!v || !liveDur) return;
@@ -1407,9 +1411,7 @@ export function VideoPlayer({
       {!landscape && (
         <div className="vp-body">
           <div className="info-card">
-            <div className="info-title">{detail.title}</div>
-            <div className="info-main">
-              <div className="info-poster">
+            <div className="info-poster">
                 {/* V3.3.5 B4：本源封面两级加载都失败（onFinalFail）时，跨源找同名封面顶上；
                     key=src 保证切换回退 URL 时 ProxiedImg 重建内部加载状态 */}
                 {detail.cover ? (
@@ -1425,36 +1427,32 @@ export function VideoPlayer({
                     }}
                   />
                 ) : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
-              </div>
-              <div className="info-body">
-                <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
-                <div className="info-meta">
-                  {tags.length > 0 && <><span className="label">类型</span> {tags.slice(0, 3).join(' / ')}　</>}
-                  {filmYear && <><span className="label">年份</span> {filmYear}　</>}
-                  <br />
-                  <div className={'meta-extra' + (metaExpanded ? ' open' : '')}>
-                    {director && <><span className="label">导演</span> {director}　</>}
-                    {actor && <><span className="label">主演</span> {actor}</>}
-                  </div>
-                  {(director || actor) && (
-                    <button className="meta-toggle" onClick={() => setMetaExpanded((v) => !v)}>{metaExpanded ? '收起 ▴' : '展开 ▾'}</button>
-                  )}
-                </div>
-              </div>
             </div>
-            <div className="info-favrow">
+            <div className="info-body">
+              <div className="info-title">{detail.title}</div>
+              <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
+              <div className="info-meta">
+                {filmYear && <><span className="label">年份</span>{filmYear}　</>}
+                {director && <><span className="label">导演</span>{director}　</>}
+                {actor && <><span className="label">主演</span>{actor}</>}
+              </div>
               <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => { library.toggleFavorite(detail); setFaved(library.isFavorite(detail)); }}>
-                <Icon name={faved ? 'heart-filled' : 'heart'} size={14} />{faved ? '已收藏' : '加入收藏'}
+                {faved ? '已收藏' : '加入收藏'}
               </button>
             </div>
           </div>
 
-          <div className="tags">
-            {statusTag && <span className="hot">{statusTag}</span>}
-            {tags.map((t, i) => <span key={'g' + i}>{t}</span>)}
-            {fallbackTags.map((t, i) => <span key={'fb' + i}>{t}</span>)}
-            {quality === '4K' && <span className="hot">4K</span>}
-            {audioMode !== '关闭' && <span>杜比音效</span>}
+          {/* V3.3.6 八·二：子站指示 [logo/六边形] │ [子站名] */}
+          <div className="src-chip">
+            {curSource?.logo ? (
+              <img className="src-logo" src={curSource.logo} alt="" />
+            ) : (
+              <span className="src-hex" style={{ background: subsiteColor(curSourceName) }}>
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3.5 L19 7.8 L19 16.2 L12 20.5 L5 16.2 L5 7.8 Z" fill="none" stroke="#fff" strokeWidth="2" /></svg>
+              </span>
+            )}
+            <span className="sep" />
+            <span className="src-name">{curSourceName}</span>
           </div>
 
           {/* 4 操作按钮（缓存/解码/投屏/设置）— 占位展示，待用户确认哪些要接 */}
@@ -1485,7 +1483,10 @@ export function VideoPlayer({
               115 集的剧不再把信息区拉成 29 行（≈1580px）。横屏仍走 epOpen 抽屉不变。 */}
           <div className="section">
             <div className="sec-head">
-              <span className="sec-title">选集</span>
+              <div className="sec-left">
+                <span className="sec-title">选集</span>
+                {statusTag && <span className="ep-update">{statusTag}</span>}
+              </div>
               {detail.episodes && detail.episodes.length > 0 && (
                 <span className="sec-actions">
                   {detail.episodes.length > 1 && <span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>}
@@ -1498,18 +1499,18 @@ export function VideoPlayer({
                 {(() => {
                   const list = detail.episodes!;
                   // 预览窗口：以当前集为中心取 8 个（2 行 × 4 列）——追剧时打开直接看到当前集附近
-                  const PREVIEW = 8;
+                  const PREVIEW = 10; // V3.3.6 三：5 列 × 2 行 = 10 格
                   const win =
                     list.length <= PREVIEW
                       ? list.map((_, i) => i)
-                      : Array.from({ length: PREVIEW }, (_, k) => Math.max(0, Math.min(list.length - PREVIEW, episodeIndex - 3)) + k);
+                      : Array.from({ length: PREVIEW }, (_, k) => Math.max(0, Math.min(list.length - PREVIEW, episodeIndex - 4)) + k);
                   const order = asc ? win : win.slice().reverse();
                   return order.map((i) => {
                     const ep = list[i];
                     const cur = i === episodeIndex;
                     return (
                       <button key={i} className={(cur ? 'active ep-cur' : '') + (ep.locked ? ' locked' : '')} onClick={() => onSelectEpisode(i)}>
-                        {ep.locked ? '锁' : ep.name}
+                        {ep.locked ? '锁' : cleanEp(ep.name, i)}
                         {cur && <span className="ep-dot" />}
                       </button>
                     );
@@ -1541,6 +1542,8 @@ export function VideoPlayer({
                         阅读型内容不适合塞进浮层（那是选集这类操作型内容用的），故原地展开。 */}
                     {intro ? (
                       <>
+                        {director && <p className="intro-extra"><span className="label">导演</span> {director}</p>}
+                        {actor && <p className="intro-extra"><span className="label">主演</span> {actor}</p>}
                         <p className={introExpanded ? '' : 'intro-clamp'}>{String(intro)}</p>
                         {String(intro).length > 60 && (
                           <button className="intro-toggle" onClick={() => setIntroExpanded((v) => !v)}>
@@ -1678,7 +1681,7 @@ export function VideoPlayer({
                       className={(cur ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')}
                       onClick={() => { onSelectEpisode(i); setEpSheetOpen(false); }}
                     >
-                      {ep?.locked ? '锁' : (ep?.name ?? `第${i + 1}集`)}
+                      {ep?.locked ? '锁' : cleanEp(ep?.name, i)}
                       {cur && <span className="ep-dot" />}
                     </button>
                   );

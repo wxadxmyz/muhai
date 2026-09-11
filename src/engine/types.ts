@@ -14,6 +14,8 @@ export interface SourceConfig {
   token?: string;
   enabled: boolean;
   priority: number;
+  /** V3.3.6：子站 logo（真实图标地址）。有则播放页子站指示显示真实 logo，无则前端用六边形兜底图案。 */
+  logo?: string;
   extra?: Record<string, any>;
 }
 

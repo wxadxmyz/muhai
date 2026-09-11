@@ -456,7 +456,7 @@ jobs:
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/keystore.p12
           SRC=$(find src-tauri/gen/android -name '*unsigned*.apk' | head -1)
-          OUT=src-tauri/gen/android/app/build/outputs/apk/universal/release/${{ github.event.repository.name }}-android.apk
+          OUT=src-tauri/gen/android/app/build/outputs/apk/universal/release/${{ github.event.repository.name }}-android-${RELEASE_TAG}.apk
           $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
             --ks /tmp/keystore.p12 \
             --ks-key-alias "$ANDROID_KEY_ALIAS" \

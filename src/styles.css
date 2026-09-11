@@ -1534,7 +1534,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .bottom .bar .fill, .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 2; }
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 /* ⑬ 竖屏进度条左右时间（历史遗留规则，.t 现由下方 .times 承载） */
-.player-card .bottom .t { font-size: 12px; color: #fff; min-width: 42px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.player-card .bottom .t { font-size: 12px; color: #fff; min-width: 54px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
 /* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方；两端对齐进度条（左=当前 右=总时长）。
    左右 padding 54px = 播放/横屏钮 44px + 间距 10px，与进度条两端精确对齐。 */
 .player-card .overlay .times {
@@ -1556,42 +1556,41 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .vp-body { padding-bottom: 30px; }
 /* O5：去掉底色与圆角 —— 它是播放小窗下方唯一的色块，去掉后
    标题 / 评分 / 收藏 / 标签 / 四大按钮 / 线路 / 选集 / 简介整片同色，消除「介绍卡片跟下面有割裂」 */
-.info-card { margin: 0 16px 18px; background: transparent; border-radius: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.info-title { font-size: 20px; font-weight: 700; margin: 0 0 4px; text-align: center; }
-.info-main { display: flex; gap: 14px; align-items: stretch; }
-/* V3.3.5 A1：必须 relative——ProxiedImg 的加载中/失败占位块是 position:absolute; inset:0，
-   宿主没有 relative 时它会逃逸出 110×150 海报框、相对视口铺满整屏（实测 318×720），
-   把选集/线路/介绍/标题整片盖住，连 toast 都挡住。V3.3.2~V3.3.4「信息区空白」的真凶。 */
-.info-poster { position: relative; width: 110px; height: 150px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
+/* V3.3.6 八：详情卡重排——左封面 + 右栏 flex column space-between 与封面等高；
+   标题置顶 / 评分第二 / 年份·导演·演员居中截断 / 加入收藏贴底 */
+.info-card { margin: 0 16px 10px; background: transparent; border-radius: 0; padding: 0; display: flex; gap: 14px; align-items: stretch; }
+/* V3.3.5 A1：relative 防 ProxiedImg 占位块逃逸铺满 */
+.info-poster { position: relative; width: 132px; height: 176px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
 .info-poster img { width: 100%; height: 100%; object-fit: cover; }
-.info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.info-badges span { font-size: 11px; padding: 3px 9px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); }
-.info-badges span.on { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent); font-weight: 600; }
-.info-score { font-size: 28px; font-weight: 800; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
+.info-title { font-size: 19px; font-weight: 700; margin: 0; line-height: 1.3; }
+.info-score { font-size: 26px; font-weight: 800; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; }
 .stars { font-size: 14px; color: var(--accent); letter-spacing: 2px; }
 .stars .empty { color: var(--dim); }
-.info-meta { font-size: 13px; color: var(--muted); line-height: 1.7; }
-.info-meta .label { color: color-mix(in srgb, var(--muted) 70%, #fff); }
-.meta-extra { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.meta-extra.open { display: block; -webkit-line-clamp: unset; overflow: visible; }
-.meta-toggle { background: none; border: none; color: var(--accent); font-size: 12px; cursor: pointer; padding: 2px 0; margin-top: 2px; }
-.info-favrow { display: flex; justify-content: center; }
-.fav-btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 7px 14px; border-radius: 999px; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.info-meta { font-size: 13px; color: var(--muted); line-height: 1.6; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.info-meta .label { color: color-mix(in srgb, var(--muted) 70%, #fff); margin-right: 3px; }
+/* V3.3.6 八：加入收藏——去红心，纯文字居中；点击变「已收藏」（.on） */
+.fav-btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 9px 14px; border-radius: 12px; font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .fav-btn.on { background: var(--accent); color: #04201a; border-color: var(--accent); }
 
-.tags { margin: 0 16px 18px; display: flex; gap: 8px; flex-wrap: wrap; }
-.tags span { background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 6px 13px; border-radius: 999px; font-size: 12px; }
-.tags span.hot { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--accent); }
+/* V3.3.6 八·二：标签行改为子站指示 [logo/六边形] │ [子站名] */
+.src-chip { margin: 0 16px 10px; display: inline-flex; align-items: center; gap: 8px; }
+.src-chip .src-logo { width: 20px; height: 20px; border-radius: 6px; object-fit: cover; background: var(--panel2); }
+.src-chip .src-hex { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; flex: 0 0 auto; overflow: hidden; }
+.src-chip .src-hex svg { width: 11px; height: 11px; display: block; }
+.src-chip .sep { width: 1px; height: 14px; background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.src-chip .src-name { font-size: 13px; color: var(--muted); }
+/* V3.3.6 七：选集标题右侧「更新至第 N 集」小标签 */
+.sec-left { display: flex; align-items: center; gap: 8px; }
+.ep-update { font-size: 12px; font-weight: 500; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); padding: 2px 9px; border-radius: 999px; }
 
-.actions { margin: 0 16px 22px; display: grid; grid-template-columns: repeat(4, 1fr); }
+.actions { margin: 0 16px 10px; display: grid; grid-template-columns: repeat(4, 1fr); }
 .actions button { display: flex; flex-direction: column; align-items: center; gap: 8px; background: transparent; border: none; color: var(--muted); font-size: 12px; cursor: pointer; }
 .actions .circle { width: 54px; height: 54px; border-radius: 50%; background: var(--panel2); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text); }
 .actions .circle svg { width: 24px; height: 24px; }
-.actions button.on .circle { background: color-mix(in srgb, var(--accent) 15%, var(--panel2)); border-color: var(--accent); color: var(--accent); }
 .actions button.on { color: var(--accent); }
 
-.section { margin: 0 16px 20px; }
+.section { margin: 0 16px 14px; }
 .sec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .sec-title { font-size: 16px; font-weight: 700; }
 .sec-more { color: var(--accent); font-size: 13px; display: flex; align-items: center; gap: 3px; cursor: pointer; }
@@ -1599,16 +1598,18 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .line-row::-webkit-scrollbar { display: none; }
 .line-row button { white-space: nowrap; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 8px 16px; border-radius: 999px; font-size: 13px; cursor: pointer; }
 .line-row button.active { background: var(--accent); color: #04201a; border-color: var(--accent); font-weight: 600; }
-.ep-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.ep-grid button { aspect-ratio: 1.5; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.ep-grid button { aspect-ratio: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
 .ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
 .ep-grid button.locked { color: var(--dim); }
 .intro { margin: 0 16px 30px; }
 .intro p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.8; }
+.intro-extra { margin: 0 0 6px; }
+.intro-extra .label { color: color-mix(in srgb, var(--muted) 70%, #fff); margin-right: 3px; }
 
 /* ── V3.3.5 A3：竖屏信息区优化（选集半屏浮层 + 配套） ── */
 /* 选集区右上角「正序/倒序 + 全部 N 集 ›」并排 */
-.sec-actions { display: flex; align-items: center; gap: 12px; }
+.sec-actions { display: flex; align-items: center; line-height: 1; gap: 12px; }
 .sec-actions .ep-all { font-weight: 600; }
 /* 当前集标记：紫底高亮 + 方块右上角小红点（横屏抽屉/竖屏预览/竖屏浮层三处统一，不用 ✓） */
 .ep-grid button { position: relative; }
@@ -1617,11 +1618,11 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .ep-sheet { width: 100%; max-width: 430px; background: var(--panel); border-radius: 22px 22px 0 0; padding: 10px 16px calc(20px + env(safe-area-inset-bottom)); height: 52vh; display: flex; flex-direction: column; }
 /* 面板内独立滚动 + 滚动条完全隐藏（同 styles.css 706-707 的做法）；
    列宽必须 minmax(0,1fr)——纯 1fr 的隐式 min-width:auto 会被内容撑到 120px/列溢出浮层（实测） */
-.ep-sheet-grid { position: relative; flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-content: start; scrollbar-width: none; -ms-overflow-style: none; }
+.ep-sheet-grid { position: relative; flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; align-content: start; scrollbar-width: none; -ms-overflow-style: none; }
 .ep-sheet-grid::-webkit-scrollbar { display: none; }
 /* 浮层是浅色面板：标题不能用横屏深底抽屉的白色（.ep-head 原样式），改主题色 */
 .ep-sheet .ep-head { color: var(--text); }
-.ep-sheet-grid button { position: relative; aspect-ratio: 1.5; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.ep-sheet-grid button { position: relative; aspect-ratio: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
 .ep-sheet-grid button.active { background: var(--accent); color: #fff; font-weight: 700; border-color: var(--accent); }
 .ep-sheet-grid button.locked { color: var(--dim); }
 /* 简介原地折叠：默认 3 行，点「展开 ▾」就地长开全文（阅读型内容，不进浮层） */
@@ -1790,7 +1791,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .ep-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 15px; font-weight: 700; color: #fff; }
 .ep-toggle { font-size: 13px; color: var(--accent); cursor: pointer; }
 .ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.ep-grid button { aspect-ratio: 2.6; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid button { aspect-ratio: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
 .ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
 .ep-grid button.locked { color: var(--dim); }
 
@@ -1823,7 +1824,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   overflow-y: auto;
 }
 /* 右侧竖抽屉宽度有限，选集网格从 5 列收成 4 列，避免按钮被压扁 */
-.player-root.landscape .ep-grid { grid-template-columns: repeat(4, 1fr); }
+.player-root.landscape .ep-grid { grid-template-columns: repeat(5, 1fr); }
 
 /* ⑫ 重置 APP 中文确认 Modal */
 .modal-mask { position: fixed; inset: 0; z-index: 200; background: rgba(0, 0, 0, .5); display: flex; align-items: center; justify-content: center; }

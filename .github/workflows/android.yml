@@ -179,29 +179,10 @@ jobs:
               bridge = '''
               // 播放器原生桥：JS 通过 window.MuHaiAndroid 调用，实现真横屏旋转与系统亮度/音量调节。
 
-              // R1：横屏传感器监听 —— 让左右两个横屏方向都能用。
-              // OrientationEventListener 直接读硬件加速度传感器，不受系统「自动旋转」开关影响，
-              // 所以用户关掉自动旋转也能左右横；这是单靠 LANDSCAPE 常量做不到的（那只能固定一个方向）。
-              private var _landListener: android.view.OrientationEventListener? = null
-              private fun _startLandscapeSensor() {
-                  _landListener?.disable()
-                  _landListener = object : android.view.OrientationEventListener(this) {
-                      override fun onOrientationChanged(deg: Int) {
-                          if (deg == ORIENTATION_UNKNOWN) return
-                          val target = when {
-                              deg in 45..135 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-                              deg in 225..315 -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                              else -> return   // 竖着握的时候不动
-                          }
-                          if (requestedOrientation != target) requestedOrientation = target
-                      }
-                  }
-                  _landListener?.enable()
-              }
-              private fun _stopLandscapeSensor() {
-                  _landListener?.disable()
-                  _landListener = null
-              }
+              // V3.3.5 A2：删除自写的 OrientationEventListener（原 _startLandscapeSensor/_stopLandscapeSensor）。
+              // 实测它反而是病根：自写监听把方向锁成固定 LANDSCAPE/REVERSE_LANDSCAPE，
+              // 而 v3.1.0/v3.3.2 用户验证有效的做法是直接交给系统常量 SENSOR_LANDSCAPE——
+              // 它自带左右传感器切换，不需要（也不该有）自写监听去抢方向盘。
 
               private var _muhaiBound = false
               private fun _muhaiBind() {
@@ -220,30 +201,21 @@ jobs:
                       runOnUiThread {
                           _muhaiBind()
                           try {
-                              // R2：横屏改用 SCREEN_ORIENTATION_LANDSCAPE（强制、不受系统自动旋转开关影响）。
-                              // 原先用 SENSOR_LANDSCAPE —— 用户一旦关掉「自动旋转」，系统不再读传感器，
-                              // 就转不动，表现正是「有时能横有时不能」。
+                              // V3.3.5 A2：恢复 v3.1.0/v3.3.2 用户实测有效的指令。
+                              // SENSOR_LANDSCAPE = 转横屏 + 左右两个横握方向由系统传感器自动切换，
+                              // 且它是 activity 级强制指令，不受系统「自动旋转」快捷开关影响 → 点了必转。
+                              // （V3.3.3 改成固定 LANDSCAPE 的设备上实测不响应，同款软件 FongMi/TV 用的也是 SENSOR_LANDSCAPE。）
                               when (orientation) {
-                                  "landscape" -> {
-                                      // V3.3.3 横屏修复：直接锁 LANDSCAPE（强制、不受系统「自动旋转」开关影响），
-                                      // 再启动手动加速度传感器监听切左右方向（_startLandscapeSensor 不依赖
-                                      // 系统 SENSOR_LANDSCAPE 在 WebView 上的兼容性，华为/鸿蒙也能真横屏+自动左右）。
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                      _startLandscapeSensor()
-                                  }
-                                  "landscape-reverse" -> {
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                      _startLandscapeSensor()
+                                  "landscape", "landscape-reverse" -> {
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                   }
                                   "sensor" -> {
-                                      // 竖屏态：锁定竖屏 PORTRAIT（点横屏按钮才转横，行为确定、不依赖系统传感器）。
-                                      _stopLandscapeSensor()
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                      // 竖屏态/进播放页：FULL_SENSOR 全方向跟随重力（v3.1.0 的「自动旋转」行为），
+                                      // 且无视系统「自动旋转」开关——用户横握手机自动转横屏、竖握转回竖屏。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                   }
                                   else -> {
-                                      _stopLandscapeSensor()    // 退出横屏即停监听，不耗电
-                                      // v3.2.1 ⑦：强制竖屏 PORTRAIT。退出横屏/退出点播页时锁回竖屏，
-                                      //    彻底解决「返回竖屏仍卡横屏」。前端统一传 'portrait'。
+                                      // 退出横屏/退出点播页：锁回竖屏（v3.2.1 修对的部分，主页列表永不乱转）。
                                       requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                                   }
                               }

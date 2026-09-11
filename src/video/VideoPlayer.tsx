@@ -13,6 +13,9 @@ import { requestOrientation as requestOrientationShared, requestImmersive, pipBr
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { toast } from '../lib/toast';
+import { useSources } from '../store';
+import { crossSourceCover, cachedCrossCover } from '../lib/crossCover';
+import { pushBackHandler } from '../lib/backStack';
 
 // ===== 播放器选项（持久化到 localStorage） =====
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -167,6 +170,28 @@ export function VideoPlayer({
   const [liveCur, setLiveCur] = useState(0);
   const [liveDur, setLiveDur] = useState(0);
   const [epOpen, setEpOpen] = useState(false); // ⑦ 横屏选集浮层
+  // V3.3.5 A3：竖屏选集半屏浮层——集数多时（实测 115 集 ≈ 29 行）信息区被拉到三屏开外，
+  // 竖屏改为「2 行预览 + 点开半屏浮层」，浮层内独立滚动、点遮罩/选完集关闭。
+  const [epSheetOpen, setEpSheetOpen] = useState(false);
+  const epSheetRef = useRef<HTMLDivElement | null>(null); // 浮层滚动容器（用于打开时定位当前集）
+  // V3.3.5 A3：简介原地折叠（阅读型内容，不进浮层）
+  const [introExpanded, setIntroExpanded] = useState(false);
+  // V3.3.5 B4：多源封面回退——本源封面被网络阻断时，用其它启用源的同名封面顶上（仅展示层）
+  // （组件 props 已有 sources=当前详情的源 id，这里取名 allSources 表示「全部已启用源列表」）
+  const { sources: allSources } = useSources('video');
+  const [coverFallback, setCoverFallback] = useState<string | null>(null);
+  const coverTried = useRef(''); // 已触发过跨源回退的 detail.id，防重复搜索
+  useEffect(() => {
+    // 换片/换源：清掉上一部的回退封面
+    setCoverFallback(null);
+    coverTried.current = '';
+  }, [detail.id, detail.sourceId]);
+  useEffect(() => {
+    // 同会话内查过的片名直接命中缓存，不再跨源搜索
+    if (coverFallback) return;
+    const hit = cachedCrossCover(detail.title);
+    if (hit) setCoverFallback(hit);
+  }, [detail.id, detail.title, coverFallback]);
   const [ended, setEnded] = useState(false);    // ⑪ 单集/末集播完：重播浮层（B 方案）
   const [pipMode, setPipMode] = useState(false); // ② 进入系统画中画（隐藏控件，纯视频）
 
@@ -282,17 +307,48 @@ export function VideoPlayer({
   // X1：改用共享工具，桥未就绪时自动等待最多 1.5s 再调用，解决"有时横屏有时不横"
   const requestOrientation = requestOrientationShared;
 
-  // 屏幕方向：V3.3.3 重做——
-  //   竖屏态（含进入播放页）= 'portrait'：锁定竖屏，行为确定、不依赖系统传感器兼容性。
-  //   点横屏按钮 = 'landscape'：原生桥直接锁 LANDSCAPE + 手动加速度传感器监听切左右方向
-  //     （不再用 SENSOR_LANDSCAPE，华为/鸿蒙 WebView 上经常失效、状态栏不跟着转）。
+  // 屏幕方向：V3.3.5 A2 回炉——恢复 v3.1.0/v3.3.2 用户实测有效的指令组合。
+  //   竖屏态（含进入播放页）= 'sensor'：FULL_SENSOR 全方向跟随重力，横握自动转横、竖握转回竖屏
+  //     （即用户记忆中的 v3.1.0「自动旋转」），且无视系统「自动旋转」快捷开关。
+  //   点横屏按钮 = 'landscape'：SENSOR_LANDSCAPE，转横屏 + 左右两个横握方向由系统传感器自动切换，
+  //     这是 activity 级强制指令、点了必转（同款软件 FongMi/TV 的点按钮实现也是它）。
+  //     V3.3.3 换成固定 LANDSCAPE 后用户设备上实测不响应，故回退。
   //   卸载（返回/关页）= 'portrait'：保证回到主页一定是竖屏。
-  // 不再跳过首次：进入播放页即发 portrait，桥未就绪则由共享工具静默等待。
   useEffect(() => {
-    requestOrientation(landscape ? 'landscape' : 'portrait', { silent: !landscape });
+    requestOrientation(landscape ? 'landscape' : 'sensor', { silent: !landscape });
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
+
+  // V3.3.5 A2：布局同步（V3.3.2 缺失的短板）——
+  // 竖屏态是 FULL_SENSOR 跟重力，用户横握手机时系统会把屏幕转过去，但 React 的 landscape 状态
+  // 还停留在 false → 「屏幕已经横了、布局还是竖屏的小窗」。这里监听 resize/orientationchange，
+  // 物理方向变了就把布局状态跟上去。仅 Tauri 真机生效：桌面浏览器拖窗口不会误判成横屏。
+  useEffect(() => {
+    if (!isTauri()) return;
+    const sync = () => {
+      const isLand = window.innerWidth > window.innerHeight;
+      setLandscape((v) => (v === isLand ? v : isLand));
+    };
+    window.addEventListener('resize', sync);
+    window.addEventListener('orientationchange', sync);
+    return () => {
+      window.removeEventListener('resize', sync);
+      window.removeEventListener('orientationchange', sync);
+    };
+  }, []);
+
+  // V3.3.5 A3：竖屏选集浮层打开后，把面板滚动位置定位到当前集附近（115 集的剧不用手动翻）。
+  // 手动算 scrollTop 而不用 scrollIntoView：后者可能把外层信息区一起带着滚。
+  useEffect(() => {
+    if (!epSheetOpen) return;
+    requestAnimationFrame(() => {
+      const c = epSheetRef.current;
+      const el = c?.querySelector<HTMLElement>('.ep-cur');
+      if (!c || !el) return;
+      c.scrollTop = Math.max(0, el.offsetTop - c.clientHeight / 2 + el.offsetHeight / 2);
+    });
+  }, [epSheetOpen]);
 
   // Q18：组件卸载（返回/切走/关页）时强制恢复重力感应自动旋转，避免遗留横屏状态
   useEffect(() => {
@@ -304,19 +360,22 @@ export function VideoPlayer({
     };
   }, []);
 
-  // 返回手势衔接：先关最上层浮层
-  // V3.3.4 #10①：依赖数组补上 epOpen——旧版回调里读了 epOpen 却没进依赖，effect 不重跑，
-  // 闭包里 epOpen 恒为 false → 横屏选集浮层打开时按返回键直接关掉整个播放器。
-  useEffect(() => {
-    (window as any).__playerBack = () => {
-      if (settingsOpen) { setSettingsOpen(false); return true; }
-      if (epOpen) { setEpOpen(false); return true; }
-      if (showCast) { setShowCast(false); return true; }
-      if (showSubStyle) { setShowSubStyle(false); return true; }
-      return false;
-    };
-    return () => { (window as any).__playerBack = undefined; };
-  }, [settingsOpen, epOpen, showCast, showSubStyle]);
+  // 返回手势衔接：V3.3.5 B2 改为返回栈——播放器的各浮层经 pushBackHandler 压栈，
+  // 栈顶先应答（谁消费谁拦截）；全部浮层都没开时返回 false，
+  // 由 VideoApp 的外层分级接手（关播放器回详情页）。__playerBack 单槽废除。
+  // 依赖数组列全所有被读状态：任一浮层开合都刷新栈顶回调（旧 #10① 教训：漏依赖=闭包旧值）。
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        if (epSheetOpen) { setEpSheetOpen(false); return true; }
+        if (settingsOpen) { setSettingsOpen(false); return true; }
+        if (epOpen) { setEpOpen(false); return true; }
+        if (showCast) { setShowCast(false); return true; }
+        if (showSubStyle) { setShowSubStyle(false); return true; }
+        return false;
+      }),
+    [settingsOpen, epOpen, showCast, showSubStyle, epSheetOpen]
+  );
 
   // 逐级返回：点播页优先退「横屏 → 竖屏」这一级，否则交还外层（VideoApp 的 closeVideo）
   useEffect(() => {
@@ -1018,7 +1077,11 @@ export function VideoPlayer({
   const filmYear = vr?.vod_year || vr?.year;
   const director = vr?.vod_director || vr?.director;
   const actor = vr?.vod_actor || vr?.actor;
-  const statusTag = /完结/.test(vr?.vod_remarks || '') ? '完结' : /连载/.test(vr?.vod_remarks || '') ? '连载中' : '';
+  // V3.3.5 A3：直接显示源返回的 remarks 原文——旧版只认「完结/连载」两个字，
+  // 而 LZ 实测追更剧的 remarks 是「更新至第157集」这类格式，永远匹配不上 → 用户从未见过集数标签。
+  // 现改为原文显示（「更新至第157集」/「已完结」），只过滤 HD 这类无集数信息的占位值。
+  const rawRemarks = String(vr?.vod_remarks || '').trim();
+  const statusTag = rawRemarks && !/^(hd|hd高清|高清|tc|ts)$/i.test(rawRemarks) ? rawRemarks : '';
   // Q5：无数据时保底标签，避免该行空着（年份/类型占位 或 固定 HD）
   const hasAnyTag = !!statusTag || tags.length > 0 || quality === '4K' || audioMode !== '关闭';
   const fallbackTags: string[] = hasAnyTag ? [] : [(filmYear ? String(filmYear) : '影视'), 'HD'];
@@ -1347,7 +1410,21 @@ export function VideoPlayer({
             <div className="info-title">{detail.title}</div>
             <div className="info-main">
               <div className="info-poster">
-                {detail.cover ? <ProxiedImg src={detail.cover} alt="" fallbackText={detail.title} /> : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
+                {/* V3.3.5 B4：本源封面两级加载都失败（onFinalFail）时，跨源找同名封面顶上；
+                    key=src 保证切换回退 URL 时 ProxiedImg 重建内部加载状态 */}
+                {detail.cover ? (
+                  <ProxiedImg
+                    key={coverFallback || detail.cover}
+                    src={coverFallback || detail.cover}
+                    alt=""
+                    fallbackText={detail.title}
+                    onFinalFail={() => {
+                      if (coverTried.current === detail.id) return;
+                      coverTried.current = detail.id;
+                      crossSourceCover(detail.title, allSources).then((u) => { if (u) setCoverFallback(u); });
+                    }}
+                  />
+                ) : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}
               </div>
               <div className="info-body">
                 <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
@@ -1393,25 +1470,48 @@ export function VideoPlayer({
           {lines > 0 && (
             <div className="section">
               <div className="sec-head"><span className="sec-title">线路</span><span className="sec-more" onClick={() => {}}>自动选速 &gt;</span></div>
+              {/* V3.3.5 A3：优先显示源返回的真实线路名（normal.ts toLineGroups 解析 vod_play_from，
+                  如 LZ 的 liangzi / lzm3u8），没有才回退到编号 */}
               <div className="line-row">
                 {Array.from({ length: lines }).map((_, i) => (
-                  <button key={i} className={i === line ? 'active' : ''} onClick={() => onLineChange(i)}>{LINE_NAMES[i] ?? `线路${i + 1}`}</button>
+                  <button key={i} className={i === line ? 'active' : ''} onClick={() => onLineChange(i)}>{((detail.raw as any)?.lineNames as string[] | undefined)?.[i] || LINE_NAMES[i] || `线路${i + 1}`}</button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* V3.3.3：选集区块始终显示——有集数渲染网格，无集数显示「暂无选集」占位，不再整块消失 */}
+          {/* V3.3.3：选集区块始终显示——有集数渲染网格，无集数显示「暂无选集」占位，不再整块消失
+              V3.3.5 A3：竖屏改为「2 行预览（8 个，窗口跟随当前集）+ 全部 N 集 › 半屏浮层」——
+              115 集的剧不再把信息区拉成 29 行（≈1580px）。横屏仍走 epOpen 抽屉不变。 */}
           <div className="section">
-            <div className="sec-head"><span className="sec-title">选集</span>{detail.episodes && detail.episodes.length > 1 && <span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>}</div>
+            <div className="sec-head">
+              <span className="sec-title">选集</span>
+              {detail.episodes && detail.episodes.length > 0 && (
+                <span className="sec-actions">
+                  {detail.episodes.length > 1 && <span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>}
+                  <span className="sec-more ep-all" onClick={() => setEpSheetOpen(true)}>全部 {detail.episodes.length} 集 ›</span>
+                </span>
+              )}
+            </div>
             {detail.episodes && detail.episodes.length > 0 ? (
               <div className="ep-grid">
                 {(() => {
-                  const order = asc ? detail.episodes!.map((_, i) => i) : detail.episodes!.map((_, i) => detail.episodes!.length - 1 - i);
+                  const list = detail.episodes!;
+                  // 预览窗口：以当前集为中心取 8 个（2 行 × 4 列）——追剧时打开直接看到当前集附近
+                  const PREVIEW = 8;
+                  const win =
+                    list.length <= PREVIEW
+                      ? list.map((_, i) => i)
+                      : Array.from({ length: PREVIEW }, (_, k) => Math.max(0, Math.min(list.length - PREVIEW, episodeIndex - 3)) + k);
+                  const order = asc ? win : win.slice().reverse();
                   return order.map((i) => {
-                    const ep = detail.episodes![i];
+                    const ep = list[i];
+                    const cur = i === episodeIndex;
                     return (
-                      <button key={i} className={(i === episodeIndex ? 'active' : '') + (ep.locked ? ' locked' : '')} onClick={() => onSelectEpisode(i)}>{ep.locked ? '锁' : ep.name}</button>
+                      <button key={i} className={(cur ? 'active ep-cur' : '') + (ep.locked ? ' locked' : '')} onClick={() => onSelectEpisode(i)}>
+                        {ep.locked ? '锁' : ep.name}
+                        {cur && <span className="ep-dot" />}
+                      </button>
                     );
                   });
                 })()}
@@ -1437,7 +1537,18 @@ export function VideoPlayer({
                 {!detailLoading && (
                   <div className="intro">
                     <div className="sec-head"><span className="sec-title">介绍</span></div>
-                    {intro ? <p>{String(intro)}</p> : <p className="intro-empty">暂无介绍</p>}
+                    {/* V3.3.5 A3：简介原地折叠——默认 3 行，点「展开 ▾」就地长开全文、变「收起 ▴」。
+                        阅读型内容不适合塞进浮层（那是选集这类操作型内容用的），故原地展开。 */}
+                    {intro ? (
+                      <>
+                        <p className={introExpanded ? '' : 'intro-clamp'}>{String(intro)}</p>
+                        {String(intro).length > 60 && (
+                          <button className="intro-toggle" onClick={() => setIntroExpanded((v) => !v)}>
+                            {introExpanded ? '收起 ▴' : '展开 ▾'}
+                          </button>
+                        )}
+                      </>
+                    ) : <p className="intro-empty">暂无介绍</p>}
                   </div>
                 )}
               </>
@@ -1544,6 +1655,40 @@ export function VideoPlayer({
         </div>
       )}
 
+      {/* V3.3.5 A3：竖屏选集半屏浮层——底部向上滑出，复用竖屏设置抽屉（.drawer-mask/.drawer）样式；
+          点遮罩关闭、选完集立即切播并关闭、面板内独立滚动且滚动条完全隐藏。 */}
+      {epSheetOpen && (
+        <div className="drawer-mask" onClick={() => setEpSheetOpen(false)}>
+          <div className="ep-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-handle" />
+            <div className="ep-head">
+              <span>选集 · 共 {detail.episodes?.length ?? 0} 集</span>
+              <span className="ep-toggle" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>
+            </div>
+            <div className="ep-sheet-grid" ref={epSheetRef}>
+              {(() => {
+                const list = detail.episodes ?? [];
+                const order = asc ? list.map((_, i) => i) : list.map((_, i) => list.length - 1 - i);
+                return order.map((i) => {
+                  const ep = list[i];
+                  const cur = i === episodeIndex;
+                  return (
+                    <button
+                      key={i}
+                      className={(cur ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')}
+                      onClick={() => { onSelectEpisode(i); setEpSheetOpen(false); }}
+                    >
+                      {ep?.locked ? '锁' : (ep?.name ?? `第${i + 1}集`)}
+                      {cur && <span className="ep-dot" />}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ⑦ 横屏选集浮层：点选集弹出，点集切换；点遮罩/播放窗口空白关闭 */}
       {epOpen && (
         <div className="ep-mask" onClick={() => setEpOpen(false)}>
@@ -1559,7 +1704,7 @@ export function VideoPlayer({
                 return order.map((i) => {
                   const ep = list[i];
                   return (
-                    <button key={i} className={(i === episodeIndex ? 'active' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : (ep?.name ?? `第${i + 1}集`)}</button>
+                    <button key={i} className={(i === episodeIndex ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : (ep?.name ?? `第${i + 1}集`)}{i === episodeIndex && <span className="ep-dot" />}</button>
                   );
                 });
               })()}

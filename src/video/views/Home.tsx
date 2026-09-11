@@ -3,6 +3,7 @@ import { useLibrary } from '../../lib/library';
 import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
 import { ProxiedImg } from '../../components/ProxiedImg';
+import { pushBackHandler } from '../../lib/backStack';
 import { useEffect, useRef, useState } from 'react';
 import {
   hasShownDisclaimer,
@@ -180,16 +181,16 @@ function MorePage({ title, items, onBack, onSearch }: {
 }) {
   const grid = useCardGrid({ cols: 3, gap: 8, pad: 10 });
   // 更多页打开时接管系统返回——首次返回关更多页回主页，再返回才退桌面
-  useEffect(() => {
-    const prev = (window as any).__onAndroidBack;
-    (window as any).__onAndroidBack = () => {
-      onBack();
-      return false; // JS 约定：false=已消费(拦截)，不退出 App
-    };
-    return () => {
-      (window as any).__onAndroidBack = prev;
-    };
-  }, [onBack]);
+  // 更多页打开时接管系统返回——首次返回关更多页回主页，再返回才退桌面
+  // V3.3.5 B2：改压返回栈（更多页开着=消费返回键；关掉=组件卸载自动弹栈）
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        onBack();
+        return true; // 已消费（关更多页）
+      }),
+    [onBack]
+  );
   return (
     <div className="fullpage more-page">
       <div className="mp-head">

@@ -22,6 +22,7 @@ import { Icon } from '../components/Icon';
 import SplashScreen from '../components/SplashScreen';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
+import { dispatchBack } from '../lib/backStack';
 
 type Tab = 'home' | 'live' | 'history' | 'settings';
 
@@ -61,10 +62,13 @@ export default function VideoApp() {
   }, [tab]);
 
   // Android 原生返回键桥接：Kotlin MainActivity 通过 __onAndroidBack 调用此函数
+  // V3.3.5 B2：返回键改为栈式调度——各浮层/子页经 pushBackHandler 压栈，这里先问栈
+  //（谁消费谁拦截），栈空才走 VideoApp 自己的外层分级（播放器→调试→网盘→搜索→详情→…）。
+  // 旧的 __playerBack 单槽与各组件 prev 链式覆盖全部废除，不再有断链风险。
   useEffect(() => {
     (window as any).__onAndroidBack = () => {
+      if (dispatchBack()) return false; // 栈内某层已消费（浮层逐层退）
       const s = navRef.current;
-      if ((window as any).__playerBack && (window as any).__playerBack()) return false;
       if (s.playingVideo) { closeVideo(); return false; }
       if (s.showDebug) { setShowDebug(false); return false; }
       if (s.showCloud) { setShowCloud(false); return false; }
@@ -94,9 +98,8 @@ export default function VideoApp() {
       try {
         const un = await getCurrentWindow().onBackButton((event) => {
           const s = navRef.current;
-          if ((window as any).__playerBack && (window as any).__playerBack()) { event.preventDefault(); return; }
-          // v2.5.1 修复：优先委托当前页面的逐级返回钩子（Live/SearchView 等的二级、三级态）。
-          // 钩子返回 false 表示已逐级退一层（拦截），true 表示无内部层级（放行）。
+          // V3.3.5 B2：__onAndroidBack 内部已先走返回栈（dispatchBack）再走外层分级，
+          // 这里只调它一个入口，不再单独探 __playerBack。
           if (typeof (window as any).__onAndroidBack === 'function') {
             try {
               const handled = (window as any).__onAndroidBack();

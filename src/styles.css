@@ -1559,7 +1559,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .info-card { margin: 0 16px 18px; background: transparent; border-radius: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .info-title { font-size: 20px; font-weight: 700; margin: 0 0 4px; text-align: center; }
 .info-main { display: flex; gap: 14px; align-items: stretch; }
-.info-poster { width: 110px; height: 150px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
+/* V3.3.5 A1：必须 relative——ProxiedImg 的加载中/失败占位块是 position:absolute; inset:0，
+   宿主没有 relative 时它会逃逸出 110×150 海报框、相对视口铺满整屏（实测 318×720），
+   把选集/线路/介绍/标题整片盖住，连 toast 都挡住。V3.3.2~V3.3.4「信息区空白」的真凶。 */
+.info-poster { position: relative; width: 110px; height: 150px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
 .info-poster img { width: 100%; height: 100%; object-fit: cover; }
 .info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .info-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -1602,6 +1605,28 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .ep-grid button.locked { color: var(--dim); }
 .intro { margin: 0 16px 30px; }
 .intro p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.8; }
+
+/* ── V3.3.5 A3：竖屏信息区优化（选集半屏浮层 + 配套） ── */
+/* 选集区右上角「正序/倒序 + 全部 N 集 ›」并排 */
+.sec-actions { display: flex; align-items: center; gap: 12px; }
+.sec-actions .ep-all { font-weight: 600; }
+/* 当前集标记：紫底高亮 + 方块右上角小红点（横屏抽屉/竖屏预览/竖屏浮层三处统一，不用 ✓） */
+.ep-grid button { position: relative; }
+.ep-dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: #ff5c7c; }
+/* 竖屏选集半屏浮层：底部向上，样式对齐竖屏设置抽屉（.drawer/.drawer-mask） */
+.ep-sheet { width: 100%; max-width: 430px; background: var(--panel); border-radius: 22px 22px 0 0; padding: 10px 16px calc(20px + env(safe-area-inset-bottom)); height: 52vh; display: flex; flex-direction: column; }
+/* 面板内独立滚动 + 滚动条完全隐藏（同 styles.css 706-707 的做法）；
+   列宽必须 minmax(0,1fr)——纯 1fr 的隐式 min-width:auto 会被内容撑到 120px/列溢出浮层（实测） */
+.ep-sheet-grid { position: relative; flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-content: start; scrollbar-width: none; -ms-overflow-style: none; }
+.ep-sheet-grid::-webkit-scrollbar { display: none; }
+/* 浮层是浅色面板：标题不能用横屏深底抽屉的白色（.ep-head 原样式），改主题色 */
+.ep-sheet .ep-head { color: var(--text); }
+.ep-sheet-grid button { position: relative; aspect-ratio: 1.5; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.ep-sheet-grid button.active { background: var(--accent); color: #fff; font-weight: 700; border-color: var(--accent); }
+.ep-sheet-grid button.locked { color: var(--dim); }
+/* 简介原地折叠：默认 3 行，点「展开 ▾」就地长开全文（阅读型内容，不进浮层） */
+.intro-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.intro-toggle { margin-top: 6px; background: none; border: none; padding: 0; color: var(--accent); font-size: 13px; cursor: pointer; }
 
 /* 横屏（水平布局：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具，对齐视频播放器UI.html） */
 .landscape .stage { flex: 1; position: relative; background: #0b0e14; display: flex; align-items: center; justify-content: center; overflow: hidden; }

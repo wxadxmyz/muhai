@@ -299,7 +299,13 @@ async fn castvideo(location: String, video_url: String) -> Result<String, String
 // 以满足 Tauri v2 ACL 对应用自定义命令的权限标识要求。
 #[tauri::command]
 async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
-    js_engine::spiderrun(payload)
+    // V3.3.5 B1：QuickJS 执行是 CPU 密集的同步代码，直接在 async 上下文里跑会占死
+    // tokio worker 线程——多源聚合搜索期间其它 invoke（fetchimage/fetchsource）全部排队卡顿。
+    // 用 spawn_blocking 把 JS 执行挪到专用阻塞线程池，异步线程池保持畅通。
+    let result = tokio::task::spawn_blocking(move || js_engine::spiderrun(payload))
+        .await
+        .map_err(|e| format!("spider 执行线程异常：{}", e))?;
+    result
 }
 
 // 方案C：由 Rust 后端代前端抓取外网 URL（含明文 http / 跨域源），
@@ -308,6 +314,23 @@ async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
 // UA 固定 okhttp：TVBox 生态（订阅/蜘蛛/jiemi 解密）普遍只对 okhttp UA 返回
 // 真实内容，浏览器型 UA 会被反爬返回 HTML 占位页。调用方（TVBox 源/解密）
 // 一律需要 okhttp，故无需在命令参数上暴露可覆盖项（避免 serde 属性作用域问题）。
+// V3.3.5 B3：把 reqwest 底层错误翻译成用户可读的中文分类文案（附一行可操作建议），
+// 不再让英文技术串（"error sending request for url (...)"）直接露给用户。
+fn friendly_net_err(e: reqwest::Error) -> String {
+    let s = e.to_string();
+    if e.is_timeout() {
+        "连接超时：源服务器长时间没有响应，请检查网络后重试，或更换其它源".into()
+    } else if e.is_connect() {
+        if s.contains("dns") || s.contains("lookup") || s.contains("resolve") {
+            "域名解析失败：源地址可能已失效，请检查源地址或在设置里更换源".into()
+        } else {
+            "无法连接到源服务器：请检查网络是否可用、源地址是否正确".into()
+        }
+    } else {
+        format!("网络请求失败：{}", s)
+    }
+}
+
 #[tauri::command]
 async fn fetchsource(url: String) -> Result<String, String> {
     let ua = "okhttp/4.10.0";
@@ -318,11 +341,23 @@ async fn fetchsource(url: String) -> Result<String, String> {
         .header("Accept", "*/*")
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(friendly_net_err)?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| e.to_string())?;
+    // V3.3.5 B3：读响应体失败也给人话（旧版直接透传 reqwest 英文串）
+    let text = resp
+        .text()
+        .await
+        .map_err(|_| "读取源响应失败：连接中途断开，请重试".to_string())?;
     if !status.is_success() {
-        return Err(format!("请求失败：HTTP {}", status));
+        // V3.3.5 B3：HTTP 错误带分类提示（404=地址失效，5xx=源服务器故障）
+        let hint = if status.as_u16() == 404 {
+            "源地址不存在或已下线"
+        } else if status.is_server_error() {
+            "源服务器故障，稍后重试或换源"
+        } else {
+            "源拒绝了本次请求"
+        };
+        return Err(format!("源返回错误：HTTP {}（{}）", status, hint));
     }
     Ok(text)
 }

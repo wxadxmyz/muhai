@@ -212,16 +212,11 @@ export function SettingsPage({
   };
 
   // 系统返回逐级：先关闭网盘编辑等内部子层，再交还外层（如关闭设置子页），避免直接回主页
+  // V3.3.5 B2：旧版这里挂的 __onAndroidBack 是纯 prev 透传（等于没拦），栈式调度下直接删掉，
+  // 保留 __settingsInnerBack 供 VideoApp 的 onBackButton 路径询问内部子层。
   useEffect(() => {
-    const prev = (window as any).__onAndroidBack;
-    (window as any).__onAndroidBack = () => {
-      return typeof prev === 'function' ? prev() : true;
-    };
-    // 问题 #8 修复：向 VideoApp 的 Tauri onBackButton 路径暴露"是否有内部子层可逐级退出"。
-    // 否则在 settingsSub 且 editingNetdisk 时，onBackButton 会直接 setSettingsSub(null) 跳回主页。
     (window as any).__settingsInnerBack = () => false;
     return () => {
-      (window as any).__onAndroidBack = prev;
       delete (window as any).__settingsInnerBack;
     };
   }, []);

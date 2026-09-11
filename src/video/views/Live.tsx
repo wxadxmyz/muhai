@@ -6,6 +6,7 @@ import { SourceConfig, LiveChannelSource } from '../../engine/types';
 import { Icon } from '../../components/Icon';
 import { CastOverlay } from '../../components/CastOverlay';
 import { toast } from '../../lib/toast';
+import { pushBackHandler } from '../../lib/backStack';
 import { requestOrientation, requestImmersive } from '../../lib/orientation';
 
 interface Channel {
@@ -434,21 +435,22 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   }, [channels, activeCat]);
 
   // 逐级返回：频道列表态（channels 不为 null）先退源列表；否则放行外层
-  useEffect(() => {
-    const prev = (window as any).__onAndroidBack;
-    (window as any).__onAndroidBack = () => {
-      // B6：锁定态不弹解锁提示、也不要求「先解锁再返回」。
-      //     这里先把锁解掉，然后继续往下走原本的返回逻辑 —— 一次返回键同时完成
-      //     「解锁 + 退出横屏」，再按一次才真正离开页面，避免误触直接关掉直播。
-      if (locked) setLocked(false);
-      if (isFullscreen) { toggleFullscreen(); return false; }
-      if (pickSheet) { setPickSheet(false); return false; }
-      if (srcSheet) { setSrcSheet(false); return false; }
-      if (channels) { setChannels(null); setActiveName(''); setPlaying(null); return false; }
-      return prev ? !!prev() : true;
-    };
-    return () => { (window as any).__onAndroidBack = prev; };
-  }, [channels, isFullscreen, pickSheet, srcSheet, toggleFullscreen, locked]);
+  // V3.3.5 B2：改压返回栈（true=消费拦截，false=交还下一层），不再 prev 链式覆盖
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        // B6：锁定态不弹解锁提示、也不要求「先解锁再返回」。
+        //     这里先把锁解掉，然后继续往下走原本的返回逻辑 —— 一次返回键同时完成
+        //     「解锁 + 退出横屏」，再按一次才真正离开页面，避免误触直接关掉直播。
+        if (locked) setLocked(false);
+        if (isFullscreen) { toggleFullscreen(); return true; }
+        if (pickSheet) { setPickSheet(false); return true; }
+        if (srcSheet) { setSrcSheet(false); return true; }
+        if (channels) { setChannels(null); setActiveName(''); setPlaying(null); return true; }
+        return false;
+      }),
+    [channels, isFullscreen, pickSheet, srcSheet, toggleFullscreen, locked]
+  );
 
   return (
     <div className={'view live' + (isFullscreen ? ' lp-fullscreen' : '')}>

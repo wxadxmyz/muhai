@@ -9,8 +9,18 @@
 // V3.3.1 #5：① 并发上限 6 —— 一屏二十多张封面同时开二十多个 Rust 请求会互相抢带宽，
 //   排队反而更快出图；② 滑出屏幕的图不加载（IntersectionObserver），列表快速滑动时
 //   不再为看不见的封面白等超时。
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+
+// V3.3.5 A1：占位文字在宿主框内按 3 行截断——110×150 的小海报框放不下的长片名不再溢出框外
+const clampStyle: CSSProperties = {
+  display: '-webkit-box',
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+  wordBreak: 'break-word',
+  maxWidth: '100%',
+};
 
 const cache = new Map<string, string>();
 
@@ -33,7 +43,7 @@ function enqueue(task: () => Promise<void>) {
   else waiting.push(start);
 }
 
-export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: string; alt?: string; className?: string; fallbackText?: string }) {
+export function ProxiedImg({ src, alt = '', className, fallbackText, onFinalFail }: { src?: string; alt?: string; className?: string; fallbackText?: string; onFinalFail?: () => void }) {
   // V3.3.0 #6：useState 惰性初始化直接读模块级 cache——缓存命中时首帧渲染就是真图，
   // 不再出现"先渐变占位一帧再变图"的闪烁（useEffect 在首次绘制之后才跑，靠它恢复必闪）。
   const [dataUrl, setDataUrl] = useState<string | null>(() => (src ? cache.get(src) ?? null : null));
@@ -41,6 +51,13 @@ export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: s
   const [nativeFailed, setNativeFailed] = useState(false); // 原生也失败 → 才是真失败
   const [visible, setVisible] = useState(false); // #5：进入过视口才加载
   const holderRef = useRef<HTMLDivElement | null>(null);
+  // V3.3.5 B4：代理与原生两级都失败后的对外回调（供播放页触发跨源封面回退）。
+  // 回调经 ref 转发，避免调用方传内联箭头函数导致 effect 反复触发。
+  const failCb = useRef(onFinalFail);
+  failCb.current = onFinalFail;
+  useEffect(() => {
+    if (nativeFailed) failCb.current?.();
+  }, [nativeFailed]);
 
   // #5：视口观察——占位块露出来（含上下 200px 预取）才开始取图
   useEffect(() => {
@@ -114,7 +131,8 @@ export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: s
         className={className ? `${className} img-fallback` : 'img-fallback'}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'linear-gradient(135deg,#2b2b3e,#3a2747)', color: 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: '14px', lineHeight: 1.35, textAlign: 'center', letterSpacing: '0.3px', userSelect: 'none', overflow: 'hidden' }}
       >
-        {fallbackText || ''}
+        {/* V3.3.5 A1：片名过长时在 110×150 小海报框内截断为 3 行，不再溢出框外 */}
+        <span style={clampStyle}>{fallbackText || ''}</span>
       </div>
     );
   }
@@ -128,7 +146,8 @@ export function ProxiedImg({ src, alt = '', className, fallbackText }: { src?: s
       className={className ? `${className} img-loading` : 'img-loading'}
       style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'linear-gradient(135deg,#23232f,#33334a)', color: 'rgba(255,255,255,.82)', fontWeight: 700, fontSize: '14px', lineHeight: 1.35, textAlign: 'center', overflow: 'hidden', userSelect: 'none' }}
     >
-      {fallbackText || ''}
+      {/* V3.3.5 A1：同上，小海报框内 3 行截断 */}
+      <span style={clampStyle}>{fallbackText || ''}</span>
     </div>
   );
 }

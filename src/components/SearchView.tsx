@@ -4,6 +4,7 @@ import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
 import { ProxiedImg } from './ProxiedImg';
+import { pushBackHandler } from '../lib/backStack';
 
 type SourceState =
   | { kind: 'ok'; count: number }
@@ -53,23 +54,21 @@ export function SearchView({
   const searchSeqRef = useRef(0);
 
   // v2.5.1 分级返回：搜索页二级态（正在看某个子站结果）→ 先退回「全部」；
-  // 否则放行（由 VideoApp 关闭整个搜索页）。页面钩子约定：false=已拦截逐级退，true=放行。
+  // 否则放行（返回 false，由栈下一层/VideoApp 外层关闭整个搜索页）。
+  // V3.3.5 B2：不再 prev 链式覆盖 __onAndroidBack，改压返回栈。
   const activeSourceRef = useRef(activeSource);
   activeSourceRef.current = activeSource;
-  useEffect(() => {
-    const prev = (window as any).__onAndroidBack;
-    (window as any).__onAndroidBack = () => {
-      if (activeSourceRef.current !== ALL_KEY) {
-        setActiveSource(ALL_KEY);
-        return false; // 已逐级退一层（子站 → 全部）
-      }
-      // 无内部层级：交还给外层（播放器/VideoApp），不要直接放行系统退出
-      return typeof prev === 'function' ? prev() : true;
-    };
-    return () => {
-      (window as any).__onAndroidBack = prev;
-    };
-  }, []);
+  useEffect(
+    () =>
+      pushBackHandler(() => {
+        if (activeSourceRef.current !== ALL_KEY) {
+          setActiveSource(ALL_KEY);
+          return true; // 已逐级退一层（子站 → 全部）
+        }
+        return false; // 无内部层级：交还栈下一层
+      }),
+    []
+  );
 
   // 子站 id <-> name 映射（供过滤）
   const nameOf = useMemo(() => {

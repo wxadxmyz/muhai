@@ -48,6 +48,10 @@ export function SearchView({
   // #8：中文输入法组字中（拼音还没上屏）——此时按搜索键不能拿拼音去搜
   const composingRef = useRef(false);
 
+  // V3.3.4：搜索竞态守卫——连续两次搜索时（历史联想、快速改词），上一个慢源的结果晚到
+  // 会把新结果整体覆盖、或把 loading 态错关。每次 run 自增序号，所有异步回调只认最新一次。
+  const searchSeqRef = useRef(0);
+
   // v2.5.1 分级返回：搜索页二级态（正在看某个子站结果）→ 先退回「全部」；
   // 否则放行（由 VideoApp 关闭整个搜索页）。页面钩子约定：false=已拦截逐级退，true=放行。
   const activeSourceRef = useRef(activeSource);
@@ -100,6 +104,7 @@ export function SearchView({
   const run = async (q?: string) => {
     const query = (q ?? kw).trim();
     if (!query) return;
+    const mySeq = ++searchSeqRef.current; // V3.3.4：本次搜索的代际序号
     setKw(query);
     setLoading(true);
     setSearched(true);
@@ -108,7 +113,7 @@ export function SearchView({
     // 展开 tvbox 子站（左侧源栏用）
     try {
       const ex = await expandSources(sources);
-      setExpanded(ex);
+      if (mySeq === searchSeqRef.current) setExpanded(ex);
     } catch {
       setExpanded(sources);
     }
@@ -117,16 +122,20 @@ export function SearchView({
         timeout: 10000,
         mediaType,
         // #5：哪个源先回来就把它的结果先显示出来，不再干等最慢的源
-        onPartial: (partial) => setItems(partial),
+        // V3.3.4：过期搜索的增量回调直接丢弃，不再覆盖最新结果
+        onPartial: (partial) => { if (mySeq === searchSeqRef.current) setItems(partial); },
       });
+      if (mySeq !== searchSeqRef.current) return; // 已被更新的搜索取代：整体丢弃过期结果
       setItems(r.items);
       setErrors(r.errors);
     } catch (e: any) {
+      if (mySeq !== searchSeqRef.current) return;
       // v2.5.2 防御：聚合失败不抛未捕获异常（避免搜索页白屏），仅记录错误
       setErrors([{ sourceId: '', sourceName: '', message: e?.message ?? '搜索失败' }]);
       console.log(`[spider] ${query} 搜索失败:`, e?.message ?? e);
     } finally {
-      setLoading(false);
+      // V3.3.4：只有最新一次搜索才能关 loading，防止旧搜索把新搜索的加载态错关
+      if (mySeq === searchSeqRef.current) setLoading(false);
     }
   };
 

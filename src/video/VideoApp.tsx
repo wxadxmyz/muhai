@@ -192,12 +192,21 @@ export default function VideoApp() {
         const src = createSource(cfg);
         if (src.getDetail) {
           const d = await src.getDetail(it.id);
-          // V3.3.3：放宽合并条件——只要详情接口返回了有效对象（含 id 或 raw）就合并进播放器，
-          // 不再要求必须带 episodes/cover 才刷新。这样即便源只回了简介，播放页也能显示「介绍/暂无选集」
-          // 而非整片空白（根因：旧条件过窄，LZ 等源 detail 回的字段不满足就被丢弃，播放器一直用搜索列表项）。
+          // V3.3.4 #6：合并保护——详情接口偶发空响应/字段残缺时（LZ 源抖动常见），
+          // 空字段不再覆盖列表项已有的好数据（旧版 {...it, ...d} 会用 title:'' 覆盖标题、
+          // 用空 episodes 覆盖已有选集）。
           if (d && (d.id || (d as any).raw)) {
-            const full = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
-            const stillOnThis = state.current?.id === it.id && state.current?.sourceId === it.sourceId;
+            const full: MediaItem = { ...it, ...d, id: it.id, sourceId: it.sourceId, raw: { ...it.raw, ...(d as any).raw } };
+            if (!full.title) full.title = it.title || '未命名';
+            if (!full.cover) full.cover = it.cover || '';
+            if (!full.desc) full.desc = it.desc || '';
+            if (!full.episodes?.length) full.episodes = it.episodes;
+            // V3.3.4 #1②：旧代码用 state.current 判断"用户是否还在这部剧"——那是点击那次
+            // 渲染的闭包快照，await 之后必然过期（除重进同一部剧外恒为 false），
+            // 拼好的完整数据被整包丢弃 → 选集/简介永远进不了播放器（100% 必现）。
+            // 改用实时 store 状态判断。
+            const cur = player.getState().current;
+            const stillOnThis = cur?.id === it.id && cur?.sourceId === it.sourceId;
             if (stillOnThis) {
               playEpisode(full, Math.max(Math.min(resumeEp, (full.episodes?.length ?? 1) - 1), 0), 0, true);
             }
@@ -297,7 +306,7 @@ export default function VideoApp() {
             startAt={startAt}
             detailLoading={detailLoading}
             onLineChange={(l) => playEpisode(detail, episodeIndex, l)}
-            onSelectEpisode={(i) => playEpisode(detail, i)}
+            onSelectEpisode={(i) => playEpisode(detail, i, line)} // V3.3.4 #7：换集保留当前线路（旧版走默认参数 line=0，切线路后换集/连播会跳回默认线路）
             onClose={closeVideo}
             library={library}
             sources={store.sources}

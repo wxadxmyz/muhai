@@ -123,6 +123,10 @@ jobs:
           inject = '''
               private var _backWebView: android.webkit.WebView? = null
               private var _backDispatching = false
+              // V3.3.4：兜底复位 Runnable——evaluateJavascript 的回调若因 WebView 销毁/
+              // 页面重建等异常不触发，_backDispatching 会永久卡 true，之后所有返回键
+              // 都无响应（返回键失灵）。2s 后无条件复位，保证返回键永远可按。
+              private val _backReset = Runnable { _backDispatching = false }
 
               // 统一的返回分发：调用 WebView 里的 window.__onAndroidBack()；
               // 若 JS 返回 true（已消费，例如关闭播放器/弹层/逐级返回），则拦截系统返回；
@@ -130,6 +134,8 @@ jobs:
               private fun dispatchBack(): Boolean {
                   if (_backDispatching) return false
                   _backDispatching = true
+                  window.decorView.removeCallbacks(_backReset) // 清掉上一次的兜底定时，避免误伤本次分发
+                  window.decorView.postDelayed(_backReset, 2000)
                   val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
                   _backWebView = wv
                   if (wv == null) { _backDispatching = false; return false }
@@ -138,6 +144,7 @@ jobs:
                   ) { result ->
             val consumed = (result == "false")  // JS 约定："false"=已逐级拦截(不退出)，"true"=放行系统退出
             if (!consumed) runOnUiThread { super.onBackPressed() }
+            window.decorView.removeCallbacks(_backReset) // V3.3.4：正常回调到达，取消兜底复位
             _backDispatching = false
                   }
                   // evaluateJavascript 是异步的，这里先返回 true 表示我们已经接管，
@@ -501,10 +508,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
-          APK="${SIGNED_APK:-$(find src-tauri/gen/android -name '*.apk' | head -1)}"
+          # V3.3.4：锁定产物——签名成功用 SIGNED_APK；未签名则只认 universal/release 下的包
+          #（app-universal-release-unsigned.apk）。旧逻辑 find 第一个 *.apk，可能捡到
+          # debug 包或单 ABI 包传上 Release，用户下载装错版本。
+          if [ -n "$SIGNED_APK" ]; then
+            APK="$SIGNED_APK"
+          else
+            APK=$(find src-tauri/gen/android/app/build/outputs -path '*universal/release*' -name '*.apk' | sort | head -1)
+          fi
           echo "Uploading APK: $APK"
           if [ -z "$APK" ]; then
-            echo "No APK found under src-tauri/gen/android"
+            echo "::error::No universal/release APK found (signed or unsigned) — refuse to upload wrong artifact"
             echo "--- outputs tree ---"
             ls -R src-tauri/gen/android/app/build/outputs 2>/dev/null || true
             exit 1

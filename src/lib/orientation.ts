@@ -53,18 +53,24 @@ function ensureVerifyListeners() {
   window.addEventListener('resize', onChanged);
 }
 
+// V3.3.4：校验重试链代际 token——requestOrientation 每次新调用作废旧链。
+// 场景：横屏校验链还在重试时用户退出播放页（发 portrait），旧链不知情，
+// 之后每 400ms 继续重发 landscape 指令，把屏幕又翻回横屏（残留重试翻屏 bug）。
+let verifyGen = 0;
+
 /**
  * Q2/Q3：发完指令后校验结果，没转过来就重试；重试耗尽仍失败 → toast 提示（桥可能没注入）。
  * CSS 铺满（.player-card.land / .live-video.fs）始终保证画面是横的，所以即便原生没响应也只是状态栏方向不变。
  */
-function verifyAndRetry(ori: string, attempt: number) {
+function verifyAndRetry(ori: string, attempt: number, gen: number) {
   if (ori === 'sensor') return; // sensor 不校验
   ensureVerifyListeners();
   window.setTimeout(() => {
+    if (gen !== verifyGen) return; // 已有更新的方向请求，本链作废，不再重发指令
     if (matches(ori)) return; // 已到位
     if (attempt < VERIFY_MAX_RETRY) {
       callBridge(ori);
-      verifyAndRetry(ori, attempt + 1);
+      verifyAndRetry(ori, attempt + 1, gen);
     } else {
       // 多次重试仍失败：CSS 铺满已保证画面横的，仅状态栏/导航栏方向不对 → 提示用户
       toast('横屏切换失败，请检查系统是否允许旋转');
@@ -87,7 +93,8 @@ export function requestOrientation(
 ) {
   // portrait/sensor（进入页面/清理类调用）一律静默；landscape 是用户主动要的，失败要提示。
   const silent = opts?.silent || ori === 'portrait' || ori === 'sensor';
-  const fire = () => { callBridge(ori); verifyAndRetry(ori, 1); };
+  const myGen = ++verifyGen; // V3.3.4：作废之前所有校验链（防止残留链把方向翻回去）
+  const fire = () => { callBridge(ori); verifyAndRetry(ori, 1, myGen); };
   if (pendingWait !== null) {
     window.clearInterval(pendingWait);
     pendingWait = null;

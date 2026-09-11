@@ -52,14 +52,25 @@ export async function expandSources(
   return out;
 }
 
-// 同名同艺术家去重，保留多源备选
+// V3.3.4 #11：视频不再跨源去重——同名剧每个源各出一条。旧实现按 `标题|备注` 只保留
+// 最早返回源的一条，其余源的同名条目被丢弃（注释写"保留多源备选"但实际没保留），
+// 导致左侧子站栏计数为 0、无法换源播放。现在：视频条目全保留；音乐仍按 标题|艺术家
+// 去重（多源同一首歌没必要重复出现）。
 function dedupe(items: MediaItem[]): MediaItem[] {
   const map = new Map<string, MediaItem>();
+  const out: MediaItem[] = [];
   for (const it of items) {
+    if (it.mediaType === 'video') {
+      out.push(it);
+      continue;
+    }
     const key = `${it.title}|${it.artist ?? ''}`;
-    if (!map.has(key)) map.set(key, it);
+    if (!map.has(key)) {
+      map.set(key, it);
+      out.push(it);
+    }
   }
-  return Array.from(map.values());
+  return out;
 }
 
 // 跨源搜索：并发请求所有启用源，按优先级合并。

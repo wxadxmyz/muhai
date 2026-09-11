@@ -115,6 +115,17 @@ export function useLibrary(appKey: string) {
     setLib((l) => ({ ...l, resumeEp: { ...l.resumeEp, [showKey]: ep } }));
   }, []);
 
+  // V3.3.4 #12：一次 setLib 同时写观看秒数与集数。播放中的进度保存原来连调两个 setter
+  // → 两次全量 JSON.stringify(lib) 同步写盘（history 条目含整段 vod_play_url 大字段），
+  // Android WebView 主线程上是可感知的卡顿源。合并后减半，配合节流 1s→5s（VideoPlayer 侧）。
+  const setProgressBoth = useCallback((id: string, seconds: number, showKey: string, ep: number) => {
+    setLib((l) => ({
+      ...l,
+      watchProgress: { ...l.watchProgress, [id]: Math.floor(seconds) },
+      resumeEp: { ...l.resumeEp, [showKey]: ep },
+    }));
+  }, []);
+
   // 重置 APP：清空全部观看记录/收藏/进度（内存 + 持久化）
   const clearAll = useCallback(() => {
     setLib({ history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, localMusic: [] });
@@ -144,6 +155,7 @@ export function useLibrary(appKey: string) {
     removeFromPlaylist,
     setWatchProgress,
     setResumeEp,
+    setProgressBoth,
     clearAll,
     clearHistory,
     removeFromHistory,

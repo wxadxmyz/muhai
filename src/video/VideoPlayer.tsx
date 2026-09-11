@@ -211,11 +211,12 @@ export function VideoPlayer({
     if (!(t > 0)) return;
     const now = Date.now();
     // N4：timeupdate 约 250ms 一次，原来每秒写 4 次 localStorage；这里节流到 5 秒一次。
+    // V3.3.4 #12：节流 1s → 5s（旧代码实际是 <1000，与注释不符）——配合 setProgressBoth
+    // 合并写入，播放期间全量序列化写盘从每秒 2 次降到每 5 秒 1 次。
     // force=true 用于暂停 / 切集 / 退出这类"最后一次机会"的补写（N5），不受节流限制。
-    if (!force && now - lastSaveRef.current < 1000) return;
+    if (!force && now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
-    library.setWatchProgress(key || resumeKey, t);
-    library.setResumeEp(progressKey, episodeIndex); // 记录「看到第几集」，供首页/搜索/历史续播定位
+    library.setProgressBoth(key || resumeKey, t, progressKey, episodeIndex); // 记录进度 + 看到第几集，一次写入
   };
   const saveProgress = useCallback((force = false, key?: string) => saveProgressRef.current(force, key), []);
   // N5：切集 / 切剧 / 关闭播放页时补写一次。
@@ -304,6 +305,8 @@ export function VideoPlayer({
   }, []);
 
   // 返回手势衔接：先关最上层浮层
+  // V3.3.4 #10①：依赖数组补上 epOpen——旧版回调里读了 epOpen 却没进依赖，effect 不重跑，
+  // 闭包里 epOpen 恒为 false → 横屏选集浮层打开时按返回键直接关掉整个播放器。
   useEffect(() => {
     (window as any).__playerBack = () => {
       if (settingsOpen) { setSettingsOpen(false); return true; }
@@ -313,7 +316,7 @@ export function VideoPlayer({
       return false;
     };
     return () => { (window as any).__playerBack = undefined; };
-  }, [settingsOpen, showCast, showSubStyle]);
+  }, [settingsOpen, epOpen, showCast, showSubStyle]);
 
   // 逐级返回：点播页优先退「横屏 → 竖屏」这一级，否则交还外层（VideoApp 的 closeVideo）
   useEffect(() => {
@@ -329,11 +332,19 @@ export function VideoPlayer({
   }, [landscape, locked]);
 
   // ② 原生画中画状态回调：进入时隐藏控件（纯视频）；退出时回到横屏（小窗全屏钮语义）
+  // V3.3.4 #2：Android 在 Activity 配置变化（系统栏显隐、方向切换等）时也会触发
+  // onPictureInPictureModeChanged(false)——哪怕根本没进过画中画（manifest 强制开了
+  // supportsPictureInPicture）。旧版把每次 false 都当"退出小窗"处理 → 自动转横屏 →
+  // 竖屏信息区（封面/线路/选集/介绍）整块消失 = 用户反馈的"点进去闪一下变空白"。
+  // 现在用 ref 记录真实 PiP 状态：只有真的从画中画回来才转横屏，误报一律忽略。
+  const pipModeRef = useRef(false);
   useEffect(() => {
     (window as any).__onPipChanged = (entered: boolean) => {
+      const wasPip = pipModeRef.current;
+      pipModeRef.current = !!entered;
       setPipMode(!!entered);
       if (entered) { setControlsVisible(false); setLocked(false); }
-      else if (!landscape) toggleLandscape();
+      else if (wasPip && !landscape) toggleLandscape();
     };
     return () => { (window as any).__onPipChanged = undefined; };
   }, [landscape]);
@@ -1371,7 +1382,9 @@ export function VideoPlayer({
 
           {/* 4 操作按钮（缓存/解码/投屏/设置）— 占位展示，待用户确认哪些要接 */}
           <div className="actions">
-            <button onClick={() => downloadStore.start(detail)} title="缓存"><span className="circle"><Icon name="download" size={24} /></span>缓存</button>
+            {/* V3.3.4 #14：缓存改用解析后的播放对象（state.current 带 playUrl）——旧版传原始列表项
+                detail，realDownload 拿不到地址直接抛"该源不支持直接下载"，缓存对常规流程必然失败 */}
+            <button onClick={() => downloadStore.start(state.current?.playUrl ? state.current : detail)} title="缓存"><span className="circle"><Icon name="download" size={24} /></span>缓存</button>
             <button className={DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? 'on' : ''} onClick={toggleDecode} title="解码/音效"><span className="circle"><Icon name="sliders" size={24} /></span>系统</button>
             <button onClick={() => setShowCast(true)} title="投屏"><span className="circle"><Icon name="tv" size={24} /></span>投屏</button>
             <button onClick={() => setSettingsOpen(true)} title="播放器设置"><span className="circle"><Icon name="settings" size={24} /></span>设置</button>

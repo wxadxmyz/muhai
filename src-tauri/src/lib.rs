@@ -347,9 +347,10 @@ async fn fetchimage(url: String) -> Result<String, String> {
     // V3.2.5 #4：豆瓣图床（*.doubanio.com）防盗链严格（Referer/UA 校验），
     // 用浏览器 UA + 豆瓣 Referer 才能取到图；其余源沿用 okhttp UA + lziapi Referer。
     let is_douban = url.contains("doubanio.com");
-    // V3.3.1 Q2：超时 20s → 8s（判定失败更快，随即转 webview 原生再试）；
+    // V3.3.1 Q2：超时 20s → 8s；V3.3.4：8s → 5s（实测正常封面 1-2s 内返回，
+    // 5s 仍无响应的链路大概率已阻断，更早失败让位给 webview 原生加载与文字兜底）；
     // #5：客户端改用全局单例复用连接，超时按请求单独设置。
-    let mut req = http_client().get(&url).timeout(std::time::Duration::from_secs(8));
+    let mut req = http_client().get(&url).timeout(std::time::Duration::from_secs(5));
     if is_douban {
         req = req
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")

@@ -15,6 +15,7 @@ export function VideoLibrary({
 }) {
   const [tab, setTab] = useState<'history' | 'fav'>('history');
   const pressTimer = useRef<number | undefined>(undefined);
+  const longPressedAt = useRef(0); // V3.3.4：长按删除时刻——抑制紧随其后的合成 click
 
   const historyItems = library.lib.history.filter((i) => i.mediaType === 'video');
   const favItems = library.lib.favorites.filter((i) => i.mediaType === 'video');
@@ -25,6 +26,7 @@ export function VideoLibrary({
   const startPress = (it: MediaItem) => {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = window.setTimeout(() => {
+      longPressedAt.current = Date.now(); // V3.3.4：标记刚发生长按删除
       library.removeFromHistory(it);
       if (tab === 'fav') library.toggleFavorite(it);
     }, 550);
@@ -65,7 +67,12 @@ export function VideoLibrary({
                 <div
                   className="pcover"
                   style={{ background: lhas ? undefined : gradientFor(it.title) }}
-                  onClick={() => onOpen(it)}
+                  onClick={() => {
+                    // V3.3.4：长按删除后手指抬起仍会合成一次 click，且列表已移位——
+                    // 这个 click 可能落在旁边卡片上误开别的剧。700ms 内一律吞掉（同 VideoPlayer 模式）。
+                    if (Date.now() - longPressedAt.current < 700) return;
+                    onOpen(it);
+                  }}
                   onTouchStart={() => startPress(it)}
                   onTouchEnd={cancelPress}
                   onTouchMove={cancelPress}

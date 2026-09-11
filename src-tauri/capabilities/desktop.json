@@ -13,6 +13,7 @@
     "global-shortcut:default",
     "updater:default",
     "allow-fetchsource",
+    "allow-fetchimage",
     "allow-spiderrun",
     "allow-dlnascan",
     "allow-castvideo",

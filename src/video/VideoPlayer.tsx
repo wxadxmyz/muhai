@@ -548,6 +548,8 @@ export function VideoPlayer({
     outroArmedRef.current = false; // V3.4.2 #4：切集复位，待本集 onLoadedMetadata 重新 arming
     outroJustSet.current = false; // ① 切集清空「片尾首次设定」标记
     clearOutroTimer();
+    outroEpisodeRef.current = episodeIndex; // V3.4.3 #3：记录本集序号，片尾 timer 归属校验，杜绝跨集连环跳
+    setLiveCur(0); setLiveDur(0); // V3.4.3 #2：清旧集进度/时长，避免 state.duration 兜底拿到旧值污染新集
     const v = videoRef.current;
     // v3.2.1 ⑥：换集时新视频元数据尚未就绪（duration 为 0/NaN），此时直接贴 currentTime 会被后续 load 覆盖，
     //   导致第二集从头播放。改法：设了片头就标记 pendingIntro，真正的 seek 交给 onLoadedMetadata 的 trySkipIntro；
@@ -614,6 +616,7 @@ export function VideoPlayer({
   const outroArmedRef = useRef(false); // V3.4.2 #4：本集元数据已就绪才可判定片尾（刚切集、<video> 仍是旧集数据时禁止，避免秒切再下一集）
   const outroJustSet = useRef(false); // ① 点片尾设定那一次才「先播 2 秒再跳」，之后每次立即跳
   const outroTimer = useRef<number | undefined>(undefined);
+  const outroEpisodeRef = useRef(episodeIndex); // V3.4.3 #3：timer 创建时的集序号，回调比对不符即丢弃，双保险防连环跳
   const clearOutroTimer = () => { if (outroTimer.current) { window.clearTimeout(outroTimer.current); outroTimer.current = undefined; } };
 
   const trySkipOutro = () => {
@@ -621,6 +624,7 @@ export function VideoPlayer({
     // V3.4.2 #4：本集元数据尚未就绪（刚切集、<video> 仍是旧集 currentTime/duration）时不判定片尾，
     //     否则旧集末尾残留数据会算出极小 remain，秒切到再下一集。outroArmedRef 在新集 onLoadedMetadata 置 true。
     if (!outroArmedRef.current) { clearOutroTimer(); return; }
+    if (outroEpisodeRef.current !== episodeIndex) { clearOutroTimer(); return; } // V3.4.3 #3：归属不符（已切集）直接丢弃，防跨集连环跳
     // C2：真实时长兜底优先用 <video> 实时时长（state.duration 偶发未就绪/滞后），再回退 liveDur / state.duration，
     //     保证跨集切换后片尾判定拿到的就是当前集的真实长度，避免「第 2 集片尾不跳」。
     const dur = (v && isFinite(v.duration) && v.duration > 0 && v.duration !== Infinity ? v.duration : 0)
@@ -630,12 +634,14 @@ export function VideoPlayer({
     if (remain <= outroSec && remain > 0.5) {
       if (!outroTimer.current) {
         const firstSet = outroJustSet.current; // 仅首次设定那次等 2 秒，之后立即跳（300ms 给一帧渲染）
+        const epAtArm = episodeIndex; // V3.4.3 #3：锁定时刻的集序号
         outroTimer.current = window.setTimeout(() => {
           outroTimer.current = undefined;
           outroJustSet.current = false;
           outroDone.current = true;
-          if (detail.episodes && episodeIndex < detail.episodes.length - 1) { onSelectEpisode(episodeIndex + 1); toast('已跳过片尾'); }
-          else { setEnded(true); toast('已播至片尾'); } // 末集：走 B 方案（重播浮层）
+          // 双保险：仅当归属仍为当前集才跳下一集，杜绝跨集乱序连环跳（如 2→3→5→4）
+          if (outroEpisodeRef.current === epAtArm && detail.episodes && epAtArm < detail.episodes.length - 1) { onSelectEpisode(epAtArm + 1); toast('已跳过片尾'); }
+          else { setEnded(true); toast('已播至片尾'); } // 末集或已切集：走 B 方案（重播浮层）
         }, firstSet ? 2000 : 300);
       }
     } else {
@@ -1248,6 +1254,7 @@ export function VideoPlayer({
         <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
           <div className="poster" />
           <video
+            key={`${detail?.id}-${episodeIndex}`}
             ref={videoRef}
             style={videoStyle}
             controls={false}

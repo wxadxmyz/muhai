@@ -270,32 +270,17 @@ jobs:
                       runOnUiThread {
                           _muhaiBind()
                           try {
-                              // ===== V3.3.10：横屏「点了必转」根治（推翻 V3.3.9 的误判）=====
-                              // V3.3.9 把「点横屏没反应」归因于「桥绑不上」，方向错了。真凶是：
-                              //   Android 4.0+ 起，系统级「自动旋转」开关（Settings.Global.ACCELEROMETER_ROTATION）
-                              //   优先级高于任何 App 代码——开关关闭时，setRequestedOrientation() 被【静默忽略】，
-                              //   不抛异常、不打日志、更不会有任何提示。这精确解释了「点了没反应 + 全程无提示」。
-                              //   而 SENSOR_LANDSCAPE 依赖传感器，同样被该开关按住（旧注释「不受开关影响」是错的）。
-                              // 修法：按系统开关分流——开则用传感器横屏（保住左右横握自动切），
-                              //       关则用【固定 LANDSCAPE】强行绕开开关，保证「点了必转」。
-                              val isAutoRotateOn = try {
-                                  // 注意：ACCELEROMETER_ROTATION 属于 Settings.System（不是 Settings.Global），
-                                  // V3.3.10 首版误用 Settings.Global 导致 Kotlin「Unresolved reference」编译失败。
-                                  android.provider.Settings.System.getInt(
-                                      contentResolver,
-                                      android.provider.Settings.System.ACCELEROMETER_ROTATION,
-                                      0
-                                  ) == 1
-                              } catch (e: Exception) { false }
+                              // ===== V3.4.3 #4：横屏 180° 翻转（推翻 V3.3.10 的误判）=====
+                              // V3.3.10 误以为「SENSOR_LANDSCAPE 同样被系统自动旋转开关按住」，于是开关关闭时
+                              // 退化成固定 LANDSCAPE —— 这正是「横屏翻 180° 不跟手」的病根。
+                              // 官方定义：SCREEN_ORIENTATION_SENSOR_LANDSCAPE 强制横屏族 + 传感器决定左右，
+                              // 且「忽略用户的旋转锁」，故无条件使用：既保「点横屏必转」、又让 180° 翻转跟手，不加任何按钮。
                               when (orientation) {
-                                  "landscape", "landscape-reverse" -> {
-                                      requestedOrientation = if (isAutoRotateOn) {
-                                          // 系统自动旋转开着：传感器横屏，左右横握自动切换
-                                          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                      } else {
-                                          // 系统自动旋转关着：固定横屏，绕开被静默忽略的传感器方案 → 必转
-                                          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                                      }
+                                  "landscape" -> {
+                                      // V3.4.3 #4：横屏族 + 传感器决定左右（正横 / 反向横 180° 均自动跟手）。
+                                      // SCREEN_ORIENTATION_SENSOR_LANDSCAPE 规范上不受系统「自动旋转」开关限制，
+                                      // 无条件使用：既保「点横屏必转」，又让 180° 翻转跟手，不加任何按钮。
+                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                   }
                                   "sensor" -> {
                                       // 竖屏态/进播放页：跟随重力（仅系统开关打开时才有意义）

@@ -467,7 +467,9 @@ button.fav, .fav { color: var(--danger) !important; }
 /* 进度条（range）统一样式 */
 .vp-progress { flex: 1; display: flex; align-items: center; margin-bottom: 6px; }
 .vp-progress input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; background: rgba(255,255,255,.28); outline: none; cursor: pointer; }
-.vp-progress input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.vp-progress input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: rgba(255,255,255,.28); }
+.vp-progress input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 13px; height: 13px; margin-top: -4.5px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.vp-progress input[type=range]::-moz-range-track { height: 4px; background: rgba(255,255,255,.28); }
 .vp-progress input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; }
 .vp-progress .t { color: #fff; font-size: 12px; min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 
@@ -591,9 +593,12 @@ button.fav, .fav { color: var(--danger) !important; }
 .dm-row-head .val { font-size: 13px; color: var(--accent); font-weight: 700; }
 .dm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
   background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--p, 50%), rgba(255,255,255,.18) var(--p, 50%), rgba(255,255,255,.18) 100%); }
-.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer; }
+/* V3.4.3 #1：WebView 的 range 轨道高度由 ::-webkit-slider-runnable-track 决定，不设则走默认粗轨道；
+   圆点 13px 需负 margin-top 居中，否则控件被撑粗。两条补上后弹幕条与播放页进度条同粗。 */
+.dm-range::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--p, 50%), rgba(255,255,255,.18) var(--p, 50%), rgba(255,255,255,.18) 100%); }
+.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; margin-top: -4.5px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer; }
 .dm-range::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer; }
-.dm-range::-moz-range-track { background: transparent; }
+.dm-range::-moz-range-track { height: 4px; background: transparent; }
 .vp-panel-row { display: flex; align-items: center; gap: 10px; margin: 14px 2px 4px; flex-wrap: wrap; }
 .vp-panel-row > span:first-child { font-size: 14px; color: var(--text); min-width: 40px; }
 .vp-panel-row .mini { border-radius: 999px; padding: 8px 16px; font-size: 13px; min-width: 0; width: auto; height: auto; background: rgba(255,255,255,.08); color: var(--text); border: 1px solid rgba(255,255,255,.14); }

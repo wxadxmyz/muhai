@@ -60,6 +60,18 @@ export function RangeBar({
       onPointerMove={(e) => {
         if (e.buttons) setFromX(e.clientX);
       }}
+      // 兜底：极老 WebView 若 pointer events 不完整，触摸事件仍可拖动。
+      // 与 pointer 事件并存时会重复算一次相同的值（幂等），无副作用。
+      onTouchStart={(e) => setFromX(e.touches[0].clientX)}
+      onTouchMove={(e) => setFromX(e.touches[0].clientX)}
+      // 键盘/遥控器可达：左右键按 step 调整（role=slider 的常规行为）
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const d = (e.key === 'ArrowRight' ? 1 : -1) * step;
+        onChange(Math.max(min, Math.min(max, Number((value + d).toFixed(4)))));
+      }}
       role="slider"
       aria-valuemin={min}
       aria-valuemax={max}

@@ -239,21 +239,37 @@ jobs:
                       runOnUiThread {
                           _muhaiBind()
                           try {
-                              // V3.3.5 A2：恢复 v3.1.0/v3.3.2 用户实测有效的指令。
-                              // SENSOR_LANDSCAPE = 转横屏 + 左右两个横握方向由系统传感器自动切换，
-                              // 且它是 activity 级强制指令，不受系统「自动旋转」快捷开关影响 → 点了必转。
-                              // （V3.3.3 改成固定 LANDSCAPE 的设备上实测不响应，同款软件 FongMi/TV 用的也是 SENSOR_LANDSCAPE。）
+                              // ===== V3.3.10：横屏「点了必转」根治（推翻 V3.3.9 的误判）=====
+                              // V3.3.9 把「点横屏没反应」归因于「桥绑不上」，方向错了。真凶是：
+                              //   Android 4.0+ 起，系统级「自动旋转」开关（Settings.Global.ACCELEROMETER_ROTATION）
+                              //   优先级高于任何 App 代码——开关关闭时，setRequestedOrientation() 被【静默忽略】，
+                              //   不抛异常、不打日志、更不会有任何提示。这精确解释了「点了没反应 + 全程无提示」。
+                              //   而 SENSOR_LANDSCAPE 依赖传感器，同样被该开关按住（旧注释「不受开关影响」是错的）。
+                              // 修法：按系统开关分流——开则用传感器横屏（保住左右横握自动切），
+                              //       关则用【固定 LANDSCAPE】强行绕开开关，保证「点了必转」。
+                              val isAutoRotateOn = try {
+                                  android.provider.Settings.Global.getInt(
+                                      contentResolver,
+                                      android.provider.Settings.Global.ACCELEROMETER_ROTATION,
+                                      0
+                                  ) == 1
+                              } catch (e: Exception) { false }
                               when (orientation) {
                                   "landscape", "landscape-reverse" -> {
-                                      requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                      requestedOrientation = if (isAutoRotateOn) {
+                                          // 系统自动旋转开着：传感器横屏，左右横握自动切换
+                                          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                      } else {
+                                          // 系统自动旋转关着：固定横屏，绕开被静默忽略的传感器方案 → 必转
+                                          android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                                      }
                                   }
                                   "sensor" -> {
-                                      // 竖屏态/进播放页：FULL_SENSOR 全方向跟随重力（v3.1.0 的「自动旋转」行为），
-                                      // 且无视系统「自动旋转」开关——用户横握手机自动转横屏、竖握转回竖屏。
+                                      // 竖屏态/进播放页：跟随重力（仅系统开关打开时才有意义）
                                       requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
                                   }
                                   else -> {
-                                      // 退出横屏/退出点播页：锁回竖屏（v3.2.1 修对的部分，主页列表永不乱转）。
+                                      // 退出横屏/退出点播页：固定竖屏（不受系统开关影响，主页永不乱转）
                                       requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                                   }
                               }

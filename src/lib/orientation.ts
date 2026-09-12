@@ -86,7 +86,9 @@ function verifyAndRetry(ori: string, attempt: number, gen: number, onResult?: (o
       verifyAndRetry(ori, attempt + 1, gen, onResult);
     } else {
       // 多次重试仍失败：桥活着但系统没转 → 提示用户检查系统设置（调用方只做回退，不再重复提示）
-      toast('横屏切换失败，请检查系统是否允许旋转');
+      // V3.3.10：失败提示补「可操作路径」。系统「自动旋转」关闭时原生会走固定横屏绕开它，
+      // 若仍失败多半是 ROM 限制，提示用户去系统设置允许旋转，而不是一句干巴巴的失败。
+      toast('横屏切换失败，请在系统设置中允许屏幕旋转');
       onResult?.(false); // 重试耗尽：明确告知失败，由调用方决定回退策略
     }
   }, VERIFY_DELAY_MS);

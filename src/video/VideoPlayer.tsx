@@ -1480,7 +1480,8 @@ export function VideoPlayer({
                   {/* V3.3.13：加 onTouchStart 双触发——部分机型 WebView 合成的 click 派发不到该按钮， */}
                   {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
                   {/* V3.4.0：改走 openSubStyle —— 同时记录打开时刻，配合遮罩 400ms 守卫防「同手势秒关」。 */}
-                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={openSubStyle} onTouchStart={openSubStyle} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
+                  {/* V3.4.1：去掉 .on 高亮 —— 它是面板入口，不是状态开关，应和「设置」「选集」一样不变色。 */}
+                  <button className="tool" onClick={openSubStyle} onTouchStart={openSubStyle} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
                   <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
                   <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>

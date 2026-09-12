@@ -191,9 +191,9 @@ jobs:
               // 现在记住绑的是哪一个 WebView 实例，实例变了就重新绑一次。
               private var _muhaiBound = false
               private var _muhaiBoundView: java.lang.ref.WeakReference<android.webkit.WebView>? = null
-              private fun _muhaiBind() {
+              private val _muhaiHealHandler = android.os.Handler(android.os.Looper.getMainLooper())
+              private fun _muhaiBindTo(wv: android.webkit.WebView?) {
                   try {
-                      val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
                       if (wv == null) return
                       val prev = _muhaiBoundView?.get()
                       // 未绑过 / 绑过的实例已被回收 / 换了新的 WebView —— 都要重新绑定
@@ -204,29 +204,60 @@ jobs:
                       }
                   } catch (e: Exception) { /* ignore */ }
               }
+              private fun _muhaiBind() {
+                  _muhaiBindTo(findBackWebView(window?.decorView as? android.view.ViewGroup))
+              }
 
-              // V3.3.9：自愈绑桥——彻底消除「重开 / WebView 重建后桥丢失」。
-              // 旧逻辑只在 onStart 后 10s 内重试 5 枪，WebView 挂载晚于 10s（重开 / 重建常有）就永久错过。
-              // 现改为每 1s 轮询：找到 WebView 且与已绑实例不同（或尚未绑）就重绑；
-              // 一旦绑上「当前存活」的 WebView 即停手，WebView 被回收重建亦自动跟上。
-              private val _muhaiHealHandler = android.os.Handler(android.os.Looper.getMainLooper())
+              // ===== V3.3.10 终极修复：用 wry 官方钩子 onWebViewCreate 绑定桥 =====
+              // 真机定位（用户视频 + 「旋转服务未就绪」提示）证明：靠「轮询 decorView 找 WebView」
+              // 在部分机型/时序下始终找不到（onStart/onResume 时 WebView 可能尚未挂进视图树，
+              // 或 Tauri 的 WebView 挂载路径与递归预期不符）→ 桥永远绑不上 → 横屏点了没反应。
+              // 正确做法：wry 的 WryActivity 提供了 `open fun onWebViewCreate(webView: WebView)`，
+              //   在 WebView 创建完成的瞬间回调（源码：WryActivity.setWebView() 内调用），
+              //   此刻 WebView 100% 存在 —— 直接在这里 addJavascriptInterface 最可靠。
+              // 注：方法名是 onWebViewCreate（无 d）；旧代码误写成 onWebViewCreated，override 失败，
+              //     才被误判为「Tauri v2 不暴露该钩子」。
+              override fun onWebViewCreate(webView: android.webkit.WebView) {
+                  super.onWebViewCreate(webView)
+                  _muhaiBindTo(webView)
+                  // 兜底：再排一枪，防止个别 ROM 在 onWebViewCreate 之后重建页面导致注入丢失
+                  _muhaiHealHandler.postDelayed({ _muhaiBind() }, 800)
+              }
+
+              // V3.3.9：自愈绑桥——作为 onWebViewCreate 之外的兜底（保留）。
+              // V3.3.10 修正：旧版 `_muhaiHealStart()` 里用「同步 run()」启动循环，
+              //   且 `removeCallbacks` 会被生命周期方法连续调用互相打断 → 循环刚排上就被取消。
+              //   现改为：用 `postDelayed` 排首枪，并用 `_muhaiHealRunning` 幂等标志防重复排循环。
+              private var _muhaiHealRunning = false
               private val _muhaiHeal = object : Runnable {
                   override fun run() {
+                      var keep = true
                       try {
                           val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
                           val prev = _muhaiBoundView?.get()
-                          if (wv == null) { _muhaiHealHandler.postDelayed(this, 1000); return }
-                          if (prev == null || prev !== wv || !_muhaiBound) {
-                              _muhaiBind()
-                              _muhaiHealHandler.postDelayed(this, 1000)
-                              return
+                          if (wv == null) {
+                              keep = true // WebView 还没挂上 → 继续等
+                          } else if (prev == null || prev !== wv || !_muhaiBound) {
+                              _muhaiBind() // 未绑 / 换了实例 / 实例被回收 → 重绑
+                              keep = true  // 重绑后再验一轮，确认真的绑在当前存活实例上
+                          } else {
+                              keep = false // 已绑在当前存活 WebView 上 → 本循环收工
                           }
-                      } catch (e: Exception) { _muhaiHealHandler.postDelayed(this, 1000) }
+                      } catch (e: Exception) {
+                          keep = true
+                      }
+                      if (keep) {
+                          _muhaiHealHandler.postDelayed(this, 1000)
+                      } else {
+                          _muhaiHealRunning = false
+                      }
                   }
               }
               private fun _muhaiHealStart() {
-                  _muhaiHealHandler.removeCallbacks(_muhaiHeal)
-                  _muhaiHeal.run()
+                  // 幂等：已在跑就不重复排；首枪走 postDelayed（不占用 onStart 同步栈，避免过早取不到 window）
+                  if (_muhaiHealRunning) return
+                  _muhaiHealRunning = true
+                  _muhaiHealHandler.postDelayed(_muhaiHeal, 0)
               }
 
               // V3.3.7 十一：给前端一个「桥是否真的活着」的自检入口。

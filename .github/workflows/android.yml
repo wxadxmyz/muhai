@@ -248,9 +248,11 @@ jobs:
                               // 修法：按系统开关分流——开则用传感器横屏（保住左右横握自动切），
                               //       关则用【固定 LANDSCAPE】强行绕开开关，保证「点了必转」。
                               val isAutoRotateOn = try {
-                                  android.provider.Settings.Global.getInt(
+                                  // 注意：ACCELEROMETER_ROTATION 属于 Settings.System（不是 Settings.Global），
+                                  // V3.3.10 首版误用 Settings.Global 导致 Kotlin「Unresolved reference」编译失败。
+                                  android.provider.Settings.System.getInt(
                                       contentResolver,
-                                      android.provider.Settings.Global.ACCELEROMETER_ROTATION,
+                                      android.provider.Settings.System.ACCELEROMETER_ROTATION,
                                       0
                                   ) == 1
                               } catch (e: Exception) { false }

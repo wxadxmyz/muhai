@@ -1487,7 +1487,8 @@ export function VideoPlayer({
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
                   {/* V3.3.7 六：「字幕」→「弹幕」，且与弹幕开关状态联动（此前点了是打开外挂字幕面板，名不副实） */}
-                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={() => toggleDanmaku()} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
+                  {/* V3.3.9：底部工具栏「弹幕」= 直接开样式面板（与左侧栏快速开关分工，消除重复） */}
+                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={() => setShowSubStyle(true)} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
                   <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
                   <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>

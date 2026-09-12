@@ -202,8 +202,32 @@ jobs:
                           _muhaiBoundView = java.lang.ref.WeakReference(wv)
                           _muhaiBound = true
                       }
-                  } catch (e: Exception) { /* 未挂载则等待下次重试 */ }
               }
+
+              // V3.3.9：自愈绑桥——彻底消除「重开 / WebView 重建后桥丢失」。
+              // 旧逻辑只在 onStart 后 10s 内重试 5 枪，WebView 挂载晚于 10s（重开 / 重建常有）就永久错过。
+              // 现改为每 1s 轮询：找到 WebView 且与已绑实例不同（或尚未绑）就重绑；
+              // 一旦绑上「当前存活」的 WebView 即停手，WebView 被回收重建亦自动跟上。
+              private val _muhaiHealHandler = android.os.Handler(android.os.Looper.getMainLooper())
+              private val _muhaiHeal = object : Runnable {
+                  override fun run() {
+                      try {
+                          val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
+                          val prev = _muhaiBoundView?.get()
+                          if (wv == null) { _muhaiHealHandler.postDelayed(this, 1000); return }
+                          if (prev == null || prev !== wv || !_muhaiBound) {
+                              _muhaiBind()
+                              _muhaiHealHandler.postDelayed(this, 1000)
+                              return
+                          }
+                      } catch (e: Exception) { _muhaiHealHandler.postDelayed(this, 1000) }
+                  }
+              }
+              private fun _muhaiHealStart() {
+                  _muhaiHealHandler.removeCallbacks(_muhaiHeal)
+                  _muhaiHeal.run()
+              }
+
               // V3.3.7 十一：给前端一个「桥是否真的活着」的自检入口。
               // 前端据此区分「还没绑上」和「绑上了但系统没转」，提示语不再一刀切。
               val MuHaiAndroid = object {
@@ -330,24 +354,14 @@ jobs:
           # Q20：更长的重试序列；V3.3.0 #7：加长到 600/1500/3000/6000/10000ms——
           #      慢机型 WebView 挂载可晚于 3s，之前 3s 内绑不上，点横屏就只剩 CSS 放大。
           bind_code = '''
-                  _muhaiBind()
-                  window.decorView.postDelayed({ _muhaiBind() }, 600)
-                  window.decorView.postDelayed({ _muhaiBind() }, 1500)
-                  window.decorView.postDelayed({ _muhaiBind() }, 3000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 6000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 10000)
+                  _muhaiHealStart()
 
           '''
           if "fun onStart(" not in src:
               onstart = '''
               override fun onStart() {
                   super.onStart()
-                  _muhaiBind()
-                  window.decorView.postDelayed({ _muhaiBind() }, 600)
-                  window.decorView.postDelayed({ _muhaiBind() }, 1500)
-                  window.decorView.postDelayed({ _muhaiBind() }, 3000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 6000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 10000)
+                  _muhaiHealStart()
               }
 
               '''
@@ -359,10 +373,7 @@ jobs:
               onresume = '''
               override fun onResume() {
                   super.onResume()
-                  _muhaiBind()
-                  window.decorView.postDelayed({ _muhaiBind() }, 600)
-                  window.decorView.postDelayed({ _muhaiBind() }, 3000)
-                  window.decorView.postDelayed({ _muhaiBind() }, 6000)
+                  _muhaiHealStart()
               }
 
               '''
@@ -376,7 +387,7 @@ jobs:
               onfocus = '''
               override fun onWindowFocusChanged(hasFocus: Boolean) {
                   super.onWindowFocusChanged(hasFocus)
-                  if (hasFocus) _muhaiBind()
+                  if (hasFocus) _muhaiHealStart()
               }
 
               '''

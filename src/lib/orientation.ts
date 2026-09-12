@@ -6,7 +6,7 @@
 
 // 桥可能比首屏晚几秒才绑上（冷启动 / Tauri 重建 WebView 后）。原生侧在 onStart/onResume/
 // onWindowFocusChanged 里 postDelayed 重试绑桥（V3.3.0 #7 加长到 10s），前端这边同步放宽等待：
-const BRIDGE_WAIT_MS = 12000; // V3.3.0 #7：8s → 12s，慢机型 WebView 挂载更晚
+const BRIDGE_WAIT_MS = 20000; // V3.3.0 #7：8s → 12s → 20s，慢机型 / 重开后 WebView 挂载更晚，给自愈绑桥留足时间
 const BRIDGE_POLL_MS = 100;
 // V3.3.0 #7：等桥 3s 仍未就绪先给一条"连接中"提示——别让用户点了横屏毫无反馈干等
 const WAIT_HINT_AT_MS = 3000;

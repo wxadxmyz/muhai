@@ -202,6 +202,7 @@ jobs:
                           _muhaiBoundView = java.lang.ref.WeakReference(wv)
                           _muhaiBound = true
                       }
+                  }
               }
 
               // V3.3.9：自愈绑桥——彻底消除「重开 / WebView 重建后桥丢失」。

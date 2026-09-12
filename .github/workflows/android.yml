@@ -184,18 +184,31 @@ jobs:
               // 而 v3.1.0/v3.3.2 用户验证有效的做法是直接交给系统常量 SENSOR_LANDSCAPE——
               // 它自带左右传感器切换，不需要（也不该有）自写监听去抢方向盘。
 
+              // V3.3.7 十一：桥丢失的根因修复。
+              // 旧实现里 _muhaiBound 是「一次性开关」——一旦绑过就永久 return，
+              // 于是 WebView 被系统回收重建后，新 WebView 上根本没有 MuHaiAndroid，
+              // 而前端还在傻等（表现就是「横屏按钮刚开始能用，后来变成竖屏放大」）。
+              // 现在记住绑的是哪一个 WebView 实例，实例变了就重新绑一次。
               private var _muhaiBound = false
+              private var _muhaiBoundView: java.lang.ref.WeakReference<android.webkit.WebView>? = null
               private fun _muhaiBind() {
-                  if (_muhaiBound) return
                   try {
                       val wv = findBackWebView(window?.decorView as? android.view.ViewGroup)
-                      if (wv != null) {
+                      if (wv == null) return
+                      val prev = _muhaiBoundView?.get()
+                      // 未绑过 / 绑过的实例已被回收 / 换了新的 WebView —— 都要重新绑定
+                      if (!_muhaiBound || prev !== wv) {
                           wv.addJavascriptInterface(MuHaiAndroid, "MuHaiAndroid")
+                          _muhaiBoundView = java.lang.ref.WeakReference(wv)
                           _muhaiBound = true
                       }
                   } catch (e: Exception) { /* 未挂载则等待下次重试 */ }
               }
+              // V3.3.7 十一：给前端一个「桥是否真的活着」的自检入口。
+              // 前端据此区分「还没绑上」和「绑上了但系统没转」，提示语不再一刀切。
               val MuHaiAndroid = object {
+                  @android.webkit.JavascriptInterface
+                  fun isBound(): Boolean = _muhaiBound && _muhaiBoundView?.get() != null
                   @android.webkit.JavascriptInterface
                   fun setOrientation(orientation: String) {
                       runOnUiThread {

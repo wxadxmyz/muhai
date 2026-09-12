@@ -43,6 +43,20 @@ function enqueue(task: () => Promise<void>) {
   else waiting.push(start);
 }
 
+// V3.3.7 七：兜底文字卡抽成组件，供「无地址 / 两级加载都失败」两条路径共用。
+// 原则：任何状态都不允许出现「纯色空白」——至少要有片名可读。
+function FallbackCard({ className, text }: { className?: string; text?: string }) {
+  return (
+    <div
+      className={className ? `${className} img-fallback` : 'img-fallback'}
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'linear-gradient(135deg,#2b2b3e,#3a2747)', color: 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: '14px', lineHeight: 1.35, textAlign: 'center', letterSpacing: '0.3px', userSelect: 'none', overflow: 'hidden' }}
+    >
+      {/* V3.3.5 A1：片名过长时在 110×150 小海报框内截断为 3 行，不再溢出框外 */}
+      <span style={clampStyle}>{text || ''}</span>
+    </div>
+  );
+}
+
 export function ProxiedImg({ src, alt = '', className, fallbackText, onFinalFail }: { src?: string; alt?: string; className?: string; fallbackText?: string; onFinalFail?: () => void }) {
   // V3.3.0 #6：useState 惰性初始化直接读模块级 cache——缓存命中时首帧渲染就是真图，
   // 不再出现"先渐变占位一帧再变图"的闪烁（useEffect 在首次绘制之后才跑，靠它恢复必闪）。
@@ -106,7 +120,9 @@ export function ProxiedImg({ src, alt = '', className, fallbackText, onFinalFail
     };
   }, [src, visible, dataUrl]);
 
-  if (!src) return null;
+  // V3.3.7 七：无地址时原本 return null —— 宿主框于是只剩一层背景色，
+  // 真机上就是「深蓝渐变空白」。改为同样落片名文字卡（有片名才落，避免占位无意义）。
+  if (!src) return fallbackText ? <FallbackCard className={className} text={fallbackText} /> : null;
 
   if (dataUrl) return <img src={dataUrl} alt={alt} className={className} loading="lazy" />;
 
@@ -125,17 +141,7 @@ export function ProxiedImg({ src, alt = '', className, fallbackText, onFinalFail
 
   // 真失败：渐变 + 完整标题的文字卡（V3.2.5 #4 的设计），个别图床挂了也像有设计感的卡片。
   // Q2：调用方务必传 fallbackText，否则这里就是一块没有字的渐变（看不出是失败还是没图）。
-  if (nativeFailed) {
-    return (
-      <div
-        className={className ? `${className} img-fallback` : 'img-fallback'}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', background: 'linear-gradient(135deg,#2b2b3e,#3a2747)', color: 'rgba(255,255,255,.85)', fontWeight: 700, fontSize: '14px', lineHeight: 1.35, textAlign: 'center', letterSpacing: '0.3px', userSelect: 'none', overflow: 'hidden' }}
-      >
-        {/* V3.3.5 A1：片名过长时在 110×150 小海报框内截断为 3 行，不再溢出框外 */}
-        <span style={clampStyle}>{fallbackText || ''}</span>
-      </div>
-    );
-  }
+  if (nativeFailed) return <FallbackCard className={className} text={fallbackText} />;
 
   // 加载中占位（#5：ref 挂在这里做视口观察）。
   // V3.3.2 #3：占位即显示片名文字，不再是一块纯空白渐变——

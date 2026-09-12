@@ -138,7 +138,8 @@ export function VideoPlayer({
   const [showCast, setShowCast] = useState(false);
   const [castDevice, setCastDevice] = useState<string | null>(null);
   const [localCues, setLocalCues] = useState<{ time: number; text: string }[]>([]);
-  const [showSubStyle, setShowSubStyle] = useState(false);
+  const [showSubStyle, setShowSubStyle] = useState(false); // V3.3.7 六：面板内容由「字幕样式」改为「弹幕样式」
+  const [showSubtitleStyle, setShowSubtitleStyle] = useState(false); // V3.3.7 六：外挂字幕样式（入口在设置抽屉）
   const [resolving, setResolving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -373,9 +374,10 @@ export function VideoPlayer({
         if (epOpen) { setEpOpen(false); return true; }
         if (showCast) { setShowCast(false); return true; }
         if (showSubStyle) { setShowSubStyle(false); return true; }
+        if (showSubtitleStyle) { setShowSubtitleStyle(false); return true; }
         return false;
       }),
-    [settingsOpen, epOpen, showCast, showSubStyle, epSheetOpen]
+    [settingsOpen, epOpen, showCast, showSubStyle, showSubtitleStyle, epSheetOpen]
   );
 
   // 逐级返回：点播页优先退「横屏 → 竖屏」这一级，否则交还外层（VideoApp 的 closeVideo）
@@ -683,6 +685,7 @@ export function VideoPlayer({
       try { (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
       saveProgress(true);
       endSeekGesture(); // ⑨：拖动结束，等 seek 到位后收圈
+      scheduleHide(); // V3.3.7 九：抬手后重新起 3 秒倒计时（拖动期间被挂起）
     }
   };
 
@@ -800,9 +803,49 @@ export function VideoPlayer({
     localStorage.setItem('rf_audio', n);
   };
 
+  // V3.3.7 十一：正在等待原生旋转结果（防连点重复下发指令）
+  const landPendingRef = useRef(false);
+
   // ⑦：只翻转 state，真正的屏幕旋转统一由下方 [landscape] effect 驱动 requestOrientation，
   //    避免「toggleLandscape 内联 + effect 内」双调用竞态（部分 ROM 表现为「点横屏有时不灵」）
-  const toggleLandscape = () => { setLandscape((v) => !v); };
+  // V3.3.7 十一（本轮重点）：进横屏改为「先转后切」——
+  //   旧行为是先 setLandscape(true) 把 UI 铺满，再发原生指令；桥没注入时原生不响应，
+  //   于是停在「画面被拉满、屏幕却还是竖着」的竖屏放大假横屏状态。
+  //   现在：先请求原生旋转，确认真的横过来了（innerWidth > innerHeight）才切横屏 UI；
+  //   失败则留在竖屏并提示，最坏情况只是「点了没反应」，永不出现假横屏。
+  const toggleLandscape = () => {
+    if (landscape) { setLandscape(false); return; } // 退出横屏无需等待，立即退回竖屏播放页
+    if (landPendingRef.current) return;
+    landPendingRef.current = true;
+    requestOrientation('landscape', {
+      onResult: (ok) => {
+        landPendingRef.current = false;
+        // 失败原因的 toast 由 orientation.ts 统一给出（区分「桥未就绪」与「系统未响应」），
+        // 这里只负责「不切横屏 UI」，避免连弹两条提示。
+        if (ok) setLandscape(true);
+      },
+    });
+  };
+
+  // V3.3.7 十一 · A：横屏稳定 3 秒后若系统方向掉回竖屏（用户把手机竖过来了 / 系统强制竖屏），
+  // 自动退回竖屏播放页，避免停在「已铺满但屏幕是竖的」状态。
+  // 延时 3 秒是为了避开系统旋转动画的中间帧（V3.3.6 一 的血泪教训：过早监听会把手动横屏自己作废）。
+  useEffect(() => {
+    if (!landscape) return;
+    let cleanup: (() => void) | undefined;
+    const t = window.setTimeout(() => {
+      const onCheck = () => {
+        if (window.innerWidth < window.innerHeight) setLandscape(false);
+      };
+      window.addEventListener('resize', onCheck);
+      window.addEventListener('orientationchange', onCheck);
+      cleanup = () => {
+        window.removeEventListener('resize', onCheck);
+        window.removeEventListener('orientationchange', onCheck);
+      };
+    }, 3000);
+    return () => { window.clearTimeout(t); cleanup?.(); };
+  }, [landscape]);
 
   // 锁屏（点播）：B 组 8 条模型
   // 锁定 = 仅留小锁（其余由 .locked CSS 隐藏）、禁手势、视频继续播；小锁 3 秒后自动隐藏；
@@ -986,6 +1029,7 @@ export function VideoPlayer({
         if (settingsOpen) setSettingsOpen(false);
         else if (showCast) setShowCast(false);
         else if (showSubStyle) setShowSubStyle(false);
+        else if (showSubtitleStyle) setShowSubtitleStyle(false);
         else if (landscape) toggleLandscape();
         else onClose();
       }
@@ -1029,7 +1073,14 @@ export function VideoPlayer({
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
     // B9：去掉 locked —— 锁定态也要启动 3 秒定时器，让小锁自动隐藏（此前小锁永远亮着）
     if (!state.isPlaying) return;
-    hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
+    // V3.3.7 九：拖动进度条期间挂起自动隐藏。
+    // 症状：按住进度条微调超过 3 秒，整层控制图标（连进度条自己）凭空消失。
+    if (barDraggingRef.current) return;
+    hideTimer.current = window.setTimeout(() => {
+      // 定时器到点时若手指还按在进度条上，同样不放行（避免边界情况下刚拖到 3 秒就被藏掉）
+      if (barDraggingRef.current) return;
+      setControlsVisible(false);
+    }, 3000);
   };
   const toggleControls = () => {
     setControlsVisible((v) => {
@@ -1046,6 +1097,28 @@ export function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isPlaying, locked]);
 
+  // V3.3.7：长按手势（只给「横屏弹幕按钮」用）——按住 480ms 唤出弹幕样式浮窗，
+  // 触发后抑制紧随其后的 click，避免「开面板的同时又把弹幕关了」。
+  // 竖屏按用户明确要求不接长按（竖屏单击=开关弹幕，样式入口在播放器设置抽屉里）。
+  const longPressTimer = useRef<number | undefined>(undefined);
+  const longPressFired = useRef(false);
+  const dmPressStart = () => {
+    longPressFired.current = false;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      longPressFired.current = true;
+      setShowSubStyle(true);
+      try { (navigator as any).vibrate?.(15); } catch { /* ignore */ }
+    }, 480);
+  };
+  const dmPressEnd = () => {
+    if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = undefined; }
+  };
+  const dmClick = () => {
+    if (longPressFired.current) { longPressFired.current = false; return; } // 长按已处理，忽略这次 click
+    toggleDanmaku();
+  };
+
   const toggleDanmaku = () => {
     const next = !danmaku;
     setDanmaku(next);
@@ -1053,6 +1126,8 @@ export function VideoPlayer({
   };
 
   const ss = settings.subtitleStyle;
+  // V3.3.7 六：弹幕样式（作用到 .dm，与外挂字幕的 ss 分开）
+  const ds = settings.danmakuStyle;
   const cues = localCues.length ? localCues : detail.subtitles?.[0]?.cues;
   const activeCue = (settings.enableSubtitle && danmaku === false) ? getActiveCue(cues, state.progress) : null;
   // P5：6 个选项各自落到「objectFit + 容器比例」的组合（此前 16:9 / 4:3 / 原始 是死选项，点了跟默认一样）
@@ -1241,7 +1316,7 @@ export function VideoPlayer({
 
           {/* 弹幕层 */}
           {danmaku && detail.danmaku && detail.danmaku.length > 0 && (
-            <Danmaku active={state.isPlaying} seed={detail.id + episodeIndex} items={detail.danmaku} />
+            <Danmaku active={state.isPlaying} seed={detail.id + episodeIndex} items={detail.danmaku} style={settings.danmakuStyle} />
           )}
           {activeCue && (
             <div
@@ -1312,6 +1387,8 @@ export function VideoPlayer({
                     {/* T4：已缓冲进度（浅色），复用 onTimeUpdate 兜底刷新，层级介于轨道与已播放之间 */}
                     <div className="buffered" style={{ width: `${bufPct}%` }} />
                     <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                    {/* V3.3.7 十：播放位置圆点，left 随进度百分比 */}
+                    <div className="knob" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                   </div>
                   <span className="t dur">{fmtTime(liveDur)}</span>
                   <button className="land" onClick={toggleLandscape} title="横屏"><Icon name="rotate" size={18} /></button>
@@ -1348,7 +1425,15 @@ export function VideoPlayer({
               {/* 左侧边栏：锁 / 弹幕 */}
               <div className="side left">
                 <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
-                <button className={'icon' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={20} /></button>
+                {/* V3.3.7：横屏弹幕按钮 —— 单击开关弹幕，长按唤出弹幕样式浮窗 */}
+                <button
+                  className={'icon' + (danmaku ? ' on' : '')}
+                  onTouchStart={dmPressStart} onTouchEnd={dmPressEnd} onTouchCancel={dmPressEnd} onTouchMove={dmPressEnd}
+                  onMouseDown={dmPressStart} onMouseUp={dmPressEnd} onMouseLeave={dmPressEnd}
+                  onClick={dmClick}
+                  disabled={!detail.danmaku || detail.danmaku.length === 0}
+                  title={danmaku ? '弹幕开（长按改样式）' : '弹幕关（长按改样式）'}
+                ><Icon name="message" size={20} /></button>
               </div>
 
               {/* 右侧边栏：投屏 / 画中画 */}
@@ -1380,6 +1465,8 @@ export function VideoPlayer({
                   }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
                     <div className="buffered" style={{ width: `${bufPct}%` }} />
                   <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                  {/* V3.3.7 十：横屏进度条同样加播放位置圆点 */}
+                  <div className="knob" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
                   </div>
                   <span className="t">{fmtTime(liveDur)}</span>
                   <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
@@ -1388,7 +1475,8 @@ export function VideoPlayer({
                   <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>解码</span></button>
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
-                  <button className="tool" onClick={() => setShowSubStyle(true)}><Icon name="captions" size={15} /><span>字幕</span></button>
+                  {/* V3.3.7 六：「字幕」→「弹幕」，且与弹幕开关状态联动（此前点了是打开外挂字幕面板，名不副实） */}
+                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={() => toggleDanmaku()} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
                   <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
                   <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
@@ -1431,10 +1519,12 @@ export function VideoPlayer({
             <div className="info-body">
               <div className="info-title">{detail.title}</div>
               <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
+              {/* V3.3.7 四：一行连排 + 2 行截断 → 改回竖排，每行一条、单行省略（对齐设计稿） */}
               <div className="info-meta">
-                {filmYear && <><span className="label">年份</span>{filmYear}　</>}
-                {director && <><span className="label">导演</span>{director}　</>}
-                {actor && <><span className="label">主演</span>{actor}</>}
+                {filmYear && <div className="row"><span className="label">年份</span>{filmYear}</div>}
+                {(vr as any)?.vod_area && <div className="row"><span className="label">地区</span>{(vr as any).vod_area}</div>}
+                {director && <div className="row"><span className="label">导演</span>{director}</div>}
+                {actor && <div className="row"><span className="label">主演</span>{actor}</div>}
               </div>
               <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => { library.toggleFavorite(detail); setFaved(library.isFavorite(detail)); }}>
                 {faved ? '已收藏' : '加入收藏'}
@@ -1587,13 +1677,43 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* 字幕样式面板 */}
+      {/* V3.3.7 六：原「字幕样式」面板改「弹幕样式」——此前它控制的是外挂字幕（.vp-subtitle，
+          仅在片源自带 SRT/VTT 且弹幕关闭时才显示），而用户日常看到的是弹幕，
+          于是反馈「这个不是字幕样式，是弹幕样式」。现在字号/颜色/描边/速度/区域/透明度全部落到 .dm。
+          关闭按钮已删除（点遮罩关闭），外挂字幕入口并入播放器设置抽屉。 */}
       {showSubStyle && (
         <div className="vp-drawer-mask" onClick={() => setShowSubStyle(false)}>
           <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
-          <div className="vp-panel-head">字幕样式
-            <button className="link" onClick={() => setShowSubStyle(false)}>关闭</button>
+          <div className="vp-panel-head">弹幕样式</div>
+          <div className="vp-panel-row">
+            <span>开启弹幕</span>
+            <button className={'mini' + (danmaku ? ' active' : '')} onClick={() => toggleDanmaku()}>{danmaku ? '开' : '关'}</button>
           </div>
+          <label>字号 <b>{ds.size}px</b>
+            <input type="range" min={12} max={40} step={1} value={ds.size} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, size: Number(e.target.value) } })} />
+          </label>
+          <label>颜色 <input type="color" value={ds.color} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, color: e.target.value } })} /></label>
+          <label>透明度 <b>{ds.opacity}%</b>
+            <input type="range" min={20} max={100} step={5} value={ds.opacity} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, opacity: Number(e.target.value) } })} />
+          </label>
+          <label>速度 <b>{(ds.speed / 100).toFixed(1)}x</b>
+            <input type="range" min={50} max={200} step={10} value={ds.speed} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, speed: Number(e.target.value) } })} />
+          </label>
+          <label>显示区域 <b>{ds.area}%</b>
+            <input type="range" min={20} max={100} step={10} value={ds.area} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, area: Number(e.target.value) } })} />
+          </label>
+          <div className="vp-panel-row">
+            <label className="row"><input type="checkbox" checked={ds.outline} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, outline: e.target.checked } })} /> 描边</label>
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* V3.3.7 六：外挂字幕样式保留（仅片源自带 SRT/VTT 时才有内容），入口从工具栏挪进设置抽屉 */}
+      {showSubtitleStyle && (
+        <div className="vp-drawer-mask" onClick={() => setShowSubtitleStyle(false)}>
+          <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
+          <div className="vp-panel-head">外挂字幕样式</div>
           <label>字号 <b>{ss.size}px</b>
             <input type="range" min={14} max={48} step={1} value={ss.size} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, size: Number(e.target.value) } })} />
           </label>
@@ -1644,6 +1764,12 @@ export function VideoPlayer({
               {AUDIO_OPTS.map((a) => (
                 <button key={a} className={audioMode === a ? 'on' : ''} onClick={() => { setAudioMode(a); localStorage.setItem('rf_audio', a); }}>{a}</button>
               ))}
+            </div></div>
+
+            {/* V3.3.7 六：弹幕样式 / 外挂字幕样式入口（工具栏不再占「字幕」按钮位） */}
+            <div className="dg"><div className="dg-label">字幕与弹幕</div><div className="dg-row">
+              <button onClick={() => { setSettingsOpen(false); setShowSubStyle(true); }}>弹幕样式</button>
+              <button onClick={() => { setSettingsOpen(false); setShowSubtitleStyle(true); }}>外挂字幕</button>
             </div></div>
 
             {!landscape && (
@@ -1706,8 +1832,10 @@ export function VideoPlayer({
                 const order = asc ? list.map((_, i) => i) : list.map((_, i) => list.length - 1 - i);
                 return order.map((i) => {
                   const ep = list[i];
+                  // V3.3.7 五：此前输出原始集名「第01集」，4~5 个字在正方块里挤成三行把格子撑高，
+                  // 视觉上像「5 列正方块没生效」。改走 cleanEp，与竖屏三处保持一致。
                   return (
-                    <button key={i} className={(i === episodeIndex ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : (ep?.name ?? `第${i + 1}集`)}{i === episodeIndex && <span className="ep-dot" />}</button>
+                    <button key={i} className={(i === episodeIndex ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : cleanEp(ep?.name, i)}{i === episodeIndex && <span className="ep-dot" />}</button>
                   );
                 });
               })()}
@@ -1743,7 +1871,15 @@ export function VideoPlayer({
 }
 
 // 弹幕：从源提供的真实弹幕文本数组随机飘屏（无数据则不应被渲染）
-function Danmaku({ active, seed, items }: { active: boolean; seed: string; items: string[] }) {
+// V3.3.7 六：样式参数由 settings.danmakuStyle 透传（此前弹幕写死 18px 白字，面板改了没反应）
+function Danmaku({
+  active, seed, items, style,
+}: {
+  active: boolean;
+  seed: string;
+  items: string[];
+  style: { size: number; color: string; opacity: number; speed: number; area: number; outline: boolean };
+}) {
   const [bullets, setBullets] = useState<{ id: number; text: string; top: number; dur: number }[]>([]);
   useEffect(() => {
     setBullets([]);
@@ -1754,18 +1890,31 @@ function Danmaku({ active, seed, items }: { active: boolean; seed: string; items
     const timer = setInterval(() => {
       const text = items[Math.floor(Math.random() * items.length)];
       const id = Date.now() + n++;
-      const top = 6 + Math.random() * 70;
-      const dur = 6 + Math.random() * 4;
+      // area：弹幕出现区域占画面高度的百分比（100 = 全屏，50 = 只在上半屏）
+      const top = 4 + Math.random() * Math.max(4, style.area - 8);
+      // speed：100 = 基准 6~10 秒飘完；调大更快（时长更短）
+      const base = 6 + Math.random() * 4;
+      const dur = Math.max(2, base * (100 / Math.max(20, style.speed)));
       setBullets((b) => [...b, { id, text, top, dur }]);
       setTimeout(() => setBullets((b) => b.filter((x) => x.id !== id)), dur * 1000);
     }, 800);
     return () => clearInterval(timer);
-  }, [active, seed, items]);
+  }, [active, seed, items, style.speed, style.area]);
 
   return (
     <div className="danmaku-layer">
       {bullets.map((b) => (
-        <span key={b.id} className="dm" style={{ top: b.top + '%', animationDuration: b.dur + 's' }}>{b.text}</span>
+        <span
+          key={b.id}
+          className={'dm' + (style.outline ? ' dm-outline' : '')}
+          style={{
+            top: b.top + '%',
+            animationDuration: b.dur + 's',
+            fontSize: style.size + 'px',
+            color: style.color,
+            opacity: Math.max(0.1, Math.min(1, style.opacity / 100)),
+          }}
+        >{b.text}</span>
       ))}
     </div>
   );

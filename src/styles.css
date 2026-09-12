@@ -167,7 +167,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .pcover { position: relative; aspect-ratio: 3/4; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; } /* V3.3.0 #5：2:3→3:4，矮一点 */
 .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
-.ph-big { font-weight: 800; }
+/* V3.3.7 七：兜底文字卡此前只有 font-weight，没有 font-size / color —— 历史页表现为「浅灰空白」。
+   补齐字号与白色文字，并让它在封面框内居中（此前还可能被挤到左上）。 */
+.ph-big { font-weight: 800; font-size: 22px; line-height: 1.25; color: rgba(255,255,255,.92); width: 100%; height: 100%; display: grid; place-items: center; text-align: center; padding: 8px; overflow: hidden; }
 .eps { position: absolute; top: 8px; right: 8px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); padding: 2px 7px; border-radius: 6px; }
 .pscore { position: absolute; top: 8px; left: 8px; font-size: 11px; font-weight: 800; color: #fff; background: var(--accent); padding: 2px 7px; border-radius: 999px; }
 /* P7：影视卡片的「看到 mm:ss」角标，放左下，避开右上的集数标签 */
@@ -492,13 +494,15 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-lines { display: flex; gap: 6px; flex-wrap: wrap; }
 .vp-episodes { display: flex; flex-direction: column; gap: 8px; }
 .vp-episodes .ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; } /* V3.3.6 三：5 列 × 2 行 = 10 格 */
-.vp-episodes .ep-grid .ep-btn { aspect-ratio: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; } /* V3.3.6 三：正方块 */
+.vp-episodes .ep-grid .ep-btn { aspect-ratio: 1; min-height: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; } /* V3.3.6 三：正方块 */
 .vp-episodes .ep-grid .ep-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 .vp-desc { font-size: 13px; line-height: 1.7; color: var(--muted); margin: 0; }
 
 /* 弹幕 / 字幕 / 投屏标记 */
 .danmaku-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; }
 .danmaku-layer .dm { position: absolute; left: 100%; white-space: nowrap; color: #fff; font-size: 18px; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,.9); animation-name: dm-move; animation-timing-function: linear; animation-fill-mode: forwards; }
+/* V3.3.7 六：弹幕描边开关（outline=false 时关掉，随 danmakuStyle.outline 走） */
+.danmaku-layer .dm.dm-outline { -webkit-text-stroke: 0.6px rgba(0,0,0,.85); }
 @keyframes dm-move { from { transform: translateX(0); } to { transform: translateX(-140vw); } }
 .vp-subtitle { position: absolute; left: 0; right: 0; bottom: 88px; z-index: 5; text-align: center; color: #fff; font-size: 17px; text-shadow: 0 2px 4px rgba(0,0,0,.9); padding: 0 16px; pointer-events: none; }
 .vp-cast-flag { position: absolute; left: 14px; bottom: 14px; z-index: 5; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 8px; }
@@ -512,8 +516,9 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-error p { margin: 0; font-size: 12px; line-height: 1.5; color: #fff; }
 .vp-error .mini { margin-top: 10px; width: 58px; height: 58px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 13px; display: grid; place-items: center; cursor: pointer; flex: none; }
 .vp-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: vpspin .8s linear infinite; }
-/* T3：缓冲转圈与播放键原地合体 —— 转圈尺寸跟大播放按钮一致的 40px */
-.big-btn .vp-spinner, .center button.main .vp-spinner { width: 40px; height: 40px; border-width: 4px; }
+/* T3：缓冲转圈与播放键原地合体。V3.3.7 一：竖屏大钮缩到 56px，转圈同步 40px → 30px（横屏 main 76px 保持 40px） */
+.big-btn .vp-spinner { width: 30px; height: 30px; border-width: 3px; }
+.center button.main .vp-spinner { width: 40px; height: 40px; border-width: 4px; }
 @keyframes vpspin { to { transform: rotate(360deg); } }
 
 /* 播放器设置抽屉（底部弹出） */
@@ -546,10 +551,14 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .video-player.landscape .vp-bottom.landscape-bottom { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
 
 /* 横屏：左右两侧浮层按钮 */
-.vp-side { position: absolute; top: 50%; transform: translateY(-50%); z-index: 6; display: flex; flex-direction: column; gap: 18px; }
-.vp-side-left { left: 16px; }
-.vp-side-right { right: 16px; }
-.vp-side .side-btn { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.15); color: #fff; display: grid; place-items: center; cursor: pointer; transition: .15s; }
+/* V3.3.7 八：侧栏从「垂直居中」改为「顶栏正下方竖排」——首枚落在返回键/小锁的同一条竖线上；
+   left/right 用 14px 与 .player-card .top 的 padding 对齐，保证上下两枚圆心完全重合在同一垂直线。 */
+.vp-side { position: absolute; top: 64px; z-index: 6; display: flex; flex-direction: column; gap: 12px; }
+.vp-side-left { left: 14px; }
+.vp-side-right { right: 14px; }
+/* V3.3.7 八：44px 框 + 16px 图标 → 与返回/小锁完全同规格 36px 框 + 22px 图标 + 同款深底白描边 */
+.vp-side .side-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; display: grid; place-items: center; cursor: pointer; transition: .15s; padding: 0; }
+.vp-side .side-btn svg { width: 22px; height: 22px; }
 .vp-side .side-btn:hover { background: rgba(0,0,0,.6); }
 .vp-side .side-btn.on { color: var(--accent); border-color: var(--accent); }
 .vp-side .side-btn:disabled { opacity: .4; cursor: not-allowed; }
@@ -562,7 +571,8 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
    原 .player-card.land .vp-panel 是后代选择器，而面板在 DOM 里是 .player-card 的兄弟节点，
    选择器永不命中、面板被 z-index:100 播放层盖住。改为独立遮罩+抽屉结构，脱离嵌套依赖。 */
 .vp-drawer-mask { position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
-.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: linear-gradient(180deg, #1b2330 0%, #141b26 100%); color: #fff; border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
+/* V3.3.7 六：蓝灰渐变 → 与选集/设置抽屉一致用 var(--panel) */
+.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: var(--panel); color: #fff; border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
 .vp-sub-drawer::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); margin: 4px auto 12px; }
 .player-card.land .vp-sub-drawer::before { display: none; }
 .vp-panel-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; font-weight: 700; margin: 2px 2px 14px; color: #fff; }
@@ -1489,8 +1499,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top .back svg, .player-card .top .acts .icon svg { width: 22px; height: 22px; }
 /* 点播竖屏底栏按钮（T6/T7 已放大到 44px）→ 图标 24px */
 .player-card .bottom .play-ico svg, .player-card .bottom .land svg { width: 24px; height: 24px; }
-/* 点播竖屏中央大钮 74px → 图标 40px */
-.big-btn svg { width: 40px !important; height: 40px !important; }
+/* V3.3.7 一：点播竖屏中央大钮 56px → 图标 30px */
+.big-btn svg { width: 30px !important; height: 30px !important; }
 /* 点播横屏顶栏/侧栏圆钮 → 图标 24px */
 .landscape .land-top .back svg, .landscape .side button svg { width: 24px; height: 24px; }
 /* 点播横屏中央：小钮 58px → 32px；大钮 76px → 44px */
@@ -1519,14 +1529,23 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
-.big-btn { width: 74px !important; height: 74px !important; min-width: 74px !important; min-height: 74px !important; max-width: 74px !important; max-height: 74px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.68); color: var(--accent); display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
+/* V3.3.7 一：竖屏中央播放键 74px → 56px（横屏 main 76px 不变） */
+.big-btn { width: 56px !important; height: 56px !important; min-width: 56px !important; min-height: 56px !important; max-width: 56px !important; max-height: 56px !important; flex: none !important; border-radius: 50% !important; border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); background: rgba(0,0,0,.68); color: var(--accent); display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
 /* v3.1.12：竖屏底栏改纵向——进度条一行 + 时间一行；时间行两端对齐进度条（左=当前 右=总时长） */
 .player-card:not(.land) .bottom { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 16px; }
-.player-card:not(.land) .bottom .bottom-row { display: flex; align-items: center; gap: 10px; }
+/* V3.3.7 二：gap 10 → 8，与时间数字两侧间距统一 */
+.player-card:not(.land) .bottom .bottom-row { display: flex; align-items: center; gap: 8px; }
 /* T6：底栏播放/暂停放大到 44px 圆钮（原无尺寸） */
 .player-card .bottom .play-ico { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; cursor: pointer; flex: 0 0 auto; }
-.player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: hidden; }
+/* V3.3.7 十：overflow:hidden 会把手柄圆点裁掉一半 → 改 visible（fill/buffered 自带圆角，不受影响） */
+.player-card .bottom .bar { flex: 1; height: 3px; background: rgba(255,255,255,.15); border-radius: 3px; position: relative; overflow: visible; }
+/* V3.3.7 十：播放位置圆点（竖屏 12px） */
+.player-card .bottom .bar .knob {
+  position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--accent); border: 2px solid #fff; transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0,0,0,.5); z-index: 3; pointer-events: none;
+}
 /* T4：已缓冲进度（浅色），层级介于轨道与已播放之间 */
 .player-card .bottom .bar .buffered, .landscape .bottom .prow .bar .buffered {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,255,255,.32); border-radius: 3px; z-index: 1;
@@ -1534,7 +1553,13 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .bottom .bar .fill, .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 2; }
 .player-card .bottom .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 /* ⑬ 竖屏进度条左右时间（历史遗留规则，.t 现由下方 .times 承载） */
-.player-card .bottom .t { font-size: 12px; color: #fff; min-width: 54px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+/* V3.3.7 二：min-width 54px 是「进度条左端与数字之间凭空空 20px」的根因——
+   「12:34」实测仅 ~33px，剩余 21px 全成空白。改为按内容宽（4ch，够放 M:SS，
+   配合 tabular-nums 时间跳动不抖动），cur 左对齐贴最左、dur 右对齐贴横屏键，
+   两侧与进度条的间距均由 bottom-row 的 gap:8px 统一提供。 */
+.player-card .bottom .t { font-size: 12px; color: #fff; min-width: 4ch; flex: 0 0 auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.player-card .bottom .t.cur { text-align: left; }
+.player-card .bottom .t.dur { text-align: right; }
 /* ⑬ 竖屏：当前/总时长独立成行，排在进度条下方；两端对齐进度条（左=当前 右=总时长）。
    左右 padding 54px = 播放/横屏钮 44px + 间距 10px，与进度条两端精确对齐。 */
 .player-card .overlay .times {
@@ -1558,7 +1583,8 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
    标题 / 评分 / 收藏 / 标签 / 四大按钮 / 线路 / 选集 / 简介整片同色，消除「介绍卡片跟下面有割裂」 */
 /* V3.3.6 八：详情卡重排——左封面 + 右栏 flex column space-between 与封面等高；
    标题置顶 / 评分第二 / 年份·导演·演员居中截断 / 加入收藏贴底 */
-.info-card { margin: 0 16px 10px; background: transparent; border-radius: 0; padding: 0; display: flex; gap: 14px; align-items: stretch; }
+/* V3.3.7 三：播放窗（16:9 黑窗）与下方封面之间加 11px 呼吸，此前 margin-top:0 贴死 */
+.info-card { margin: 11px 16px 10px; background: transparent; border-radius: 0; padding: 0; display: flex; gap: 14px; align-items: stretch; }
 /* V3.3.5 A1：relative 防 ProxiedImg 占位块逃逸铺满 */
 .info-poster { position: relative; width: 132px; height: 176px; border-radius: 14px; background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
 .info-poster img { width: 100%; height: 100%; object-fit: cover; }
@@ -1567,10 +1593,14 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .info-score { font-size: 26px; font-weight: 800; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; }
 .stars { font-size: 14px; color: var(--accent); letter-spacing: 2px; }
 .stars .empty { color: var(--dim); }
-.info-meta { font-size: 13px; color: var(--muted); line-height: 1.6; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.info-meta .label { color: color-mix(in srgb, var(--muted) 70%, #fff); margin-right: 3px; }
+/* V3.3.7 四：年份/导演/主演改回竖排（原先是一行连排 + 2 行截断，与设计稿不符），
+   每行一条 .row，单行超长末尾省略号。 */
+.info-meta { font-size: 12.5px; color: var(--muted); line-height: 1.65; display: flex; flex-direction: column; overflow: hidden; }
+.info-meta .row { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info-meta .label { color: color-mix(in srgb, var(--muted) 70%, #fff); margin-right: 4px; }
 /* V3.3.6 八：加入收藏——去红心，纯文字居中；点击变「已收藏」（.on） */
-.fav-btn { background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 9px 14px; border-radius: 12px; font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+/* V3.3.7 四：收藏改胶囊钮。此前缺 align-self，被竖向 flex 拉伸成通栏大按钮 */
+.fav-btn { align-self: flex-start; background: transparent; border: 1px solid var(--accent); color: var(--accent); padding: 8px 24px; border-radius: 999px; font-size: 13px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .fav-btn.on { background: var(--accent); color: #04201a; border-color: var(--accent); }
 
 /* V3.3.6 八·二：标签行改为子站指示 [logo/六边形] │ [子站名] */
@@ -1599,7 +1629,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .line-row button { white-space: nowrap; background: var(--panel2); border: 1px solid var(--border); color: var(--muted); padding: 8px 16px; border-radius: 999px; font-size: 13px; cursor: pointer; }
 .line-row button.active { background: var(--accent); color: #04201a; border-color: var(--accent); font-weight: 600; }
 .ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.ep-grid button { aspect-ratio: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid button { aspect-ratio: 1; min-height: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font-size: 14px; display: grid; place-items: center; cursor: pointer; }
 .ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
 .ep-grid button.locked { color: var(--dim); }
 .intro { margin: 0 16px 30px; }
@@ -1658,11 +1688,23 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .center button.main { width: 76px !important; height: 76px !important; min-width: 76px !important; min-height: 76px !important; max-width: 76px !important; max-height: 76px !important; aspect-ratio: 1 !important; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .landscape .bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 14px 16px 8px; background: linear-gradient(transparent, rgba(0,0,0,.7)); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-.landscape .bottom .prow { display: flex; align-items: center; gap: 10px; }
+/* V3.3.7 二：gap 10 → 8，与竖屏一致 */
+.landscape .bottom .prow { display: flex; align-items: center; gap: 8px; }
 /* L9：横屏底栏播放键放大到 44px 圆钮（原无尺寸） */
 .landscape .bottom .prow .pi { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; cursor: pointer; flex: 0 0 auto; }
-.landscape .bottom .prow .t { font-size: 12px; color: #fff; min-width: 44px; flex: 0 0 auto; font-variant-numeric: tabular-nums; }
-.landscape .bottom .prow .bar { flex: 1; height: 4px; background: rgba(255,255,255,.3); border-radius: 3px; position: relative; overflow: hidden; }
+/* V3.3.7 二：min-width 44px → 4ch（够放最短的 M:SS，容器基本等于文字宽）。
+   横屏结构 [暂停键][当前][进度条][总时长][旋转键]：
+   cur 左对齐贴暂停键、dur 右对齐贴旋转键，两处间距都等于 gap:8px，左右完全对称。 */
+.landscape .bottom .prow .t { font-size: 12px; color: #fff; min-width: 4ch; flex: 0 0 auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.landscape .bottom .prow .t:first-of-type { text-align: left; }
+.landscape .bottom .prow .t:last-of-type { text-align: right; }
+/* V3.3.7 十：overflow:hidden → visible（同竖屏）；圆点横屏 14px（底栏更高，视觉等价） */
+.landscape .bottom .prow .bar { flex: 1; height: 4px; background: rgba(255,255,255,.3); border-radius: 3px; position: relative; overflow: visible; }
+.landscape .bottom .prow .bar .knob {
+  position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--accent); border: 2px solid #fff; transform: translate(-50%, -50%);
+  box-shadow: 0 1px 5px rgba(0,0,0,.55); z-index: 3; pointer-events: none;
+}
 .landscape .bottom .prow .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; }
 /* L10：横屏底栏横屏键 34→44px */
 .landscape .bottom .prow .land { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; cursor: pointer; flex: 0 0 auto; }
@@ -1791,7 +1833,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .ep-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 15px; font-weight: 700; color: #fff; }
 .ep-toggle { font-size: 13px; color: var(--accent); cursor: pointer; }
 .ep-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-.ep-grid button { aspect-ratio: 1; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
+.ep-grid button { aspect-ratio: 1; min-height: 0; background: var(--panel2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 13px; display: grid; place-items: center; cursor: pointer; }
 .ep-grid button.active { background: var(--accent); color: #04201a; font-weight: 700; border-color: var(--accent); }
 .ep-grid button.locked { color: var(--dim); }
 

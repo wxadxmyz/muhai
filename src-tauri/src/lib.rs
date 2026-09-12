@@ -373,6 +373,21 @@ async fn clear_webview_cache(_app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// V3.3.7 七：由图片 URL 推出同域 Referer（scheme://host/）。
+/// 多数图床的防盗链只校验 Referer 是否同域，用图片自己站点的根域最通用。
+/// 解析失败时退回旧的固定值，保证行为不劣化。
+fn image_referer(url: &str) -> String {
+    let mut parts = url.splitn(2, "://");
+    let scheme = parts.next().unwrap_or("https");
+    if let Some(rest) = parts.next() {
+        let host = rest.split('/').next().unwrap_or("").split('?').next().unwrap_or("");
+        if !host.is_empty() {
+            return format!("{}://{}/", scheme, host);
+        }
+    }
+    "https://cj.lziapi.com/".to_string()
+}
+
 // v2.7.0 图片代理：CMS 源（如量子）图床对 webview 的 Chrome UA 可能拒防盗链，
 // 用 okhttp UA 拉图后返 base64 dataURL，前端 <img> 直接用 dataURL 显示，绕过
 // webview CORS/防盗链/UA 检测。
@@ -395,7 +410,10 @@ async fn fetchimage(url: String) -> Result<String, String> {
         req = req
             .header("User-Agent", "okhttp/4.10.0")
             .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-            .header("Referer", "https://cj.lziapi.com/");
+            // V3.3.7 七：Referer 由「固定写死 cj.lziapi.com」改为「跟随图片自身域名」。
+            // 根因：多数图床只校验 Referer 是否同域，跨域 Referer 一律 403 ——
+            // 这正是 LZ 系等第三方图床「代理 + webview 原生两级加载都失败、只剩空白卡」的原因。
+            .header("Referer", image_referer(&url));
     }
     let resp = req
         .send()

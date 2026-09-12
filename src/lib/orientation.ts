@@ -53,27 +53,41 @@ function ensureVerifyListeners() {
   window.addEventListener('resize', onChanged);
 }
 
-// V3.3.4：校验重试链代际 token——requestOrientation 每次新调用作废旧链。
-// 场景：横屏校验链还在重试时用户退出播放页（发 portrait），旧链不知情，
-// 之后每 400ms 继续重发 landscape 指令，把屏幕又翻回横屏（残留重试翻屏 bug）。
+// 是否 Android 环境：只有 Android 才需要（也才能）走原生方向指令。
+// 桌面端/浏览器直接放行——否则点横屏会去等一个永远不存在的桥，白等 12 秒。
+function isAndroidEnv(): boolean {
+  try {
+    return /Android/i.test(navigator.userAgent);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * V3.3.7 十一：校验重试链代际 token——requestOrientation 每次新调用作废旧链。
+ * 场景：横屏校验链还在重试时用户退出播放页（发 portrait），旧链不知情，
+ * 之后每 400ms 继续重发 landscape 指令，把屏幕又翻回横屏（残留重试翻屏 bug）。
+ */
 let verifyGen = 0;
 
 /**
- * Q2/Q3：发完指令后校验结果，没转过来就重试；重试耗尽仍失败 → toast 提示（桥可能没注入）。
- * CSS 铺满（.player-card.land / .live-video.fs）始终保证画面是横的，所以即便原生没响应也只是状态栏方向不变。
+ * Q2/Q3：发完指令后校验结果，没转过来就重试；重试耗尽仍失败 → 通过 onResult(false) 通知调用方。
+ * onResult 是 V3.3.7 十一 新增：让「点横屏键」这一侧能知道到底转没转成功，
+ * 从而做到「没转成功就不切横屏 UI」，彻底消灭「竖屏放大」的假横屏状态。
  */
-function verifyAndRetry(ori: string, attempt: number, gen: number) {
-  if (ori === 'sensor') return; // sensor 不校验
+function verifyAndRetry(ori: string, attempt: number, gen: number, onResult?: (ok: boolean) => void) {
+  if (ori === 'sensor') { onResult?.(true); return; } // sensor 不校验（交给系统）
   ensureVerifyListeners();
   window.setTimeout(() => {
     if (gen !== verifyGen) return; // 已有更新的方向请求，本链作废，不再重发指令
-    if (matches(ori)) return; // 已到位
+    if (matches(ori)) { onResult?.(true); return; } // 已到位
     if (attempt < VERIFY_MAX_RETRY) {
       callBridge(ori);
-      verifyAndRetry(ori, attempt + 1, gen);
+      verifyAndRetry(ori, attempt + 1, gen, onResult);
     } else {
-      // 多次重试仍失败：CSS 铺满已保证画面横的，仅状态栏/导航栏方向不对 → 提示用户
+      // 多次重试仍失败：桥活着但系统没转 → 提示用户检查系统设置（调用方只做回退，不再重复提示）
       toast('横屏切换失败，请检查系统是否允许旋转');
+      onResult?.(false); // 重试耗尽：明确告知失败，由调用方决定回退策略
     }
   }, VERIFY_DELAY_MS);
 }
@@ -89,12 +103,16 @@ let pendingWait: number | null = null;
  */
 export function requestOrientation(
   ori: 'landscape' | 'portrait' | 'sensor',
-  opts?: { silent?: boolean }
+  opts?: { silent?: boolean; onResult?: (ok: boolean) => void }
 ) {
   // portrait/sensor（进入页面/清理类调用）一律静默；landscape 是用户主动要的，失败要提示。
   const silent = opts?.silent || ori === 'portrait' || ori === 'sensor';
+  const onResult = opts?.onResult;
+  // V3.3.7 十一：非 Android（桌面端/浏览器）没有原生方向这回事，直接放行，
+  // 由调用方切 CSS 全屏即可，绝不能去等一个永远不会出现的桥。
+  if (!isAndroidEnv()) { onResult?.(true); return; }
   const myGen = ++verifyGen; // V3.3.4：作废之前所有校验链（防止残留链把方向翻回去）
-  const fire = () => { callBridge(ori); verifyAndRetry(ori, 1, myGen); };
+  const fire = () => { callBridge(ori); verifyAndRetry(ori, 1, myGen, onResult); };
   if (pendingWait !== null) {
     window.clearInterval(pendingWait);
     pendingWait = null;
@@ -109,6 +127,7 @@ export function requestOrientation(
       fire();
     } else if (waited >= BRIDGE_WAIT_MS) {
       if (pendingWait !== null) { window.clearInterval(pendingWait); pendingWait = null; }
+      onResult?.(false); // V3.3.7 十一：桥始终没来 → 明确失败，调用方不切横屏 UI
       // 仅在用户主动要横屏（landscape）且桥确实没注入时才提示；清理类调用静默。
       if (!silent && ori === 'landscape') {
         toast('旋转服务未就绪，请退出播放页重新进入后再点横屏'); // V3.3.0 #7：给出可操作的恢复路径

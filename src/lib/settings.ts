@@ -13,7 +13,10 @@ export interface AppSettings {
   notifyDownload: boolean; // 下载完成系统通知（桌面端 Tauri 通知插件）
   playbackRate: number; // 倍速记忆（0.5~2.0）
   skipByItem: Record<string, { intro: number; outro: number }>; // 按影视记忆的跳过片头/片尾（秒）
-  subtitleStyle: { size: number; color: string; position: 'bottom' | 'top'; outline: boolean; bg: boolean }; // 字幕样式（影视）
+  subtitleStyle: { size: number; color: string; position: 'bottom' | 'top'; outline: boolean; bg: boolean }; // 外挂字幕样式（影视，仅片源自带 SRT/VTT 时可见）
+  // V3.3.7 六：弹幕样式——此前「字幕样式」面板实际控制的是外挂字幕，而用户日常看到的是弹幕，
+  // 面板改名「弹幕样式」后这些字段真正作用到弹幕文字（.dm）。
+  danmakuStyle: { size: number; color: string; opacity: number; speed: number; area: number; outline: boolean };
   // v1.2.1 新增
   disclaimerAccepted: boolean; // 是否已同意免责声明（首次启动）
   darkMode: boolean; // 深色模式
@@ -52,6 +55,8 @@ const DEFAULTS: AppSettings = {
   playbackRate: 1,
   skipByItem: {},
   subtitleStyle: { size: 24, color: '#ffffff', position: 'bottom', outline: true, bg: false },
+  // size 弹幕字号 px；opacity 不透明度 %；speed 飘屏速度 %（越小越慢）；area 显示区域高度 %（50 = 上半屏）
+  danmakuStyle: { size: 18, color: '#ffffff', opacity: 100, speed: 100, area: 50, outline: true },
   disclaimerAccepted: false,
   darkMode: true,
   themeColor: undefined,

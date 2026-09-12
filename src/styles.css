@@ -43,9 +43,13 @@ body {
 .sm { font-size: 12px; }
 button { font-family: inherit; }
 
-/* 可访问性：键盘焦点清晰可见 */
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
-button:focus:not(:focus-visible) { outline: none; }
+/* V3.4.4 #3：删除全局 :focus-visible 蓝色焦点框。
+   原规则会让所有 button / input / a 在点击后套一圈 2px --accent 描边（Android WebView 尤其明显），
+   对标影视仓：移动端 App 没有键盘 Tab 导航需求，统一去掉，点哪都不留框。
+   若将来需要键盘无障碍，再改为「仅在 :focus-visible 且检测到键盘输入时」显示。 */
+:focus-visible { outline: none; }
+button:focus, button:focus-visible { outline: none; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible { outline: none; }
 
 /* ============ 布局 ============ */
 .app { display: flex; height: 100vh; }
@@ -204,7 +208,8 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ⑭ 去掉 max()：卓易通 WebView 上 max() 失效会拖垮整条规则。
    calc(var(--sat) - 22px) 在 --sat < 22px 时为负 → padding 负值非法 → 整条规则被丢弃 = 0，
    效果与 max(0px, ...) 一致，且兼容性更好。 */
-.view.library .tabs { padding-top: calc(0px + max(0px, calc(var(--sat) - 37px))); }
+/* V3.4.4 #7：同 .home-top —— 抵消 .main 那层 --sat，避免安全区重复计算 */
+.view.library .tabs { margin-top: calc(7px - var(--sat)); padding-top: calc(var(--sat) - 4px); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -251,7 +256,8 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ============ 设置页 · iOS 风分组卡片（两个 App 共用）============ */
 /* A3：设置页顶部预留通知栏安全区（补齐 --sat 与 .main 22px 的差值） */
 /* ⑭ 同上：拆开写，避免 max() 失效时把左右/底部 padding 一起拖没 */
-.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: calc(12px + max(0px, calc(var(--sat) - 22px))) 2px 8px; }
+/* V3.4.4 #7：设置页非 sticky，直接去掉多算的那一层 --sat 即可 */
+.settings-scroll { display: flex; flex-direction: column; gap: 18px; padding: 10px 2px 8px; }
 /* v3.2.1 ⑩：播放设置子页（SubPage 内）顶部去空白，首个开关贴近标题 */
 .fullpage-body .settings-scroll { padding-top: 4px; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
@@ -587,6 +593,13 @@ button.fav, .fav { color: var(--danger) !important; }
 .vp-sub-drawer input[type="color"] { width: 44px; height: 30px; border: none; border-radius: 8px; background: none; cursor: pointer; padding: 0; }
 /* 弹幕/字幕滑动条：精确对齐播放页进度条（.vp-progress）—— 轨道 4px / 圆点 13px / 白描边 2px / 阴影同款；
    背景保留蓝色「已选填充」渐变以显示当前值位置（播放页进度条由别处画已播色，此处用渐变更直观）。 */
+/* V3.4.4 #1：弹幕/字幕设置滑动条（RangeBar）—— 与播放页进度条同规格：
+   轨道 3px / 圆角 3px / --accent 填充 / 12px 白描边圆点（absolute，不占高度）。
+   取代原生 input[type=range]（WebView 里轨道粗细不可控，实测默认 16px）。
+   轨道底色用 color-mix 跟随 --text，浅色/深色主题都能看清（播放页那条在纯黑视频上，故用白色半透明）。 */
+.dm-bar { position: relative; width: 100%; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--text) 16%, transparent); overflow: visible; cursor: pointer; }
+.dm-bar .fill { position: absolute; left: 0; top: 0; bottom: 0; z-index: 2; background: var(--accent); border-radius: 3px; }
+.dm-bar .knob { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0,0,0,.5); z-index: 3; pointer-events: none; }
 .dm-row { margin: 10px 2px 4px; }
 .dm-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .dm-row-head .name { font-size: 14px; color: var(--text); text-align: left; }
@@ -712,7 +725,7 @@ button.fav, .fav { color: var(--danger) !important; }
      导致真机左右各空 28px、顶部安全区失效、直播页整页可滚。这里用更高特异性(0,2,1)抢回覆盖。 */
   /* v3.2.1 ①②③：顶栏整体上移约 4mm（15px）。主页 .home-top / 历史收藏 .tabs / 设置 .settings-scroll 共用此容器，
      统一把 .main 顶部 padding 从 8+sat 减到 sat-7（≈15px），三处标题同步上移，目标约 37/33/35px（sat=26 基准）。 */
-  .app .main:not(.main-live) { padding: calc(var(--sat) - 7px) 14px calc(56px + var(--sab) + 80px); }
+  .app .main:not(.main-live) { padding: calc(var(--sat) - 7px) 14px calc(50px + var(--sab) + 80px); }
   /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
   .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
   /* A8（v3.1.12 重做）：不再用 sticky::before 挡板（会留 14px 缝隙、且把 home-top 双重下推成「太靠下」）。
@@ -742,8 +755,11 @@ button.fav, .fav { color: var(--danger) !important; }
   /* 底部 Tab 导航 */
   .bottom-nav {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); position: fixed; left: 0; bottom: 0; z-index: 70;
-    width: 100vw; box-sizing: border-box; height: calc(56px + var(--sab)); padding-bottom: var(--sab);
-    background: var(--panel); border-top: 1px solid var(--border);
+    width: 100vw; box-sizing: border-box; height: calc(50px + var(--sab)); padding-bottom: var(--sab);
+    /* V3.4.4 #8：只有上方 50px 用 --panel（真正的 Tab 条），下方 --sab 避让区改用 --bg，
+       与系统导航栏染色（清单 #5）连成一片 → 视觉上 Tab 栏就是 50px，底部不再拖一块白/灰。 */
+    background: linear-gradient(var(--panel) 0, var(--panel) 50px, var(--bg) 50px, var(--bg) 100%);
+    border-top: 1px solid var(--border);
     box-shadow: 0 -4px 16px rgba(0,0,0,.25);
   }
   .bottom-nav button {
@@ -758,8 +774,8 @@ button.fav, .fav { color: var(--danger) !important; }
   .bottom-nav button:active { filter: brightness(1.25); }
 
   /* 音乐播放条 / 影视迷你条 上移到底部导航之上 */
-  .player.mini { bottom: calc(56px + var(--sab)); }
-  .video-mini-bar { bottom: calc(56px + var(--sab)); }
+  .player.mini { bottom: calc(50px + var(--sab)); }
+  .video-mini-bar { bottom: calc(50px + var(--sab)); }
 
   /* 双栏转单列 */
   .detail-grid { flex-direction: column; align-items: flex-start; margin: 12px 0 18px; }
@@ -789,8 +805,8 @@ button.fav, .fav { color: var(--danger) !important; }
   .modal-debug { width: auto; }
 
   /* toast / 桌面歌词 上移，避免被底部导航遮挡 */
-  .toast-wrap { bottom: calc(56px + var(--sab) + 12px); }
-  .desktop-lyric { bottom: calc(56px + var(--sab) + 72px); }
+  .toast-wrap { bottom: calc(50px + var(--sab) + 12px); }
+  .desktop-lyric { bottom: calc(50px + var(--sab) + 72px); }
   .fs-queue { width: 86vw; }
 
   /* 手机端才显示「调试」入口 */
@@ -803,7 +819,11 @@ button.fav, .fav { color: var(--danger) !important; }
    但 max() 在卓易通 WebView 上会整条失效（同 --sat 的坑），这里一并去掉：
    初始位置的安全区由 .main 的 padding-top（calc(14px + var(--sat))）提供，
    吸顶后顶栏贴在 header 之下，安全区由 header 承担，无需重复留白。 */
-.home-top.v25{position:sticky;top:0;z-index:60;background:var(--bg);display:flex;align-items:center;gap:10px;padding:calc(var(--sat) - 23px) 14px 10px;}
+/* V3.4.4 #7：--sat 原来被算了两遍（.main 的 sat-7 + 本元素自身的 sat-23），顶栏离通知栏白白多出一截。
+   改法：负 margin 抵消 .main 那一层，padding 直接给满 sat+6 → logo 距通知栏底固定 6px；
+   且 sticky 吸顶/非吸顶两态位置一致（旧写法做不到，吸顶后会往里缩）。 */
+.home-top.v25{position:sticky;top:0;z-index:60;background:var(--bg);display:flex;align-items:center;gap:10px;
+  margin-top:calc(7px - var(--sat));padding:calc(var(--sat) + 6px) 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -1433,7 +1453,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ===== v2.5.1 首页站点选择面板（纯文字列表，不内置资源） ===== */
 .station-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:flex-end;}
-.station-sheet{width:100%;background:var(--panel);border-radius:18px 18px 0 0;padding:8px 16px calc(56px + var(--sab) + 22px);max-height:72%;display:flex;flex-direction:column;}
+.station-sheet{width:100%;background:var(--panel);border-radius:18px 18px 0 0;padding:8px 16px calc(50px + var(--sab) + 22px);max-height:72%;display:flex;flex-direction:column;}
 .station-head{display:flex;align-items:center;justify-content:space-between;padding:10px 2px 12px;font-size:16px;font-weight:800;color:var(--text);}
 .station-close{width:30px;height:30px;border-radius:50%;border:none;background:var(--panel2);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
 .station-list{overflow-y:auto;display:flex;flex-direction:column;gap:8px;}
@@ -1594,7 +1614,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .player-card .bottom .land { width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.6); color: #fff; border: none; cursor: pointer; flex: 0 0 auto; }
 
 /* 竖屏信息区 */
-.vp-body { padding-bottom: 30px; }
+/* V3.4.4 #6：底部留白改为「24px + 系统导航栏避让区（--sab 已含 12px 兜底）」。
+   此前写死 30px，在 edge-to-edge 下会被系统导航栏 scrim 压住最后一行文字；
+   现在至少 36px，导航栏高的机型自动再抬高，内容不再钻到灰条下面。 */
+.vp-body { padding-bottom: calc(24px + var(--sab, 12px)); }
 /* O5：去掉底色与圆角 —— 它是播放小窗下方唯一的色块，去掉后
    标题 / 评分 / 收藏 / 标签 / 四大按钮 / 线路 / 选集 / 简介整片同色，消除「介绍卡片跟下面有割裂」 */
 /* V3.3.6 八：详情卡重排——左封面 + 右栏 flex column space-between 与封面等高；

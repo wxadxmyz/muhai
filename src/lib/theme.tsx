@@ -189,10 +189,39 @@ interface Ctx {
 }
 const ThemeCtx = createContext<Ctx>({ skin: SKINS[0], selectedId: 'night', isAuto: false, systemMode: 'dark', setSkinId: () => {} });
 
+/**
+ * V3.4.4 #5：把主题背景色同步给 Android 系统导航栏。
+ * App 走 edge-to-edge 后，系统会在导航栏区域叠一层半透明灰罩（用户口中的「底下灰条」）。
+ * 让导航栏底色 = 主题 --bg，灰罩就与页面背景同色，视觉上消失。
+ * 注：Android 15 起系统强制 edge-to-edge 并废弃 navigationBarColor，该项在部分机型/版本上
+ * 可能不生效 —— 此时退化为「灰罩仍在但只压住纯背景区」，不影响可读性。
+ */
+function syncNavBar(skin: Skin) {
+  if (typeof window === 'undefined') return;
+  const bg = skin.vars['--bg'];
+  if (!bg) return;
+  const light = skin.mode === 'light';
+  const push = () => {
+    try {
+      const bridge = (window as any).MuHaiAndroid;
+      if (!bridge?.setNavBarColor) return false;
+      bridge.setNavBarColor(bg, light);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  // 桥由原生在 onStart/onResume 内重试注入，首帧可能还没挂上 —— 补两次重试
+  if (push()) return;
+  window.setTimeout(push, 300);
+  window.setTimeout(push, 1200);
+}
+
 function apply(skin: Skin) {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(skin.vars)) root.style.setProperty(k, v);
   root.style.colorScheme = skin.mode;
+  syncNavBar(skin);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

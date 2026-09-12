@@ -3,6 +3,9 @@ import { ReactNode, CSSProperties } from 'react';
 // 统一线性图标集（Lucide 风格，stroke=currentColor，随主题色与字号自适应）。
 // 用于替换界面原有 emoji，消除深色背景发虚、风格不统一的问题。
 
+// 齿轮 path：设置图标与 Tab「设置」共用（V3.4.4 抽出，避免重复一长串）
+const GEAR_PATH = 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z';
+
 const P: Record<string, ReactNode> = {
   home: <path d="M3 11.5 12 4l9 7.5" />,
   search: <><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>,
@@ -10,7 +13,7 @@ const P: Record<string, ReactNode> = {
   music: <><path d="M9 18V5l11-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="17" cy="16" r="3" /></>,
   library: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20" /></>,
   plug: <><path d="M9 2v6M15 2v6" /><path d="M7 8h10v3a5 5 0 0 1-10 0z" /><path d="M12 16v6" /></>,
-  settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d={GEAR_PATH} /></>,
   x: <path d="M6 6l12 12M18 6L6 18" />,
   heart: <path d="M12 21s-7-4.6-9.5-9A5 5 0 0 1 12 6a5 5 0 0 1 9.5 6c-2.5 4.4-9.5 9-9.5 9z" />,
   'heart-filled': <path d="M12 21s-7-4.6-9.5-9A5 5 0 0 1 12 6a5 5 0 0 1 9.5 6c-2.5 4.4-9.5 9-9.5 9z" fill="currentColor" />,
@@ -67,6 +70,14 @@ const P: Record<string, ReactNode> = {
   // 上一集 / 下一集（对齐设计文件 i-prev / i-next：竖线 + 三角）
   prev: <><path d="M19 5v14" /><path d="M5 12l9-7v14z" fill="currentColor" stroke="none" /></>,
   next: <><path d="M5 5v14" /><path d="M19 12l-9-7v14z" fill="currentColor" stroke="none" /></>,
+  // ===== V3.4.4：主页底部 Tab 专用图标（选定方案 D「双色调」）=====
+  // 独立命名 tab-*，不直接改 home / cast / library / settings ——
+  //   cast 在投屏浮层与 Live 页另有用途、library 是"书架"语义，改了会误伤别处。
+  // 风格：描边主体 + 局部填色（门 / 屏幕 / 表盘 / 齿轮圆心）。
+  'tab-home': <><path d="M4.7 10.1 12 4.1l7.3 6V19.3a1.2 1.2 0 0 1-1.2 1.2h-4.2v-5.5h-3.8v5.5H5.9a1.2 1.2 0 0 1-1.2-1.2z" /><path d="M10 14.2h4v6.3h-4z" fill="currentColor" stroke="none" /></>,
+  'tab-live': <><rect x="2.8" y="6.8" width="18.4" height="13.4" rx="2.2" /><path d="M6.4 10.4h11.2v6.2H6.4z" fill="currentColor" stroke="none" /><path d="M8.3 2.5 12 6.1l3.7-3.6" /></>,
+  'tab-history': <><path d="M3.9 12a8.1 8.1 0 1 0 2.3-5.7" /><path d="M3.9 3.6v4.7h4.7" /><circle cx="12" cy="12" r="4.8" fill="currentColor" stroke="none" opacity=".25" /><path d="M12 7.7v4.5l3.2 2" /></>,
+  'tab-settings': <><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="3" /><path d={GEAR_PATH} /></>,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof P;

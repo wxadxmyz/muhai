@@ -260,6 +260,27 @@ jobs:
                   _muhaiHealHandler.postDelayed(_muhaiHeal, 0)
               }
 
+              // ===== V3.4.4 #5：系统导航栏染色（消除用户口中的「底部灰条」）=====
+              // App 走 edge-to-edge 后，系统会在导航栏区域叠一层半透明灰罩；把导航栏底色设成
+              // 主题 --bg 后，灰罩与页面背景同色，视觉上消失。
+              // 诚实说明：Android 15 起系统强制 edge-to-edge 并废弃 navigationBarColor，
+              // 在部分机型/版本上可能不生效 —— 此时退化为「灰罩仍在但只压住纯背景区」，不影响可读性。
+              var _muhaiNavColor: Int? = null
+              var _muhaiNavLight: Boolean = false
+              fun _muhaiApplyNavBar() {
+                  val c = _muhaiNavColor ?: return
+                  try {
+                      window.navigationBarColor = c
+                      if (android.os.Build.VERSION.SDK_INT >= 26) {
+                          val decor = window.decorView
+                          val flag = android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                          decor.systemUiVisibility =
+                              if (_muhaiNavLight) decor.systemUiVisibility or flag
+                              else decor.systemUiVisibility and flag.inv()
+                      }
+                  } catch (e: Exception) { /* ignore */ }
+              }
+
               // V3.3.7 十一：给前端一个「桥是否真的活着」的自检入口。
               // 前端据此区分「还没绑上」和「绑上了但系统没转」，提示语不再一刀切。
               val MuHaiAndroid = object {
@@ -291,6 +312,17 @@ jobs:
                                       requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                                   }
                               }
+                          } catch (e: Exception) { /* ignore */ }
+                      }
+                  }
+                  // V3.4.4 #5：把主题背景色刷进系统导航栏（light 主题顺便把导航图标转深色）
+                  @android.webkit.JavascriptInterface
+                  fun setNavBarColor(color: String, lightBars: Boolean) {
+                      runOnUiThread {
+                          try {
+                              _muhaiNavColor = android.graphics.Color.parseColor(color)
+                              _muhaiNavLight = lightBars
+                              _muhaiApplyNavBar()
                           } catch (e: Exception) { /* ignore */ }
                       }
                   }
@@ -369,6 +401,8 @@ jobs:
                                       or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN)
                               } else {
                                   decor.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
+                                  // V3.4.4 #5：上面这句会清掉导航栏图标明暗标志，退出沉浸后按当前主题恢复一次
+                                  _muhaiApplyNavBar()
                               }
                           } catch (e: Exception) { /* ignore */ }
                       }

@@ -11,6 +11,8 @@ import { attachHls, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLev
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
 import { Icon } from '../components/Icon';
+// V3.4.4 #1：与播放页进度条同款的自定义滑动条，替换原生 input[type=range]
+import { RangeBar } from '../components/RangeBar';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { toast } from '../lib/toast';
 import { useSources } from '../store';
@@ -630,8 +632,18 @@ export function VideoPlayer({
     const dur = (v && isFinite(v.duration) && v.duration > 0 && v.duration !== Infinity ? v.duration : 0)
       || liveDur || state.duration || 0;
     if (!v || !outroSec || !dur || outroDone.current) return; // 设了片尾即跳，无需总开关
-    const remain = dur - v.currentTime;
-    if (remain <= outroSec && remain > 0.5) {
+    // ===== V3.4.4 #2：修正判定语义 —— outroSec 是「片尾开始的绝对时间点」，不是「片尾时长」=====
+    // 旧写法：remain = dur - currentTime; if (remain <= outroSec) …
+    //   等价于「currentTime >= dur - outroSec」，把时间点当成时长用了。
+    //   例：在 22:00（1320s）点击设片尾，下一集全长 23:00（1380s）→ 开播 60 秒就满足
+    //   remain=1320<=1320 而切集 —— 这就是「还没开始播放就又跳下一集」的连环跳根因。
+    // 新写法：直接比较播放位置是否到了记录的那个时间点，与你的原话完全一致：
+    //   「第一次点击记录时间 → 继续播 2 秒再跳；以后每集播到这个时间点就立马切下一集」。
+    const atOutro = v.currentTime >= outroSec && v.currentTime < dur - 0.3;
+    // 守卫：本集总时长不超过片尾点（这一集比片尾点还短）→ 不做判定，让它自然播完走 onEnded，
+    //   否则 currentTime 一上来就 >= outroSec 会立刻秒切，又一次连环跳。
+    const sane = outroSec < dur - 0.5;
+    if (atOutro && sane) {
       if (!outroTimer.current) {
         const firstSet = outroJustSet.current; // 仅首次设定那次等 2 秒，之后立即跳（300ms 给一帧渲染）
         const epAtArm = episodeIndex; // V3.4.3 #3：锁定时刻的集序号
@@ -1719,9 +1731,8 @@ export function VideoPlayer({
             </div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">字号</span><span className="val">{ds.size}px</span></div>
-              <input className="dm-range" type="range" min={12} max={40} step={1} value={ds.size}
-                style={{ '--p': ((ds.size - 12) / 28 * 100) + '%' } as React.CSSProperties}
-                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, size: Number(e.target.value) } })} />
+              <RangeBar min={12} max={40} step={1} value={ds.size}
+                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, size: v } })} />
             </div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">颜色</span>
@@ -1729,21 +1740,18 @@ export function VideoPlayer({
             </div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">不透明度</span><span className="val">{ds.opacity}%</span></div>
-              <input className="dm-range" type="range" min={20} max={100} step={5} value={ds.opacity}
-                style={{ '--p': ((ds.opacity - 20) / 80 * 100) + '%' } as React.CSSProperties}
-                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, opacity: Number(e.target.value) } })} />
+              <RangeBar min={20} max={100} step={5} value={ds.opacity}
+                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, opacity: v } })} />
             </div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">滚动速度</span><span className="val">{(ds.speed / 100).toFixed(1)}x</span></div>
-              <input className="dm-range" type="range" min={50} max={200} step={10} value={ds.speed}
-                style={{ '--p': ((ds.speed - 50) / 150 * 100) + '%' } as React.CSSProperties}
-                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, speed: Number(e.target.value) } })} />
+              <RangeBar min={50} max={200} step={10} value={ds.speed}
+                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, speed: v } })} />
             </div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">显示区域</span><span className="val">{ds.area}%</span></div>
-              <input className="dm-range" type="range" min={20} max={100} step={10} value={ds.area}
-                style={{ '--p': ((ds.area - 20) / 80 * 100) + '%' } as React.CSSProperties}
-                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, area: Number(e.target.value) } })} />
+              <RangeBar min={20} max={100} step={10} value={ds.area}
+                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, area: v } })} />
             </div>
             <div className="vp-panel-row">
               <label className="row"><input type="checkbox" checked={ds.outline} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, outline: e.target.checked } })} /> 描边</label>
@@ -1759,9 +1767,8 @@ export function VideoPlayer({
             <div className="vp-panel-head">外挂字幕样式</div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">字号</span><span className="val">{ss.size}px</span></div>
-              <input className="dm-range" type="range" min={14} max={48} step={1} value={ss.size}
-                style={{ '--p': ((ss.size - 14) / 34 * 100) + '%' } as React.CSSProperties}
-                onChange={(e) => updateSettings({ subtitleStyle: { ...ss, size: Number(e.target.value) } })} />
+              <RangeBar min={14} max={48} step={1} value={ss.size}
+                onChange={(v) => updateSettings({ subtitleStyle: { ...ss, size: v } })} />
             </div>
             <div className="dm-row">
               <div className="dm-row-head"><span className="name">颜色</span>

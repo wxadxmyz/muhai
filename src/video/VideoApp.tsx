@@ -377,25 +377,25 @@ export default function VideoApp() {
       <nav className="bottom-nav">
         <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>
           <span className="ico">
-            <Icon name="home" />
+            <Icon name="tab-home" />
           </span>
           <span>主页</span>
         </button>
         <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
           <span className="ico">
-            <Icon name="cast" />
+            <Icon name="tab-live" />
           </span>
           <span>直播</span>
         </button>
         <button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>
           <span className="ico">
-            <Icon name="library" />
+            <Icon name="tab-history" />
           </span>
           <span>历史</span>
         </button>
         <button className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>
           <span className="ico">
-            <Icon name="settings" />
+            <Icon name="tab-settings" />
           </span>
           <span>设置</span>
         </button>

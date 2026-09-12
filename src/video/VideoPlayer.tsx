@@ -212,6 +212,7 @@ export function VideoPlayer({
   const [pipMode, setPipMode] = useState(false); // ② 进入系统画中画（隐藏控件，纯视频）
 
   const introDone = useRef(false);
+  const introSoughtRef = useRef(false); // V3.4.2 #3：是否已真正对当前集发过片头 seek（区分「新集主动跳」与「旧集末尾残留数据误判」）
   const pendingIntro = useRef(false); // v3.1.12：是否已发出片头 seek，等待 onSeeked/onTimeUpdate 确认到达
   const loadTimer = useRef<number | undefined>(undefined);
   const lastTouchRef = useRef(0); // ③ 触摸结束后抑制随后合成的 click，避免移动端双击被抵消
@@ -541,8 +542,10 @@ export function VideoPlayer({
   //    视频不会自动回到新集起点。我们在本 effect 里手动 seek 到 startAt（或 0），保证片头/续播逻辑对齐。
   useEffect(() => {
     introDone.current = false;
+    introSoughtRef.current = false; // V3.4.2 #3：切集复位，等本集真正发 seek 后再允许确认
     pendingIntro.current = false;
     outroDone.current = false;
+    outroArmedRef.current = false; // V3.4.2 #4：切集复位，待本集 onLoadedMetadata 重新 arming
     outroJustSet.current = false; // ① 切集清空「片尾首次设定」标记
     clearOutroTimer();
     const v = videoRef.current;
@@ -584,8 +587,11 @@ export function VideoPlayer({
     // v3.2.3③：只要还没到片头点就补发 seek（含「换集后 effect 已预置 pendingIntro、但元数据刚就绪
     //   currentTime 还是 0」的情况——旧逻辑在 pendingIntro 为真时直接 return，导致第 2 集从头播、片头不跳）。
     //   已到达片头点（seek 完成 / 本就已在片头之后）则收尾确认并置位，保证只跳一次。
+    // V3.4.2 #3：切集瞬间 <video> 仍是旧集数据，旧集末尾 currentTime 远大于片头点，原逻辑会用「已到达」分支误置 introDone，
+    //   导致新集不再跳片头。改为：只有真正发过 seek（introSoughtRef）才允许确认，旧集残留数据（未发 seek）不会误置。
     if (v.currentTime < introSec) {
       pendingIntro.current = true;
+      introSoughtRef.current = true;
       player.seek(introSec);
       try { v.currentTime = introSec; } catch { /* ignore */ }
       if (v.currentTime >= introSec - 0.6) {
@@ -595,7 +601,7 @@ export function VideoPlayer({
       }
       return;
     }
-    if (pendingIntro.current && v.currentTime >= introSec - 0.6) {
+    if (introSoughtRef.current && v.currentTime >= introSec - 0.6) {
       introDone.current = true;
       pendingIntro.current = false;
       toast('已跳过片头');
@@ -605,12 +611,16 @@ export function VideoPlayer({
   // 片尾提前连播（⑥：去掉 autoPlay 前置条件，设了片尾秒数且播到片尾即切下一集）
   // ⑮ 用户设计：进入片尾区后，继续播放 2 秒再切下一集；下一集播到片尾时间点也继续切。
   const outroDone = useRef(false);
+  const outroArmedRef = useRef(false); // V3.4.2 #4：本集元数据已就绪才可判定片尾（刚切集、<video> 仍是旧集数据时禁止，避免秒切再下一集）
   const outroJustSet = useRef(false); // ① 点片尾设定那一次才「先播 2 秒再跳」，之后每次立即跳
   const outroTimer = useRef<number | undefined>(undefined);
   const clearOutroTimer = () => { if (outroTimer.current) { window.clearTimeout(outroTimer.current); outroTimer.current = undefined; } };
 
   const trySkipOutro = () => {
     const v = videoRef.current;
+    // V3.4.2 #4：本集元数据尚未就绪（刚切集、<video> 仍是旧集 currentTime/duration）时不判定片尾，
+    //     否则旧集末尾残留数据会算出极小 remain，秒切到再下一集。outroArmedRef 在新集 onLoadedMetadata 置 true。
+    if (!outroArmedRef.current) { clearOutroTimer(); return; }
     // C2：真实时长兜底优先用 <video> 实时时长（state.duration 偶发未就绪/滞后），再回退 liveDur / state.duration，
     //     保证跨集切换后片尾判定拿到的就是当前集的真实长度，避免「第 2 集片尾不跳」。
     const dur = (v && isFinite(v.duration) && v.duration > 0 && v.duration !== Infinity ? v.duration : 0)
@@ -1276,6 +1286,7 @@ export function VideoPlayer({
               player.setDuration(v.duration);
               if (v.videoWidth && v.videoHeight) setResText(`${v.videoWidth}x${v.videoHeight}`);
               tryApplyResume(); trySkipIntro(); // P3 + v3.2.1⑥：元数据就绪即尝试跳片头（解决第二集从头播）
+              outroArmedRef.current = true; // V3.4.2 #4：本集元数据就绪，允许片尾判定
             }}
             onDurationChange={(e) => {
               const v = e.target as HTMLVideoElement;
@@ -1481,7 +1492,9 @@ export function VideoPlayer({
                   {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
                   {/* V3.4.0：改走 openSubStyle —— 同时记录打开时刻，配合遮罩 400ms 守卫防「同手势秒关」。 */}
                   {/* V3.4.1：去掉 .on 高亮 —— 它是面板入口，不是状态开关，应和「设置」「选集」一样不变色。 */}
-                  <button className="tool" onClick={openSubStyle} onTouchStart={openSubStyle} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
+                  {/* V3.4.2 #2：去掉 disabled —— 「设置」按钮无 disabled，弹幕按钮有会因全局 button:disabled{opacity:.4} 变暗，与「设置」不一致。
+                      无弹幕时点了打开面板即可（面板内可提示本集暂无弹幕）。 */}
+                  <button className="tool" onClick={openSubStyle} onTouchStart={openSubStyle}><Icon name="message" size={15} /><span>弹幕</span></button>
                   <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
                   <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>

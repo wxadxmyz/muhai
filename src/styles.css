@@ -390,7 +390,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .icon.play { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; width: 44px; height: 44px; font-size: 16px; }
 .player-progress { display: flex; align-items: center; gap: 10px; flex: 1; }
 .player-progress .t, .vp-progress .t, .fs-progress .t { font-size: 12px; color: var(--muted); min-width: 38px; text-align: center; }
-input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor: pointer; }
+/* V3.4.2 #1：原全局规则会盖过 .dm-range 的 height（优先级更高），导致弹幕滑动条永远 4px、收细不生效。
+   收窄为只管音量条（.vol），不再波及弹幕/字幕面板的 .dm-range。 */
+.vol input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor: pointer; }
 .player-side { display: flex; align-items: center; gap: 8px; }
 .vol { display: flex; align-items: center; gap: 6px; }
 .vol input[type='range'] { width: 80px; }
@@ -581,15 +583,16 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
 .vp-sub-drawer > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--text); margin: 14px 2px 4px; }
 .vp-sub-drawer > label b { color: var(--accent); font-weight: 700; }
 .vp-sub-drawer input[type="color"] { width: 44px; height: 30px; border: none; border-radius: 8px; background: none; cursor: pointer; padding: 0; }
-/* 弹幕/字幕滑动条：与视频进度条同款（灰轨 + 蓝色已选填充 + 白描边圆点），文字左对齐 */
+/* 弹幕/字幕滑动条：精确对齐播放页进度条（.vp-progress）—— 轨道 4px / 圆点 13px / 白描边 2px / 阴影同款；
+   背景保留蓝色「已选填充」渐变以显示当前值位置（播放页进度条由别处画已播色，此处用渐变更直观）。 */
 .dm-row { margin: 10px 2px 4px; }
 .dm-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .dm-row-head .name { font-size: 14px; color: var(--text); text-align: left; }
 .dm-row-head .val { font-size: 13px; color: var(--accent); font-weight: 700; }
-.dm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; border-radius: 3px; outline: none; cursor: pointer;
+.dm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
   background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--p, 50%), rgba(255,255,255,.18) var(--p, 50%), rgba(255,255,255,.18) 100%); }
-.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); cursor: pointer; }
-.dm-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); cursor: pointer; }
+.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer; }
+.dm-range::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); cursor: pointer; }
 .dm-range::-moz-range-track { background: transparent; }
 .vp-panel-row { display: flex; align-items: center; gap: 10px; margin: 14px 2px 4px; flex-wrap: wrap; }
 .vp-panel-row > span:first-child { font-size: 14px; color: var(--text); min-width: 40px; }

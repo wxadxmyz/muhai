@@ -5,6 +5,7 @@
 import { createSource, expandSources } from '../engine';
 import type { SourceConfig, MediaItem } from '../engine/types';
 import { withTimeout } from '../engine/http';
+import { getDoubanCoverMap, normalizeTitle, refreshDoubanCoverMap } from './hot';
 
 // 片名 → 封面URL。'' 表示「已跨源找过、没有可用的」，防止同一部片反复触发跨源搜索。
 const cache = new Map<string, string>();
@@ -54,4 +55,34 @@ export async function crossSourceCover(title: string, sources: SourceConfig[]): 
 
   inflight = { title: key, p };
   return p;
+}
+
+// V3.3.8：已尝试回退的 key（跨页去重，避免同一部剧反复跨源搜索）
+const triedFallback = new Set<string>();
+
+/**
+ * V3.3.8：封面回退统一入口——主源封面加载失败时调用。
+ * 优先级：豆瓣同名封面（单源 / 图床不通时救急，不依赖其它源）→ 跨源同名封面（配多源时生效）。
+ * 任一命中即通过 onResolved 回填展示封面；全部失败则保持原文字兜底。
+ */
+export function tryCoverFallback(opts: {
+  key: string;
+  title: string;
+  allSources: SourceConfig[];
+  onResolved: (url: string) => void;
+}): void {
+  const { key, title, allSources, onResolved } = opts;
+  if (triedFallback.has(key)) return;
+  triedFallback.add(key);
+  const norm = normalizeTitle(title);
+  // 1) 豆瓣同名兜底（首页热榜已拉豆瓣图，用户手机可达）
+  const db = getDoubanCoverMap().get(norm);
+  if (db) { onResolved(db); return; }
+  // 热榜缓存为空时异步补全一次，命中再回填（不阻塞当前渲染）
+  refreshDoubanCoverMap().then((m) => {
+    const u = m.get(norm);
+    if (u) onResolved(u);
+  });
+  // 2) 跨源同名兜底（配多源时生效）
+  crossSourceCover(title, allSources).then((u) => { if (u) onResolved(u); });
 }

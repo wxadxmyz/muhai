@@ -3,6 +3,8 @@ import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { gradientFor, initial } from '../../lib/cover';
 import { ProxiedImg } from '../../components/ProxiedImg';
+import { tryCoverFallback } from '../../lib/crossCover';
+import { useSources } from '../../store';
 import { fmtTime } from '../../lib/playerStore';
 
 // 影视仓风格：顶部 Tab 切换「观看历史 / 影视收藏」+ 海报卡片网格
@@ -14,6 +16,9 @@ export function VideoLibrary({
   onOpen: (it: MediaItem) => void;
 }) {
   const [tab, setTab] = useState<'history' | 'fav'>('history');
+  // V3.3.8 Bug 3/4：主源封面加载失败时，回退到豆瓣同名封面 / 其它源同名封面（按 key 局部回填）
+  const [cross, setCross] = useState<Record<string, string>>({});
+  const { sources } = useSources('video');
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressedAt = useRef(0); // V3.3.4：长按删除时刻——抑制紧随其后的合成 click
 
@@ -61,7 +66,8 @@ export function VideoLibrary({
             const pct = it.duration ? Math.round((prog / it.duration) * 100) : 0;
             const lraw: any = it.raw ?? {};
             const lcover = it.cover || lraw.vod_pic || lraw.pic || lraw.poster || lraw.thumb || lraw.cover || lraw.pic_thumb || lraw.vod_pic_thumb || '';
-            const lhas = !!lcover;
+            const show = cross[key] ?? lcover;
+            const lhas = !!show;
             return (
               <div className="pcard" key={key}>
                 <div
@@ -80,7 +86,24 @@ export function VideoLibrary({
                   onMouseUp={cancelPress}
                   onMouseLeave={cancelPress}
                 >
-                  {lhas ? <ProxiedImg src={lcover} alt="" fallbackText={it.title} /> : <span className="ph-big">{initial(it.title)}</span>}
+                  {lhas ? (
+                    <ProxiedImg
+                      key={cross[key] ? 'x' + key : key}
+                      src={show}
+                      alt=""
+                      fallbackText={it.title}
+                      onFinalFail={() =>
+                        tryCoverFallback({
+                          key,
+                          title: it.title,
+                          allSources: sources,
+                          onResolved: (u) => setCross((s) => ({ ...s, [key]: u })),
+                        })
+                      }
+                    />
+                  ) : (
+                    <span className="ph-big">{initial(it.title)}</span>
+                  )}
                   {it.episodes?.length ? <span className="eps">{it.episodes.length} 集</span> : null}
                   {/* P7：影视卡片没有总时长，百分比算不出来，直接把「看到几分几秒」标出来，
                       既能确认进度确实存住了，也是排查续播最直观的信号 */}

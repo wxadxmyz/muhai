@@ -4,6 +4,7 @@ import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
 import { ProxiedImg } from './ProxiedImg';
+import { tryCoverFallback } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
 
 type SourceState =
@@ -45,6 +46,8 @@ export function SearchView({
   const [searched, setSearched] = useState(false);
   const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
+  // V3.3.8 Bug 3/4：主源封面加载失败时，回退到豆瓣同名封面 / 其它源同名封面（按 key 局部回填）
+  const [cross, setCross] = useState<Record<string, string>>({});
 
   // #8：中文输入法组字中（拼音还没上屏）——此时按搜索键不能拿拼音去搜
   const composingRef = useRef(false);
@@ -301,13 +304,31 @@ export function SearchView({
                       <div className="search-poster">
                         {/* V3.3.1 Q2：补 fallbackText——封面取不到时显示片名文字卡，
                             不再是一块看不出所以然的空白渐变 */}
-                        {it.cover ? (
-                          <ProxiedImg src={it.cover} alt="" fallbackText={it.title} />
-                        ) : (
-                          <div className="search-poster-fallback">
-                            <Icon name={it.mediaType === 'music' ? 'music' : 'film'} size={32} />
-                          </div>
-                        )}
+                        {(() => {
+                          const key = it.sourceId + it.id;
+                          const show = cross[key] ?? it.cover;
+                          if (!show) return (
+                            <div className="search-poster-fallback">
+                              <Icon name={it.mediaType === 'music' ? 'music' : 'film'} size={32} />
+                            </div>
+                          );
+                          return (
+                            <ProxiedImg
+                              key={cross[key] ? 'x' + key : key}
+                              src={show}
+                              alt=""
+                              fallbackText={it.title}
+                              onFinalFail={() =>
+                                tryCoverFallback({
+                                  key,
+                                  title: it.title,
+                                  allSources: sources,
+                                  onResolved: (u) => setCross((s) => ({ ...s, [key]: u })),
+                                })
+                              }
+                            />
+                          );
+                        })()}
                         <span className="search-poster-src" title={it.sourceName}>
                           {it.sourceName.slice(0, 2)}
                         </span>

@@ -14,7 +14,7 @@ import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { toast } from '../lib/toast';
 import { useSources } from '../store';
-import { crossSourceCover, cachedCrossCover } from '../lib/crossCover';
+import { crossSourceCover, cachedCrossCover, tryCoverFallback } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
 
 // V3.3.6 八·二：子站无 logo 时的六边形兜底图案（白色描边六边形 + 源名 hash 固定配色，同源同色）
@@ -323,15 +323,14 @@ export function VideoPlayer({
   // X1：改用共享工具，桥未就绪时自动等待最多 1.5s 再调用，解决"有时横屏有时不横"
   const requestOrientation = requestOrientationShared;
 
-  // 屏幕方向：V3.3.5 A2 回炉——恢复 v3.1.0/v3.3.2 用户实测有效的指令组合。
-  //   竖屏态（含进入播放页）= 'sensor'：FULL_SENSOR 全方向跟随重力，横握自动转横、竖握转回竖屏
-  //     （即用户记忆中的 v3.1.0「自动旋转」），且无视系统「自动旋转」快捷开关。
-  //   点横屏按钮 = 'landscape'：SENSOR_LANDSCAPE，转横屏 + 左右两个横握方向由系统传感器自动切换，
-  //     这是 activity 级强制指令、点了必转（同款软件 FongMi/TV 的点按钮实现也是它）。
-  //     V3.3.3 换成固定 LANDSCAPE 后用户设备上实测不响应，故回退。
+  // 屏幕方向：V3.3.8 Bug 1（方案 A）—— 竖屏态锁定 portrait（不再跟随重力）。
+  //   竖屏态（含进入播放页）= 'portrait'：锁定竖屏，横持手机也不会自动转横；
+  //     退出横屏时 effect 发 portrait，系统强制回竖，横持不赖着（解决「返回后还横着」）。
+  //   点横屏按钮 = 'landscape'：SENSOR_LANDSCAPE，转横屏 + 左右横握自动切，点了必转（第 8 批硬指标）。
+  //   代价：放弃「横持手机自动进横屏」，横屏必须按按钮触发（与「按钮必转」一致，更可控）。
   //   卸载（返回/关页）= 'portrait'：保证回到主页一定是竖屏。
   useEffect(() => {
-    requestOrientation(landscape ? 'landscape' : 'sensor', { silent: !landscape });
+    requestOrientation(landscape ? 'landscape' : 'portrait', { silent: !landscape });
     // ③ 横屏隐藏系统导航条（沉浸模式）；退回竖屏恢复
     requestImmersive(landscape);
   }, [landscape]);
@@ -1102,14 +1101,26 @@ export function VideoPlayer({
   // 竖屏按用户明确要求不接长按（竖屏单击=开关弹幕，样式入口在播放器设置抽屉里）。
   const longPressTimer = useRef<number | undefined>(undefined);
   const longPressFired = useRef(false);
+  const dmStart = useRef<{ x: number; y: number } | null>(null);
   const dmPressStart = () => {
     longPressFired.current = false;
+    dmStart.current = null;
     if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
     longPressTimer.current = window.setTimeout(() => {
       longPressFired.current = true;
       setShowSubStyle(true);
       try { (navigator as any).vibrate?.(15); } catch { /* ignore */ }
     }, 480);
+  };
+  // V3.3.8 Bug 2：长按加 12px 移动阈值——手指轻微抖动（<12px）忽略、不清定时器；
+  //   只有真正滑走（>12px）才取消长按。修复「长按不出弹幕面板」（touchmove 抖动误杀 480ms 定时器）。
+  const dmPressMove = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    if (!dmStart.current) { dmStart.current = { x: t.clientX, y: t.clientY }; return; }
+    const dx = Math.abs(t.clientX - dmStart.current.x);
+    const dy = Math.abs(t.clientY - dmStart.current.y);
+    if (dx > 12 || dy > 12) dmPressEnd();
   };
   const dmPressEnd = () => {
     if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = undefined; }
@@ -1428,7 +1439,7 @@ export function VideoPlayer({
                 {/* V3.3.7：横屏弹幕按钮 —— 单击开关弹幕，长按唤出弹幕样式浮窗 */}
                 <button
                   className={'icon' + (danmaku ? ' on' : '')}
-                  onTouchStart={dmPressStart} onTouchEnd={dmPressEnd} onTouchCancel={dmPressEnd} onTouchMove={dmPressEnd}
+                  onTouchStart={dmPressStart} onTouchEnd={dmPressEnd} onTouchCancel={dmPressEnd} onTouchMove={dmPressMove}
                   onMouseDown={dmPressStart} onMouseUp={dmPressEnd} onMouseLeave={dmPressEnd}
                   onClick={dmClick}
                   disabled={!detail.danmaku || detail.danmaku.length === 0}
@@ -1509,9 +1520,12 @@ export function VideoPlayer({
                     alt=""
                     fallbackText={detail.title}
                     onFinalFail={() => {
-                      if (coverTried.current === detail.id) return;
-                      coverTried.current = detail.id;
-                      crossSourceCover(detail.title, allSources).then((u) => { if (u) setCoverFallback(u); });
+                      tryCoverFallback({
+                        key: detail.id,
+                        title: detail.title,
+                        allSources,
+                        onResolved: (u) => setCoverFallback(u),
+                      });
                     }}
                   />
                 ) : <span style={{ color: '#fff', fontSize: 26 }}>{initial(detail.title)}</span>}

@@ -1699,27 +1699,42 @@ export function VideoPlayer({
       {showSubStyle && (
         <div className="vp-drawer-mask" onClick={() => setShowSubStyle(false)}>
           <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
-          <div className="vp-panel-head">弹幕样式</div>
-          <div className="vp-panel-row">
-            <span>开启弹幕</span>
-            <button className={'mini' + (danmaku ? ' active' : '')} onClick={() => toggleDanmaku()}>{danmaku ? '开' : '关'}</button>
-          </div>
-          <label>字号 <b>{ds.size}px</b>
-            <input type="range" min={12} max={40} step={1} value={ds.size} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, size: Number(e.target.value) } })} />
-          </label>
-          <label>颜色 <input type="color" value={ds.color} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, color: e.target.value } })} /></label>
-          <label>透明度 <b>{ds.opacity}%</b>
-            <input type="range" min={20} max={100} step={5} value={ds.opacity} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, opacity: Number(e.target.value) } })} />
-          </label>
-          <label>速度 <b>{(ds.speed / 100).toFixed(1)}x</b>
-            <input type="range" min={50} max={200} step={10} value={ds.speed} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, speed: Number(e.target.value) } })} />
-          </label>
-          <label>显示区域 <b>{ds.area}%</b>
-            <input type="range" min={20} max={100} step={10} value={ds.area} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, area: Number(e.target.value) } })} />
-          </label>
-          <div className="vp-panel-row">
-            <label className="row"><input type="checkbox" checked={ds.outline} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, outline: e.target.checked } })} /> 描边</label>
-          </div>
+            <div className="vp-panel-head">弹幕样式</div>
+            <div className="vp-panel-row">
+              <span>开启弹幕</span>
+              <button className={'mini' + (danmaku ? ' active' : '')} onClick={() => toggleDanmaku()}>{danmaku ? '开' : '关'}</button>
+            </div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">字号</span><span className="val">{ds.size}px</span></div>
+              <input className="dm-range" type="range" min={12} max={40} step={1} value={ds.size}
+                style={{ '--p': ((ds.size - 12) / 28 * 100) + '%' } as React.CSSProperties}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, size: Number(e.target.value) } })} />
+            </div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">颜色</span>
+                <input type="color" value={ds.color} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, color: e.target.value } })} /></div>
+            </div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">不透明度</span><span className="val">{ds.opacity}%</span></div>
+              <input className="dm-range" type="range" min={20} max={100} step={5} value={ds.opacity}
+                style={{ '--p': ((ds.opacity - 20) / 80 * 100) + '%' } as React.CSSProperties}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, opacity: Number(e.target.value) } })} />
+            </div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">滚动速度</span><span className="val">{(ds.speed / 100).toFixed(1)}x</span></div>
+              <input className="dm-range" type="range" min={50} max={200} step={10} value={ds.speed}
+                style={{ '--p': ((ds.speed - 50) / 150 * 100) + '%' } as React.CSSProperties}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, speed: Number(e.target.value) } })} />
+            </div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">显示区域</span><span className="val">{ds.area}%</span></div>
+              <input className="dm-range" type="range" min={20} max={100} step={10} value={ds.area}
+                style={{ '--p': ((ds.area - 20) / 80 * 100) + '%' } as React.CSSProperties}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, area: Number(e.target.value) } })} />
+            </div>
+            <div className="vp-panel-row">
+              <label className="row"><input type="checkbox" checked={ds.outline} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, outline: e.target.checked } })} /> 描边</label>
+            </div>
           </div>
         </div>
       )}
@@ -1728,20 +1743,26 @@ export function VideoPlayer({
       {showSubtitleStyle && (
         <div className="vp-drawer-mask" onClick={() => setShowSubtitleStyle(false)}>
           <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
-          <div className="vp-panel-head">外挂字幕样式</div>
-          <label>字号 <b>{ss.size}px</b>
-            <input type="range" min={14} max={48} step={1} value={ss.size} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, size: Number(e.target.value) } })} />
-          </label>
-          <label>颜色 <input type="color" value={ss.color} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, color: e.target.value } })} /></label>
-          <div className="vp-panel-row">
-            <span>位置</span>
-            <button className={'mini' + (ss.position === 'bottom' ? ' active' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'bottom' } })}>底部</button>
-            <button className={'mini' + (ss.position === 'top' ? ' active' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'top' } })}>顶部</button>
-          </div>
-          <div className="vp-panel-row">
-            <label className="row"><input type="checkbox" checked={ss.outline} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, outline: e.target.checked } })} /> 描边</label>
-            <label className="row"><input type="checkbox" checked={ss.bg} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, bg: e.target.checked } })} /> 背景条</label>
-          </div>
+            <div className="vp-panel-head">外挂字幕样式</div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">字号</span><span className="val">{ss.size}px</span></div>
+              <input className="dm-range" type="range" min={14} max={48} step={1} value={ss.size}
+                style={{ '--p': ((ss.size - 14) / 34 * 100) + '%' } as React.CSSProperties}
+                onChange={(e) => updateSettings({ subtitleStyle: { ...ss, size: Number(e.target.value) } })} />
+            </div>
+            <div className="dm-row">
+              <div className="dm-row-head"><span className="name">颜色</span>
+                <input type="color" value={ss.color} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, color: e.target.value } })} /></div>
+            </div>
+            <div className="vp-panel-row">
+              <span>位置</span>
+              <button className={'mini' + (ss.position === 'bottom' ? ' active' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'bottom' } })}>底部</button>
+              <button className={'mini' + (ss.position === 'top' ? ' active' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'top' } })}>顶部</button>
+            </div>
+            <div className="vp-panel-row">
+              <label className="row"><input type="checkbox" checked={ss.outline} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, outline: e.target.checked } })} /> 描边</label>
+              <label className="row"><input type="checkbox" checked={ss.bg} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, bg: e.target.checked } })} /> 背景条</label>
+            </div>
           </div>
         </div>
       )}

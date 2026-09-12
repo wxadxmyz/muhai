@@ -572,26 +572,34 @@ input[type='range'] { flex: 1; accent-color: var(--accent); height: 4px; cursor:
    选择器永不命中、面板被 z-index:100 播放层盖住。改为独立遮罩+抽屉结构，脱离嵌套依赖。 */
 .vp-drawer-mask { position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
 /* V3.3.7 六：蓝灰渐变 → 与选集/设置抽屉一致用 var(--panel) */
-.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: var(--panel); color: #fff; border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
+.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: var(--panel); color: var(--text); border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
 .vp-sub-drawer::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); margin: 4px auto 12px; }
-.player-card.land .vp-sub-drawer::before { display: none; }
-.vp-panel-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; font-weight: 700; margin: 2px 2px 14px; color: #fff; }
+.player-root.landscape .vp-sub-drawer::before { display: none; }
+.vp-panel-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; font-weight: 700; margin: 2px 2px 14px; color: var(--text); }
 .vp-panel-head .link { width: 30px; height: 30px; border-radius: 50%; border: none; background: rgba(255,255,255,.1); color: #fff; font-size: 16px; cursor: pointer; display: grid; place-items: center; }
 .vp-panel-head .link:hover { background: rgba(255,255,255,.18); }
-.vp-sub-drawer > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: rgba(255,255,255,.82); margin: 14px 2px 4px; }
+.vp-sub-drawer > label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--text); margin: 14px 2px 4px; }
 .vp-sub-drawer > label b { color: var(--accent); font-weight: 700; }
-.vp-sub-drawer input[type="range"] { -webkit-appearance: none; appearance: none; flex: 1; height: 4px; border-radius: 4px; background: rgba(255,255,255,.18); outline: none; margin: 0 4px; }
-.vp-sub-drawer input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
 .vp-sub-drawer input[type="color"] { width: 44px; height: 30px; border: none; border-radius: 8px; background: none; cursor: pointer; padding: 0; }
+/* 弹幕/字幕滑动条：与视频进度条同款（灰轨 + 蓝色已选填充 + 白描边圆点），文字左对齐 */
+.dm-row { margin: 16px 2px 4px; }
+.dm-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.dm-row-head .name { font-size: 14px; color: var(--text); text-align: left; }
+.dm-row-head .val { font-size: 13px; color: var(--accent); font-weight: 700; }
+.dm-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--p, 50%), rgba(255,255,255,.18) var(--p, 50%), rgba(255,255,255,.18) 100%); }
+.dm-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); cursor: pointer; }
+.dm-range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); cursor: pointer; }
+.dm-range::-moz-range-track { background: transparent; }
 .vp-panel-row { display: flex; align-items: center; gap: 10px; margin: 14px 2px 4px; flex-wrap: wrap; }
-.vp-panel-row > span:first-child { font-size: 14px; color: rgba(255,255,255,.82); min-width: 40px; }
-.vp-panel-row .mini { border-radius: 999px; padding: 8px 16px; font-size: 13px; min-width: 0; width: auto; height: auto; background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.14); }
+.vp-panel-row > span:first-child { font-size: 14px; color: var(--text); min-width: 40px; }
+.vp-panel-row .mini { border-radius: 999px; padding: 8px 16px; font-size: 13px; min-width: 0; width: auto; height: auto; background: rgba(255,255,255,.08); color: var(--text); border: 1px solid rgba(255,255,255,.14); }
 .vp-panel-row .mini.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; font-weight: 600; }
 .vp-panel-row label.row { display: inline-flex; }
-.player-card.land .vp-drawer-mask { align-items: stretch; justify-content: flex-end; }
-.player-card.land .vp-sub-drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
-.player-card.land .drawer-mask { align-items: stretch; justify-content: flex-start; }
-.player-card.land .drawer { width: 260px; max-width: 80vw; height: 100%; border-radius: 0; }
+/* 横屏：弹幕/字幕面板也变右侧全高抽屉，与「设置」完全一致
+   （此前误用 .player-card.land 作祖先选择器，但面板是 player-card 的兄弟节点、挂在 player-root 下，导致规则永远不命中） */
+.player-root.landscape .vp-drawer-mask { align-items: stretch; justify-content: flex-end; }
+.player-root.landscape .vp-sub-drawer { width: auto; min-width: 320px; max-width: 400px; height: 100%; max-height: 100%; border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom)); }
 
 /* 横屏：中央三圆（上一集/暂停/下一集） */
 .vp-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 5; display: flex; align-items: center; gap: 22px; }

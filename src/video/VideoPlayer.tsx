@@ -1096,40 +1096,9 @@ export function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isPlaying, locked]);
 
-  // V3.3.7：长按手势（只给「横屏弹幕按钮」用）——按住 480ms 唤出弹幕样式浮窗，
-  // 触发后抑制紧随其后的 click，避免「开面板的同时又把弹幕关了」。
-  // 竖屏按用户明确要求不接长按（竖屏单击=开关弹幕，样式入口在播放器设置抽屉里）。
-  const longPressTimer = useRef<number | undefined>(undefined);
-  const longPressFired = useRef(false);
-  const dmStart = useRef<{ x: number; y: number } | null>(null);
-  const dmPressStart = () => {
-    longPressFired.current = false;
-    dmStart.current = null;
-    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = window.setTimeout(() => {
-      longPressFired.current = true;
-      setShowSubStyle(true);
-      try { (navigator as any).vibrate?.(15); } catch { /* ignore */ }
-    }, 480);
-  };
-  // V3.3.8 Bug 2：长按加 12px 移动阈值——手指轻微抖动（<12px）忽略、不清定时器；
-  //   只有真正滑走（>12px）才取消长按。修复「长按不出弹幕面板」（touchmove 抖动误杀 480ms 定时器）。
-  const dmPressMove = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    if (!t) return;
-    if (!dmStart.current) { dmStart.current = { x: t.clientX, y: t.clientY }; return; }
-    const dx = Math.abs(t.clientX - dmStart.current.x);
-    const dy = Math.abs(t.clientY - dmStart.current.y);
-    if (dx > 12 || dy > 12) dmPressEnd();
-  };
-  const dmPressEnd = () => {
-    if (longPressTimer.current) { window.clearTimeout(longPressTimer.current); longPressTimer.current = undefined; }
-  };
-  const dmClick = () => {
-    if (longPressFired.current) { longPressFired.current = false; return; } // 长按已处理，忽略这次 click
-    toggleDanmaku();
-  };
-
+  // V3.3.13：原「横屏弹幕长按唤出面板」的长按手势（V3.3.7~V3.3.8 引入）已整段移除——
+  // 用户要求弹幕按钮=纯开关、面板改由底部「弹幕」按钮负责。相关死代码（longPressTimer /
+  // dmStart / dmPressStart/Move/End / dmClick）随之删除。
   const toggleDanmaku = () => {
     const next = !danmaku;
     setDanmaku(next);
@@ -1436,14 +1405,12 @@ export function VideoPlayer({
               {/* 左侧边栏：锁 / 弹幕 */}
               <div className="side left">
                 <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
-                {/* V3.3.7：横屏弹幕按钮 —— 单击开关弹幕，长按唤出弹幕样式浮窗 */}
+                {/* V3.3.13：横屏弹幕按钮 —— 纯单击开关弹幕（长按出面板已移除，改由底部「弹幕」按钮负责） */}
                 <button
                   className={'icon' + (danmaku ? ' on' : '')}
-                  onTouchStart={dmPressStart} onTouchEnd={dmPressEnd} onTouchCancel={dmPressEnd} onTouchMove={dmPressMove}
-                  onMouseDown={dmPressStart} onMouseUp={dmPressEnd} onMouseLeave={dmPressEnd}
-                  onClick={dmClick}
+                  onClick={toggleDanmaku}
                   disabled={!detail.danmaku || detail.danmaku.length === 0}
-                  title={danmaku ? '弹幕开（长按改样式）' : '弹幕关（长按改样式）'}
+                  title={danmaku ? '弹幕开' : '弹幕关'}
                 ><Icon name="message" size={20} /></button>
               </div>
 
@@ -1486,9 +1453,10 @@ export function VideoPlayer({
                   <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>解码</span></button>
                   <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
                   <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
-                  {/* V3.3.7 六：「字幕」→「弹幕」，且与弹幕开关状态联动（此前点了是打开外挂字幕面板，名不副实） */}
-                  {/* V3.3.9：底部工具栏「弹幕」= 直接开样式面板（与左侧栏快速开关分工，消除重复） */}
-                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={() => setShowSubStyle(true)} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
+                  {/* V3.3.9：底部工具栏「弹幕」= 出样式面板（与左侧栏快速开关分工，消除重复） */}
+                  {/* V3.3.13：加 onTouchStart 双触发——部分机型 WebView 合成的 click 派发不到该按钮， */}
+                  {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
+                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={() => setShowSubStyle(true)} onTouchStart={() => setShowSubStyle(true)} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
                   <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
                   <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>

@@ -1105,6 +1105,27 @@ export function VideoPlayer({
     updateSettings({ enableDanmaku: next });
   };
 
+  // V3.4.0：记录弹幕/字幕面板打开时刻。部分机型 WebView 把「轻触」合成成 click 后，
+  // 该 click 会落在刚弹出、盖住全屏的遮罩上，导致面板被同一次手势秒关（表现为「闪一下」）。
+  // 遮罩的 onClick 在打开后 400ms 内忽略点击，即可避免误关；你主动再次点遮罩仍正常关闭。
+  const subStyleOpenAt = useRef(0);
+  const openSubStyle = () => { subStyleOpenAt.current = Date.now(); setShowSubStyle(true); };
+
+  // V3.4.0：弹幕开关挂了 onTouchStart + onClick 双触发（部分机型 click 派发不到按钮）。
+  // 真机一次轻触会先走 touchstart 再合成 click，若不做去重会被「开→关」抵消。
+  // 这里用 600ms 标记位：touch 触发后置位，紧随的 click 见到标记位直接吞掉，保证一次手势只切一次。
+  // 桌面端无 touch，只有 click，标记位恒 false，正常切换。
+  const danmakuTouchFired = useRef(false);
+  const danmakuTouchToggle = () => {
+    danmakuTouchFired.current = true;
+    window.setTimeout(() => { danmakuTouchFired.current = false; }, 600);
+    toggleDanmaku();
+  };
+  const danmakuClickToggle = () => {
+    if (danmakuTouchFired.current) { danmakuTouchFired.current = false; return; }
+    toggleDanmaku();
+  };
+
   const ss = settings.subtitleStyle;
   // V3.3.7 六：弹幕样式（作用到 .dm，与外挂字幕的 ss 分开）
   const ds = settings.danmakuStyle;
@@ -1376,7 +1397,7 @@ export function VideoPlayer({
               </div>
               {/* 竖屏左中：弹幕（从右上移到左中） */}
               <div className="vp-side vp-side-left">
-                <button className={'side-btn' + (danmaku ? ' on' : '')} onClick={toggleDanmaku} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
+                <button className={'side-btn' + (danmaku ? ' on' : '')} onClick={danmakuClickToggle} onTouchStart={danmakuTouchToggle} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
               </div>
               {/* 竖屏右中：画中画（绑原生桥 enterPip） */}
               <div className="vp-side vp-side-right">
@@ -1406,9 +1427,11 @@ export function VideoPlayer({
               <div className="side left">
                 <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
                 {/* V3.3.13：横屏弹幕按钮 —— 纯单击开关弹幕（长按出面板已移除，改由底部「弹幕」按钮负责） */}
+                {/* V3.4.0：加 onTouchStart —— 部分机型 WebView 合成 click 派发不到该按钮，touch 事件可正常工作 */}
                 <button
                   className={'icon' + (danmaku ? ' on' : '')}
-                  onClick={toggleDanmaku}
+                  onClick={danmakuClickToggle}
+                  onTouchStart={danmakuTouchToggle}
                   disabled={!detail.danmaku || detail.danmaku.length === 0}
                   title={danmaku ? '弹幕开' : '弹幕关'}
                 ><Icon name="message" size={20} /></button>
@@ -1456,7 +1479,8 @@ export function VideoPlayer({
                   {/* V3.3.9：底部工具栏「弹幕」= 出样式面板（与左侧栏快速开关分工，消除重复） */}
                   {/* V3.3.13：加 onTouchStart 双触发——部分机型 WebView 合成的 click 派发不到该按钮， */}
                   {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
-                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={() => setShowSubStyle(true)} onTouchStart={() => setShowSubStyle(true)} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
+                  {/* V3.4.0：改走 openSubStyle —— 同时记录打开时刻，配合遮罩 400ms 守卫防「同手势秒关」。 */}
+                  <button className={'tool' + (danmaku ? ' on' : '')} onClick={openSubStyle} onTouchStart={openSubStyle} disabled={!detail.danmaku || detail.danmaku.length === 0}><Icon name="message" size={15} /><span>弹幕</span></button>
                   <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
                   <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
                   <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
@@ -1665,7 +1689,7 @@ export function VideoPlayer({
           于是反馈「这个不是字幕样式，是弹幕样式」。现在字号/颜色/描边/速度/区域/透明度全部落到 .dm。
           关闭按钮已删除（点遮罩关闭），外挂字幕入口并入播放器设置抽屉。 */}
       {showSubStyle && (
-        <div className="vp-drawer-mask" onClick={() => setShowSubStyle(false)}>
+        <div className="vp-drawer-mask" onClick={() => { if (Date.now() - subStyleOpenAt.current < 400) return; setShowSubStyle(false); }}>
           <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="vp-panel-head">弹幕样式</div>
             <div className="vp-panel-row">
@@ -1709,7 +1733,7 @@ export function VideoPlayer({
 
       {/* V3.3.7 六：外挂字幕样式保留（仅片源自带 SRT/VTT 时才有内容），入口从工具栏挪进设置抽屉 */}
       {showSubtitleStyle && (
-        <div className="vp-drawer-mask" onClick={() => setShowSubtitleStyle(false)}>
+        <div className="vp-drawer-mask" onClick={() => { if (Date.now() - subStyleOpenAt.current < 400) return; setShowSubtitleStyle(false); }}>
           <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="vp-panel-head">外挂字幕样式</div>
             <div className="dm-row">
@@ -1772,8 +1796,8 @@ export function VideoPlayer({
 
             {/* V3.3.7 六：弹幕样式 / 外挂字幕样式入口（工具栏不再占「字幕」按钮位） */}
             <div className="dg"><div className="dg-label">字幕与弹幕</div><div className="dg-row">
-              <button onClick={() => { setSettingsOpen(false); setShowSubStyle(true); }}>弹幕样式</button>
-              <button onClick={() => { setSettingsOpen(false); setShowSubtitleStyle(true); }}>外挂字幕</button>
+              <button onClick={() => { setSettingsOpen(false); openSubStyle(); }}>弹幕样式</button>
+              <button onClick={() => { subStyleOpenAt.current = Date.now(); setSettingsOpen(false); setShowSubtitleStyle(true); }}>外挂字幕</button>
             </div></div>
 
             {!landscape && (

@@ -1720,7 +1720,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .landscape .tools::-webkit-scrollbar { display: none; }
 .landscape .tools button { flex: 1 1 0; min-width: 0; justify-content: center; white-space: nowrap; background: rgba(255,255,255,.1); border: none; color: #fff; padding: 8px 6px; border-radius: 8px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer; }
 .landscape .tools button svg { width: 15px; height: 15px; flex: 0 0 auto; }
-.landscape .tools button.on { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+.landscape .tools button.on { background: color-mix(in srgb, var(--accent) 42%, transparent); color: #fff; font-weight: 700; }
 
 /* 设置抽屉（设计文件 .drawer） */
 .drawer-mask { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 200; display: flex; align-items: flex-end; justify-content: center; }

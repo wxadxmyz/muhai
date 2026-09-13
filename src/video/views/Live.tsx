@@ -108,10 +108,29 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
       'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
     Referer: ref || 'https://www.google.com',
   };
-  return extra ? { ...base, ...extra } : base;
-}
+    return extra ? { ...base, ...extra } : base;
+  }
 
-export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
+  // V3.4.8：首字节嗅探判断 URL 是否为 HLS 播放列表。
+  // 用于覆盖「无 .m3u8 后缀、但实际返回 m3u8」的直播源（如 live.php?id=... / migu 类），
+  // 该类源若仅靠后缀判断会被误判为「非 HLS」→ 走原生 video 直连，UA 透传（仅 HLS.js 生效）失效 → 404 黑屏。
+  // 嗅探请求须带频道自定义头（否则该源直接 404，读不到首字节）。
+  async function peekIsHls(url: string, extra?: Record<string, string> | null): Promise<boolean> {
+    try {
+      const res = await fetch(url, { headers: streamHeaders(url, extra), redirect: 'follow' });
+      const reader = res.body?.getReader();
+      if (!reader) return false;
+      const { value } = await reader.read();
+      reader.cancel().catch(() => {});
+      if (!value || value.length === 0) return false;
+      const head = new TextDecoder().decode(value.slice(0, 512));
+      return /#EXTM3U/i.test(head);
+    } catch {
+      return false;
+    }
+  }
+
+  export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
   const [channels, setChannels] = useState<ReturnType<typeof parseM3U> | null>(null);
   // V3.4.7 #1：当前播放频道的自定义请求头（来自 M3U #EXTINF），切台/换源时刷新，供 HLS xhrSetup 透传
@@ -384,18 +403,39 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
   useEffect(() => {
     if (!curUrl || !videoRef.current) return;
     const el = videoRef.current;
-    const isHls = /\.m3u8(\?|$)/i.test(curUrl);
     let hls: Hls | null = null;
-    if (isHls && el.canPlayType('application/vnd.apple.mpegurl')) {
-      el.src = curUrl;
-    } else if (isHls && Hls.isSupported()) {
-      hls = new Hls({ xhrSetup: (xhr, u) => { for (const [k, v] of Object.entries(streamHeaders(u, curHeadersRef.current))) xhr.setRequestHeader(k, v); } });
-      hls.loadSource(curUrl);
-      hls.attachMedia(el);
+    let cancelled = false;
+    // 走 HLS.js 并透传频道自定义头（UA / Referer / Origin）；
+    // iOS 无 HLS.js 时回退原生 HLS（原生直连无法注入自定义头，为固有限制）
+    const attachHls = () => {
+      if (cancelled || !videoRef.current) return;
+      const e = videoRef.current;
+      if (Hls.isSupported()) {
+        hls = new Hls({ xhrSetup: (xhr, u) => { for (const [k, v] of Object.entries(streamHeaders(u, curHeadersRef.current))) xhr.setRequestHeader(k, v); } });
+        hls.loadSource(curUrl);
+        hls.attachMedia(e);
+      } else if (e.canPlayType('application/vnd.apple.mpegurl')) {
+        e.src = curUrl;
+      } else {
+        e.src = curUrl;
+      }
+    };
+    const suffixHls = /\.m3u8(\?|$)/i.test(curUrl);
+    if (suffixHls) {
+      // 后缀判定：保留原行为（iOS 原生优先 → HLS.js → 直连）
+      if (el.canPlayType('application/vnd.apple.mpegurl')) el.src = curUrl;
+      else if (Hls.isSupported()) attachHls();
+      else el.src = curUrl;
     } else {
-      el.src = curUrl;
+      // V3.4.8：无 .m3u8 后缀但实际是 HLS 的源（live.php / migu 类）——
+      // 同步后缀判断会误判为「非 HLS」走原生直连，UA 透传不生效 → 404 黑屏。
+      // 拉首字节嗅探 #EXTM3U 判定；嗅探本身带频道自定义头，否则读不到首字节。
+      peekIsHls(curUrl, curHeadersRef.current)
+        .then((isH) => { if (cancelled) return; if (isH) attachHls(); else el.src = curUrl; })
+        .catch(() => { if (!cancelled) el.src = curUrl; });
     }
     return () => {
+      cancelled = true;
       if (hls) hls.destroy();
       el.removeAttribute('src');
       el.load();

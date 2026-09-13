@@ -117,11 +117,12 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
     try {
       const headers = extra ? streamHeaders(url, extra) : streamHeaders(url);
       const raw = await invoke<string>('fetchmedia', { url, headers });
-      const json = JSON.parse(raw) as { data: string };
-      const bin = atob(json.data);
-      const head = bin.slice(0, 512);
+      const json = JSON.parse(raw) as { data: string; url?: string };
+      const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
+      const head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
       return /#EXTM3U/i.test(head);
-    } catch {
+    } catch (e: any) {
+      console.warn('[peekIsHls]', url, e?.message ?? e);
       return false;
     }
   }
@@ -133,27 +134,34 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
 
   class TauriFetchLoader {
     context: any = null;
-    private stats = { aborted: false, loaded: 0, total: 0, trequest: 0, tfirst: 0, tload: 0, chunkCount: 0 };
+    stats: any = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0, loading: { start: 0, first: 0, end: 0 } };
     constructor(_config?: any) {}
     async load(context: any, _config: any, callbacks: any) {
       this.context = context;
       const url = context.url;
       const headers = LIVE_FETCH_HEADERS ? streamHeaders(url, LIVE_FETCH_HEADERS) : streamHeaders(url);
       const t0 = performance.now();
+      this.stats.loading.start = t0;
       try {
         const raw = await invoke<string>('fetchmedia', { url, headers });
+        if (this.stats.aborted) return;
         const json = JSON.parse(raw) as { data: string; url: string };
-        const bin = atob(json.data);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        this.stats.trequest = t0;
-        this.stats.tfirst = t0;
-        this.stats.tload = performance.now();
+        const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
+        // hls.js 解析 m3u8 manifest 时要求 response.data 为 string，分片才用 ArrayBuffer
+        const isText = context.responseType === 'text' || context.responseType === '';
+        const data = isText ? new TextDecoder('utf-8').decode(bytes) : bytes.buffer;
+        const t1 = performance.now();
+        this.stats.loading.first = t1;
+        this.stats.loading.end = t1;
         this.stats.loaded = bytes.length;
         this.stats.total = bytes.length;
-        callbacks.onSuccess({ url: json.url || url, data: bytes }, this.stats, context);
+        this.stats.bwEstimate = this.stats.total * 8000 / Math.max(1, t1 - t0);
+        callbacks.onSuccess({ url: json.url || url, data, code: 200 }, this.stats, context, null);
       } catch (e: any) {
-        callbacks.onError({ code: 0, text: String(e?.message ?? e) }, context);
+        if (this.stats.aborted) return;
+        const text = String(e?.message ?? e);
+        console.error('[TauriFetchLoader]', url, text);
+        callbacks.onError({ code: e?.code ?? 0, text }, context, null, this.stats);
       }
     }
     abort() { this.stats.aborted = true; }
@@ -459,6 +467,12 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
       }
       hls.loadSource(curUrl);
       hls.attachMedia(e);
+      hls.on(Hls.Events.ERROR, (_event, data: any) => {
+        console.error('[HLS error]', data.type, data.details, data);
+        if (data.fatal) {
+          toast(`直播播放失败：${data.details || data.type}`);
+        }
+      });
     };
 
     // iOS 原生 HLS 优先（仅当无需自定义头时；原生无法注入自定义头，为系统限制）

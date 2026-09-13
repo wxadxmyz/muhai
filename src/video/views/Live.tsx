@@ -111,23 +111,53 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
     return extra ? { ...base, ...extra } : base;
   }
 
-  // V3.4.8：首字节嗅探判断 URL 是否为 HLS 播放列表。
-  // 用于覆盖「无 .m3u8 后缀、但实际返回 m3u8」的直播源（如 live.php?id=... / migu 类），
-  // 该类源若仅靠后缀判断会被误判为「非 HLS」→ 走原生 video 直连，UA 透传（仅 HLS.js 生效）失效 → 404 黑屏。
-  // 嗅探请求须带频道自定义头（否则该源直接 404，读不到首字节）。
+  // V3.4.9：直播嗅探改走 Rust 后端 fetch_media（绕开 WebView CORS + 带频道自定义头）。
+  // WebView 的 JS fetch 对无 CORS 头的服务器会被拦，导致误判「非 HLS」→ 退回原生直连 404 黑屏。
   async function peekIsHls(url: string, extra?: Record<string, string> | null): Promise<boolean> {
     try {
-      const res = await fetch(url, { headers: streamHeaders(url, extra), redirect: 'follow' });
-      const reader = res.body?.getReader();
-      if (!reader) return false;
-      const { value } = await reader.read();
-      reader.cancel().catch(() => {});
-      if (!value || value.length === 0) return false;
-      const head = new TextDecoder().decode(value.slice(0, 512));
+      const headers = extra ? streamHeaders(url, extra) : streamHeaders(url);
+      const raw = await invoke<string>('fetch_media', { url, headers });
+      const json = JSON.parse(raw) as { data: string };
+      const bin = atob(json.data);
+      const head = bin.slice(0, 512);
       return /#EXTM3U/i.test(head);
     } catch {
       return false;
     }
+  }
+
+  // V3.4.9：HLS.js 自定义 Loader，让 manifest / 分片都经 Rust 后端 fetch_media 请求，
+  // 既能带上频道自定义头（如 User-Agent: AptvPlayer-UA），又不受 WebView CORS 限制。
+  // headers 由播放分支在 attach 前写入模块级 LIVE_FETCH_HEADERS。
+  let LIVE_FETCH_HEADERS: Record<string, string> | null = null;
+
+  class TauriFetchLoader {
+    context: any = null;
+    private stats = { aborted: false, loaded: 0, total: 0, trequest: 0, tfirst: 0, tload: 0, chunkCount: 0 };
+    constructor(_config?: any) {}
+    async load(context: any, _config: any, callbacks: any) {
+      this.context = context;
+      const url = context.url;
+      const headers = LIVE_FETCH_HEADERS ? streamHeaders(url, LIVE_FETCH_HEADERS) : streamHeaders(url);
+      const t0 = performance.now();
+      try {
+        const raw = await invoke<string>('fetch_media', { url, headers });
+        const json = JSON.parse(raw) as { data: string; url: string };
+        const bin = atob(json.data);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        this.stats.trequest = t0;
+        this.stats.tfirst = t0;
+        this.stats.tload = performance.now();
+        this.stats.loaded = bytes.length;
+        this.stats.total = bytes.length;
+        callbacks.onSuccess({ url: json.url || url, data: bytes }, this.stats, context);
+      } catch (e: any) {
+        callbacks.onError({ code: 0, text: String(e?.message ?? e) }, context);
+      }
+    }
+    abort() { this.stats.aborted = true; }
+    destroy() {}
   }
 
   export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
@@ -405,35 +435,54 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
     const el = videoRef.current;
     let hls: Hls | null = null;
     let cancelled = false;
-    // 走 HLS.js 并透传频道自定义头（UA / Referer / Origin）；
-    // iOS 无 HLS.js 时回退原生 HLS（原生直连无法注入自定义头，为固有限制）
-    const attachHls = () => {
+    // 需透传自定义头的源（如 CCTV 的 User-Agent: AptvPlayer-UA）必须走后端 fetch_media；
+    // 否则 WebView JS 请求带不上头且被 CORS 拦 → 404 黑屏。
+    const channelHeaders = curHeadersRef.current;
+    const prefersBackend = !!channelHeaders;
+    const suffixHls = /\.m3u8(\?|$)/i.test(curUrl);
+
+    const attachHls = (backend: boolean) => {
       if (cancelled || !videoRef.current) return;
       const e = videoRef.current;
-      if (Hls.isSupported()) {
-        hls = new Hls({ xhrSetup: (xhr, u) => { for (const [k, v] of Object.entries(streamHeaders(u, curHeadersRef.current))) xhr.setRequestHeader(k, v); } });
-        hls.loadSource(curUrl);
-        hls.attachMedia(e);
-      } else if (e.canPlayType('application/vnd.apple.mpegurl')) {
-        e.src = curUrl;
+      if (!Hls.isSupported()) { e.src = curUrl; return; }
+      if (backend) {
+        // V3.4.9：走 Rust 后端 fetch_media，统一带上频道自定义头并绕开 WebView CORS
+        LIVE_FETCH_HEADERS = channelHeaders;
+        hls = new Hls({ loader: TauriFetchLoader });
       } else {
-        e.src = curUrl;
+        // 无自定义头的源保持原 xhrSetup 直连（兼容原本能播的 .m3u8 源）
+        hls = new Hls({
+          xhrSetup: (xhr, u) => {
+            for (const [k, v] of Object.entries(streamHeaders(u, channelHeaders))) xhr.setRequestHeader(k, v);
+          },
+        });
       }
+      hls.loadSource(curUrl);
+      hls.attachMedia(e);
     };
-    const suffixHls = /\.m3u8(\?|$)/i.test(curUrl);
-    if (suffixHls) {
-      // 后缀判定：保留原行为（iOS 原生优先 → HLS.js → 直连）
-      if (el.canPlayType('application/vnd.apple.mpegurl')) el.src = curUrl;
-      else if (Hls.isSupported()) attachHls();
+
+    // iOS 原生 HLS 优先（仅当无需自定义头时；原生无法注入自定义头，为系统限制）
+    if (el.canPlayType('application/vnd.apple.mpegurl') && !prefersBackend) {
+      el.src = curUrl;
+    } else if (prefersBackend) {
+      // 必须透传头：直接走后端 Loader 的 HLS.js
+      if (Hls.isSupported()) attachHls(true);
+      else el.src = curUrl;
+    } else if (suffixHls) {
+      // 普通 .m3u8 无自定义头：保持原行为（xhrSetup 直连）
+      if (Hls.isSupported()) attachHls(false);
       else el.src = curUrl;
     } else {
-      // V3.4.8：无 .m3u8 后缀但实际是 HLS 的源（live.php / migu 类）——
-      // 同步后缀判断会误判为「非 HLS」走原生直连，UA 透传不生效 → 404 黑屏。
-      // 拉首字节嗅探 #EXTM3U 判定；嗅探本身带频道自定义头，否则读不到首字节。
-      peekIsHls(curUrl, curHeadersRef.current)
-        .then((isH) => { if (cancelled) return; if (isH) attachHls(); else el.src = curUrl; })
+      // 无后缀、无自定义头：后端嗅探（带默认头）判定是否 HLS，命中走后端 Loader
+      peekIsHls(curUrl, channelHeaders)
+        .then((isH) => {
+          if (cancelled) return;
+          if (isH) { if (Hls.isSupported()) attachHls(true); else el.src = curUrl; }
+          else el.src = curUrl;
+        })
         .catch(() => { if (!cancelled) el.src = curUrl; });
     }
+
     return () => {
       cancelled = true;
       if (hls) hls.destroy();

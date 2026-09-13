@@ -99,6 +99,12 @@ button { background: var(--panel2); border: 1px solid var(--border); color: var(
 button:hover { filter: brightness(1.12); }
 button:disabled { opacity: .4; cursor: not-allowed; }
 button:active:not(:disabled) { transform: translateY(1px); }
+/* V3.4.9：直播/点播播放控件按钮去掉全局 :active 位移，避免点击跳动 */
+.lp-hd button:active:not(:disabled),
+.lp-ctl button:active:not(:disabled),
+.land-overlay button:active:not(:disabled) { transform: none; }
+/* .lp-big 靠 transform 居中，:active 仍需保持居中（特异度与上方通用规则相同，后者定义故优先） */
+button.lp-big:active:not(:disabled) { transform: translate(-50%, -50%); }
 button.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); border: none; color: #fff; font-weight: 600; }
 button.link { background: transparent; border: none; color: var(--accent); padding: 6px 10px; }
 button.link.danger { color: var(--danger); }

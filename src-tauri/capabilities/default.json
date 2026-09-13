@@ -11,6 +11,7 @@
     "notification:default",
     "allow-fetchsource",
     "allow-fetchimage",
+    "allow-fetch_media",
     "allow-spiderrun",
     "allow-dlnascan",
     "allow-castvideo",

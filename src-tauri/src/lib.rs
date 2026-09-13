@@ -61,6 +61,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetchsource,
             fetchimage,
+            fetch_media,
             spiderrun,
             dlnascan,
             castvideo,
@@ -360,6 +361,51 @@ async fn fetchsource(url: String) -> Result<String, String> {
         return Err(format!("源返回错误：HTTP {}（{}）", status, hint));
     }
     Ok(text)
+}
+
+// V3.4.9：直播拉流后端代理。HLS.js 自定义 Loader 调用本命令拉 m3u8 / ts 分片。
+// 既能带上频道自定义头（如 CCTV 源要求的 User-Agent: AptvPlayer-UA），
+// 又不受 WebView 的 CORS 限制（WebView 的 JS fetch 对无 CORS 头的服务器会被拦 → 黑屏）。
+// 返回 JSON：{ "data": base64(二进制), "url": 最终跳转后的 URL }。
+// —— 后者用于 HLS.js 以最终 URL 为 base 解析 master playlist 里的相对路径 variant
+//    （如 CCTV1 的 live.php 302 到 migu 后，variant 是相对路径 `01.m3u8?...`）。
+#[tauri::command]
+async fn fetch_media(url: String, headers: Option<std::collections::HashMap<String, String>>) -> Result<String, String> {
+    use base64::Engine;
+    let mut req = http_client()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(30));
+    let mut has_ua = false;
+    if let Some(hs) = &headers {
+        for (k, v) in hs {
+            if k.eq_ignore_ascii_case("user-agent") {
+                has_ua = true;
+            }
+            req = req.header(k, v);
+        }
+    }
+    if !has_ua {
+        // 默认兜底 UA（与 fetchsource 一致），避免部分源对空 UA 拒连
+        req = req.header("User-Agent", "okhttp/4.10.0");
+    }
+    req = req.header("Accept", "*/*");
+    let resp = req.send().await.map_err(friendly_net_err)?;
+    let status = resp.status();
+    if !status.is_success() {
+        let hint = if status.as_u16() == 404 {
+            "源地址不存在或已下线"
+        } else if status.is_server_error() {
+            "源服务器故障，稍后重试或换源"
+        } else {
+            "源拒绝了本次请求"
+        };
+        return Err(format!("源返回错误：HTTP {}（{}）", status, hint));
+    }
+    // reqwest 默认跟随重定向（最多 10 次），resp.url() 即最终 URL（master 相对 variant 靠它解析）
+    let final_url = resp.url().to_string();
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(serde_json::json!({ "data": b64, "url": final_url }).to_string())
 }
 
 // 清除 WebView 全部浏览数据（HTTP 缓存 / 本地存储 / 应用缓存等）。

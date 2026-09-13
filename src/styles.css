@@ -28,7 +28,7 @@
 .music-theme { flex-direction: row; }
 .video-theme { flex-direction: column; }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; tap-highlight-color: transparent; }
 html, body, #root { height: 100%; overflow-x: hidden; }
 /* ⑦ 屏幕自适应基线：禁止 WebView 按系统/字号设置自动放大文字（鸿蒙 vs 安卓字号表现不一致的主因） */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -208,8 +208,10 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ⑭ 去掉 max()：卓易通 WebView 上 max() 失效会拖垮整条规则。
    calc(var(--sat) - 22px) 在 --sat < 22px 时为负 → padding 负值非法 → 整条规则被丢弃 = 0，
    效果与 max(0px, ...) 一致，且兼容性更好。 */
-/* V3.4.4 #7：同 .home-top —— 抵消 .main 那层 --sat，避免安全区重复计算 */
-.view.library .tabs { margin-top: calc(7px - var(--sat)); padding-top: calc(var(--sat) - 4px); }
+/* V3.4.5 #3A：历史/收藏标题贴近状态栏。
+   .main 顶部已有 padding-top: calc(--sat - 7px)，此处 margin-top 抵消它（7px - --sat），
+   再让自身 padding-top 只补 --sat（不含额外 6px）→ 标题顶边 = 状态栏底，与播放页小窗一致（0px 间隙）。 */
+.view.library .tabs { margin-top: calc(7px - var(--sat)); padding-top: var(--sat); }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -272,17 +274,14 @@ button.fav, .fav { color: var(--danger) !important; }
 .settings-row .label small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; white-space: normal; }
 .settings-row .value { flex: 1; text-align: right; min-width: 0; color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
 .settings-row .chevron { color: var(--muted); opacity: .55; flex-shrink: 0; }
-.settings-row.tap { cursor: pointer; transition: background .12s; }
-.settings-row.tap:active { background: var(--panel2); }
-.settings-row.danger-row { cursor: pointer; transition: background .12s; }
-.settings-row.danger-row:active { background: var(--panel2); }
+.settings-row.tap { cursor: pointer; }
+.settings-row.danger-row { cursor: pointer; }
 .settings-row.danger-row .ico, .settings-row.danger-row .label { color: var(--danger); }
 .settings-row input[type='text'], .settings-row input[type='number'], .settings-row select { margin-left: auto; max-width: 55%; }
 /* v3.2.1 ⑩：开关顶到最右，和影视仓/OK影视一致 */
 .settings-row .switch { margin-left: auto; flex-shrink: 0; }
 /* ⑥ 已挂载列表：可长按复制 Token 的行 + 已挂盘标签 */
-.settings-row.copyable { cursor: pointer; transition: background .12s; }
-.settings-row.copyable:active { background: var(--panel2); }
+.settings-row.copyable { cursor: pointer; }
 .mount-drives { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 12px; }
 .drive-chip { font-size: 12px; color: var(--text); background: var(--panel2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
 /* 开关 */
@@ -296,10 +295,8 @@ button.fav, .fav { color: var(--danger) !important; }
 .bl-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px 6px; }
 .bl-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; font-size: 12px; cursor: pointer; user-select: none; }
 .bl-chip svg { flex: 0 0 auto; opacity: .7; }
-.bl-chip:active { filter: brightness(1.25); }
 .settings-row .bl-input { flex: 1; min-width: 0; margin-left: 4px; max-width: none; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 .bl-add { flex: 0 0 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--accent); font-size: 13px; cursor: pointer; }
-.bl-add:active { filter: brightness(1.25); }
 
 /* 全屏覆盖页（音源管理 / 网盘浏览 / 我的音乐）*/
 .fullpage { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .15s; }
@@ -771,7 +768,6 @@ button.fav, .fav { color: var(--danger) !important; }
   .bottom-nav button .ico svg, .icon svg { width: 22px; height: 22px; display: block; }
   .bottom-nav button.active { color: var(--accent); }
   .bottom-nav button.action { color: var(--muted); }
-  .bottom-nav button:active { filter: brightness(1.25); }
 
   /* 音乐播放条 / 影视迷你条 上移到底部导航之上 */
   .player.mini { bottom: calc(50px + var(--sab)); }
@@ -822,8 +818,11 @@ button.fav, .fav { color: var(--danger) !important; }
 /* V3.4.4 #7：--sat 原来被算了两遍（.main 的 sat-7 + 本元素自身的 sat-23），顶栏离通知栏白白多出一截。
    改法：负 margin 抵消 .main 那一层，padding 直接给满 sat+6 → logo 距通知栏底固定 6px；
    且 sticky 吸顶/非吸顶两态位置一致（旧写法做不到，吸顶后会往里缩）。 */
+/* V3.4.5 #3A：主页顶栏贴近状态栏（与播放页小窗 0px 间隙对齐）。
+   原 padding-top: calc(--sat + 6px) 会在安全区之上再垫 6px；
+   去掉 +6px → logo/搜索/子站 顶边 = 状态栏底。 */
 .home-top.v25{position:sticky;top:0;z-index:60;background:var(--bg);display:flex;align-items:center;gap:10px;
-  margin-top:calc(7px - var(--sat));padding:calc(var(--sat) + 6px) 14px 10px;}
+  margin-top:calc(7px - var(--sat));padding:var(--sat) 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -843,10 +842,8 @@ button.fav, .fav { color: var(--danger) !important; }
 .bubbles{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
 .bub{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px 0 14px;border-radius:16px;
   background:var(--card);border:1px solid var(--border);color:var(--text);font-size:13px;}
-.bub:active{background:var(--accent-soft);}
 .bub-x{width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--sub);
   display:flex;align-items:center;justify-content:center;}
-.bub-x:active{background:var(--accent);color:#fff;}
 
 /* ===== v1.2.1 新增：导入源子页 / 源列表 / 外观 / 免责声明 ===== */
 .import-page { display: flex; flex-direction: column; gap: 10px; }
@@ -864,13 +861,13 @@ button.fav, .fav { color: var(--danger) !important; }
   text-align: left; background: var(--panel2); border: 1px solid var(--border); color: var(--text);
   border-radius: 10px; padding: 10px 12px; font-size: 12px; word-break: break-all; cursor: pointer;
 }
-.link-item:active { border-color: var(--accent); }
+/* V3.4.5：.link-item 原来 :active 描蓝边，点击闪蓝 → 去掉 */
 .file-btn {
   display: inline-flex; align-items: center; gap: 8px; background: var(--panel2); border: 1px dashed var(--border);
   color: var(--text); border-radius: 10px; padding: 12px; font-size: 14px; cursor: pointer;
   align-self: flex-start;
 }
-.file-btn:active { border-color: var(--accent); }
+/* V3.4.5：.file-btn 原来 :active 描蓝边，点击闪蓝 → 去掉 */
 .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; margin: 6px 0; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 .import-status { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13px; }
@@ -2037,12 +2034,11 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   /* 卡宽不再用 calc——JS 实测容器宽后内联 px（V3.3.0 #1） */
   scroll-snap-align: start;
 }
-/* V3.3.1 #6：按下反馈。点封面（不只是标题）也会立刻缩一下并描边，
-   让用户确认"我点中了"，不再因为搜索结果出得慢而以为没点到、反复点两三次。 */
-.hot-card { -webkit-tap-highlight-color: transparent; }
+/* V3.3.1 #6：按下反馈——点封面立刻缩一下，让用户确认"我点中了"，
+   不再因为搜索结果出得慢而以为没点到、反复点两三次。
+   V3.4.5：去掉原来叠加的蓝色描边（点击闪蓝），只保留缩小手感。 */
 .hot-card:active .pcover {
   transform: scale(.955);
-  border: 1px solid var(--accent);
   transition: transform .09s ease;
 }
 .row-head .more-btn {
@@ -2056,7 +2052,7 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   padding: 4px 10px;
   border-radius: 999px;
 }
-.row-head .more-btn:active { background: rgba(79, 163, 255, .14); }
+/* V3.4.5：「更多」按钮原来 :active 铺蓝色半透明底，点击闪蓝 → 去掉 */
 
 /* V3.2.5 #2：「更多」分类全屏页（仿 player-page 满屏覆盖，上下滑动） */
 .more-page {

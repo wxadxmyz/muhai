@@ -167,9 +167,13 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* ============ 海报网格（影视）============ */
 .poster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; grid-auto-rows: 1fr; }
-.pcard { cursor: pointer; display: flex; flex-direction: column; height: 100%; }
-.pcover { position: relative; aspect-ratio: 3/4; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; } /* V3.3.0 #5：2:3→3:4，矮一点 */
-.pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
+.pcard { cursor: pointer; display: flex; flex-direction: column; height: 100%; -webkit-tap-highlight-color: transparent; outline: none; }
+.pcover { position: relative; aspect-ratio: 3/4; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; -webkit-tap-highlight-color: transparent; outline: none; } /* V3.3.0 #5：2:3→3:4，矮一点 */
+/* V3.4.6：hover 蓝边只在桌面真实指针下生效；移动端（触摸）去掉，避免从播放页返回后
+   WebView 把 touch 过的卡片残留 hover 态，整张卡片外面挂一圈 accent 蓝框。 */
+@media (hover: hover) and (pointer: fine) {
+  .pcard:hover .pcover { transform: translateY(-3px); border: 1px solid var(--accent); }
+}
 .pcover img { width: 100%; height: 100%; object-fit: cover; }
 /* V3.3.7 七：兜底文字卡此前只有 font-weight，没有 font-size / color —— 历史页表现为「浅灰空白」。
    补齐字号与白色文字，并让它在封面框内居中（此前还可能被挤到左上）。 */
@@ -208,10 +212,10 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ⑭ 去掉 max()：卓易通 WebView 上 max() 失效会拖垮整条规则。
    calc(var(--sat) - 22px) 在 --sat < 22px 时为负 → padding 负值非法 → 整条规则被丢弃 = 0，
    效果与 max(0px, ...) 一致，且兼容性更好。 */
-/* V3.4.5 #3A：历史/收藏标题贴近状态栏。
-   .main 顶部已有 padding-top: calc(--sat - 7px)，此处 margin-top 抵消它（7px - --sat），
-   再让自身 padding-top 只补 --sat（不含额外 6px）→ 标题顶边 = 状态栏底，与播放页小窗一致（0px 间隙）。 */
-.view.library .tabs { margin-top: calc(7px - var(--sat)); padding-top: var(--sat); }
+/* V3.4.6 修正 V3.4.5 #3A 参照错误：与主页 .home-top 同一套逻辑，
+   历史/收藏 tabs 上沿 = 状态栏底（margin-top:7px），padding-top:0 → 紧贴通知栏，
+   空隙 0，与播放页视频一致。z-index:60 高于 .app::before(50)。 */
+.view.library .tabs { margin-top: 7px; padding-top: 0; z-index: 60; }
 .tabs button { background: transparent; border: none; color: var(--muted); padding: 10px 16px; font-size: 14px; border-bottom: 2px solid transparent; border-radius: 0; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
 
@@ -818,11 +822,14 @@ button.fav, .fav { color: var(--danger) !important; }
 /* V3.4.4 #7：--sat 原来被算了两遍（.main 的 sat-7 + 本元素自身的 sat-23），顶栏离通知栏白白多出一截。
    改法：负 margin 抵消 .main 那一层，padding 直接给满 sat+6 → logo 距通知栏底固定 6px；
    且 sticky 吸顶/非吸顶两态位置一致（旧写法做不到，吸顶后会往里缩）。 */
-/* V3.4.5 #3A：主页顶栏贴近状态栏（与播放页小窗 0px 间隙对齐）。
-   原 padding-top: calc(--sat + 6px) 会在安全区之上再垫 6px；
-   去掉 +6px → logo/搜索/子站 顶边 = 状态栏底。 */
+/* V3.4.6 修正 V3.4.5 #3A 参照错误 + 修正空白来源：
+   空白不是 padding 给多少的「12px」，而是「home-top z-index(60) > .app::before 遮罩(50)，
+   导致 padding 整段露成纯色空白」。所以 padding 给多少空隙就多少。
+   正解：margin-top:7px 把上沿正好推到状态栏底（y=sat），padding-top:0 →
+   home-top 完整落在遮罩下方不再露空白，顶边紧贴通知栏，与播放页视频上沿一致（空隙 0）。
+   吸顶后 sticky 会轻微上移 7px（钻进同色遮罩区，视觉无差）。 */
 .home-top.v25{position:sticky;top:0;z-index:60;background:var(--bg);display:flex;align-items:center;gap:10px;
-  margin-top:calc(7px - var(--sat));padding:var(--sat) 14px 10px;}
+  margin-top:7px;padding:0 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;

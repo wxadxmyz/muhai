@@ -187,6 +187,13 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
 
   return {
     async search(keyword: string) {
+      // V3.4.7 #2：优先用 ac=videolist（返回完整字段，含 vod_pic 封面），失败或空则回退 ac=search（兼容老源）
+      try {
+        const data = await apiJson(endpoint, { ac: 'videolist', wd: keyword, pg: '1' });
+        if (data?.list?.length) return toItems(data.list, cfg);
+      } catch {
+        /* 落到下面的兜底逻辑 */
+      }
       const data = await apiJson(endpoint, { ac: 'search', wd: keyword, pg: '1' });
       return toItems(data?.list ?? [], cfg);
     },

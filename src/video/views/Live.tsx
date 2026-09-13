@@ -14,6 +14,7 @@ interface Channel {
   url: string;
   logo?: string;
   group?: string;
+  headers?: Record<string, string>;
 }
 
 interface DlnaDevice {
@@ -34,12 +35,13 @@ async function fetchText(url: string): Promise<string> {
 }
 
 // 解析 m3u / txt 直播列表；同名频道多个 URL 聚合为 sources[]（换源）
-function parseM3U(text: string): { name: string; sources: string[]; logo?: string; group?: string }[] {
+function parseM3U(text: string): { name: string; sources: string[]; logo?: string; group?: string; headers?: Record<string, string> }[] {
   const lines = text.split(/\r?\n/);
   const raw: Channel[] = [];
   let name = '';
   let logo = '';
   let group = '';
+  let curHeaders: Record<string, string> | undefined;
   for (const rawLine of lines) {
     const t = rawLine.trim();
     if (t.startsWith('#EXTINF')) {
@@ -49,6 +51,15 @@ function parseM3U(text: string): { name: string; sources: string[]; logo?: strin
       group = groupMatch ? groupMatch[1] : '';
       const idx = t.lastIndexOf(',');
       name = idx >= 0 ? t.slice(idx + 1).trim() : '';
+      // V3.4.7 #1：读取频道自带的请求头（影视仓 M3U 常通过 http-user-agent / http-referer 指定）
+      const ua = t.match(/http-user-agent="([^"]*)"/i) || t.match(/user-agent="([^"]*)"/i);
+      const rf = t.match(/http-referer="([^"]*)"/i) || t.match(/http-referrer="([^"]*)"/i);
+      const og = t.match(/http-origin="([^"]*)"/i);
+      const hd: Record<string, string> = {};
+      if (ua) hd['User-Agent'] = ua[1];
+      if (rf) hd['Referer'] = rf[1];
+      if (og) hd['Origin'] = og[1];
+      curHeaders = Object.keys(hd).length ? hd : undefined;
     } else if (t && !t.startsWith('#')) {
       let url = '';
       if (/^https?:\/\//.test(t)) {
@@ -61,45 +72,50 @@ function parseM3U(text: string): { name: string; sources: string[]; logo?: strin
         }
       }
       if (url) {
-        raw.push({ name: name || url, url, logo, group });
+        raw.push({ name: name || url, url, logo, group, headers: curHeaders });
         name = '';
         logo = '';
         group = '';
+        curHeaders = undefined;
       }
     }
   }
   // 同名聚合
-  const map = new Map<string, { name: string; sources: string[]; logo?: string; group?: string }>();
+  const map = new Map<string, { name: string; sources: string[]; logo?: string; group?: string; headers?: Record<string, string> }>();
   for (const c of raw) {
     const key = c.name;
-    if (!map.has(key)) map.set(key, { name: c.name, sources: [], logo: c.logo, group: c.group });
+    if (!map.has(key)) map.set(key, { name: c.name, sources: [], logo: c.logo, group: c.group, headers: c.headers });
     const entry = map.get(key)!;
     if (!entry.sources.includes(c.url)) entry.sources.push(c.url);
     if (!entry.logo && c.logo) entry.logo = c.logo;
     if (!entry.group && c.group) entry.group = c.group;
+    if (!entry.headers && c.headers) entry.headers = c.headers;
   }
   return Array.from(map.values());
 }
 
 const ALL_CAT = '推荐';
 
-function streamHeaders(url: string): Record<string, string> {
+function streamHeaders(url: string, extra?: Record<string, string> | null): Record<string, string> {
   let ref = '';
   try {
     ref = new URL(url).origin;
   } catch {
     /* ignore */
   }
-  return {
+  const base: Record<string, string> = {
     'User-Agent':
       'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
     Referer: ref || 'https://www.google.com',
   };
+  return extra ? { ...base, ...extra } : base;
 }
 
 export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
   const [channels, setChannels] = useState<ReturnType<typeof parseM3U> | null>(null);
+  // V3.4.7 #1：当前播放频道的自定义请求头（来自 M3U #EXTINF），切台/换源时刷新，供 HLS xhrSetup 透传
+  const curHeadersRef = useRef<Record<string, string> | null>(null);
   const [activeName, setActiveName] = useState('');
   const [activeSrc, setActiveSrc] = useState(1); // 当前换源序号（1-based）
   const [playing, setPlaying] = useState<{ url: string; name: string } | null>(null);
@@ -373,7 +389,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
     if (isHls && el.canPlayType('application/vnd.apple.mpegurl')) {
       el.src = curUrl;
     } else if (isHls && Hls.isSupported()) {
-      hls = new Hls({ xhrSetup: (xhr, u) => { for (const [k, v] of Object.entries(streamHeaders(u))) xhr.setRequestHeader(k, v); } });
+      hls = new Hls({ xhrSetup: (xhr, u) => { for (const [k, v] of Object.entries(streamHeaders(u, curHeadersRef.current))) xhr.setRequestHeader(k, v); } });
       hls.loadSource(curUrl);
       hls.attachMedia(el);
     } else {
@@ -397,6 +413,7 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
         setActiveCat(ALL_CAT);
         setActiveName(ch[0].name);
         setActiveSrc(1);
+        curHeadersRef.current = ch[0].headers ?? null; // 初播即带上首频道自带头
       } else setError('该直播地址解析为空，可能需代理或已失效');
     } catch (e: any) {
       setError(e?.message ?? '加载失败');
@@ -407,6 +424,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
   // 选频道：只切 activeName（驱动 curUrl 派生），不重绘列表，避免画面闪动
   const pickChannel = (name: string) => {
+    const ch = channels?.find((c) => c.name === name);
+    curHeadersRef.current = ch?.headers ?? null; // V3.4.7 #1：切台时刷新频道自带请求头
     setActiveName(name);
     setActiveSrc(1);
     setPlaying({ url: '', name }); // 标记播放态，url 由 curUrl 派生
@@ -415,6 +434,8 @@ export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOp
 
   // 换源：只切 activeSrc
   const pickSrc = (idx: number) => {
+    const ch = channels?.find((c) => c.name === activeName);
+    curHeadersRef.current = ch?.headers ?? null; // V3.4.7 #1：换源时刷新频道自带请求头
     setActiveSrc(idx);
     setPlaying({ url: '', name: activeName });
     setSrcSheet(false);

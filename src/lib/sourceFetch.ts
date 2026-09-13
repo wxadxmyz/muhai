@@ -116,7 +116,7 @@ async function fetchText(url: string): Promise<string> {
 // 影视仓 / TVBox 部分「加密接口」（如 http://www.饭太硬.cc/tv 这类）直接返回 base64 密文，
 // 这里先尝试解码；解码后通常是带 sites[] 的 TVBox JSON，再递归交给下面的 JSON/HTML 分支处理。
 function isTvboxConfig(data: any): boolean {
-  return !!(data && (Array.isArray(data.sites) || Array.isArray(data.urls)));
+  return !!(data && (Array.isArray(data.sites) || Array.isArray(data.urls) || Array.isArray(data.lives)));
 }
 
 function nameFromUrl(u: string): string {

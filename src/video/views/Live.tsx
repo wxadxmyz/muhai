@@ -454,9 +454,12 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
       const e = videoRef.current;
       if (!Hls.isSupported()) { e.src = curUrl; return; }
       if (backend) {
-        // V3.4.9：走 Rust 后端 fetch_media，统一带上频道自定义头并绕开 WebView CORS
+        // V3.4.9：走 Rust 后端 fetch_media，统一带上频道自定义头并绕开 WebView CORS。
+        // V3.4.11 关键修复：m3u8 主/子清单由 pLoader 控制，必须与 loader 同时换成
+        // TauriFetchLoader，否则清单仍走 hls.js 默认 Loader（WebView fetch），带不上
+        // 自定义 UA（如 CCTV 源的 AptvPlayer-UA）→ live.php 返回 404 → manifestLoadError。
         LIVE_FETCH_HEADERS = channelHeaders;
-        hls = new Hls({ loader: TauriFetchLoader });
+        hls = new Hls({ loader: TauriFetchLoader, pLoader: TauriFetchLoader });
       } else {
         // 无自定义头的源保持原 xhrSetup 直连（兼容原本能播的 .m3u8 源）
         hls = new Hls({
@@ -470,7 +473,11 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
       hls.on(Hls.Events.ERROR, (_event, data: any) => {
         console.error('[HLS error]', data.type, data.details, data);
         if (data.fatal) {
-          toast(`直播播放失败：${data.details || data.type}`);
+          // 优先展示后端 fetchmedia 返回的具体错误（如 HTTP 404 / 源拒绝），便于定位
+          const detail = data.details || data.type;
+          const backendErr =
+            data.response && (data.response.text || (typeof data.response.data === 'string' ? data.response.data : ''));
+          toast(`直播播放失败：${detail}${backendErr ? '（' + backendErr + '）' : ''}`);
         }
       });
     };

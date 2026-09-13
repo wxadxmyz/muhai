@@ -381,7 +381,7 @@ async fn fetch_media(url: String, headers: Option<std::collections::HashMap<Stri
             if k.eq_ignore_ascii_case("user-agent") {
                 has_ua = true;
             }
-            req = req.header(k, v);
+            req = req.header(k.as_str(), v.as_str());
         }
     }
     if !has_ua {

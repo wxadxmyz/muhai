@@ -134,7 +134,20 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
 
   class TauriFetchLoader {
     context: any = null;
-    stats: any = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0, loading: { start: 0, first: 0, end: 0 } };
+    // V3.5.0 修复：stats 必须完整包含 hls.js LoaderStats 要求的 loading/parsing/buffering 三个嵌套对象。
+    // 否则 hls.js 在 manifest/分片加载成功后写 stats.parsing.start / stats.buffering.start 时命中 undefined，
+    // 抛 "Cannot set properties of undefined (setting 'start')"，被包装成 manifestLoadError。
+    stats: any = {
+      aborted: false,
+      loaded: 0,
+      total: 0,
+      retry: 0,
+      chunkCount: 0,
+      bwEstimate: 0,
+      loading: { start: 0, first: 0, end: 0 },
+      parsing: { start: 0, end: 0 },
+      buffering: { start: 0, first: 0, end: 0 },
+    };
     constructor(_config?: any) {}
     async load(context: any, _config: any, callbacks: any) {
       this.context = context;

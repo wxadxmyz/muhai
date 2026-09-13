@@ -5,7 +5,7 @@ fn main() {
                 .commands(&[
                     "fetchsource",
                     "fetchimage",
-                    "fetch_media",
+                    "fetchmedia",
                     "spiderrun",
                     "dlnascan",
                     "castvideo",

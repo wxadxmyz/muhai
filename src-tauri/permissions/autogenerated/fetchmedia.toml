@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fetchmedia"
+description = "Enables the fetchmedia command without any pre-configured scope."
+commands.allow = ["fetchmedia"]
+
+[[permission]]
+identifier = "deny-fetchmedia"
+description = "Denies the fetchmedia command without any pre-configured scope."
+commands.deny = ["fetchmedia"]

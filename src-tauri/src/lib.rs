@@ -61,7 +61,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetchsource,
             fetchimage,
-            fetch_media,
+            fetchmedia,
             spiderrun,
             dlnascan,
             castvideo,
@@ -370,7 +370,7 @@ async fn fetchsource(url: String) -> Result<String, String> {
 // —— 后者用于 HLS.js 以最终 URL 为 base 解析 master playlist 里的相对路径 variant
 //    （如 CCTV1 的 live.php 302 到 migu 后，variant 是相对路径 `01.m3u8?...`）。
 #[tauri::command]
-async fn fetch_media(url: String, headers: Option<std::collections::HashMap<String, String>>) -> Result<String, String> {
+async fn fetchmedia(url: String, headers: Option<std::collections::HashMap<String, String>>) -> Result<String, String> {
     use base64::Engine;
     let mut req = http_client()
         .get(&url)

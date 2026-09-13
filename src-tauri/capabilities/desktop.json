@@ -14,7 +14,7 @@
     "updater:default",
     "allow-fetchsource",
     "allow-fetchimage",
-    "allow-fetch_media",
+    "allow-fetchmedia",
     "allow-spiderrun",
     "allow-dlnascan",
     "allow-castvideo",

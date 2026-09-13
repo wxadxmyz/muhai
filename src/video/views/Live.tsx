@@ -116,7 +116,7 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
   async function peekIsHls(url: string, extra?: Record<string, string> | null): Promise<boolean> {
     try {
       const headers = extra ? streamHeaders(url, extra) : streamHeaders(url);
-      const raw = await invoke<string>('fetch_media', { url, headers });
+      const raw = await invoke<string>('fetchmedia', { url, headers });
       const json = JSON.parse(raw) as { data: string };
       const bin = atob(json.data);
       const head = bin.slice(0, 512);
@@ -141,7 +141,7 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
       const headers = LIVE_FETCH_HEADERS ? streamHeaders(url, LIVE_FETCH_HEADERS) : streamHeaders(url);
       const t0 = performance.now();
       try {
-        const raw = await invoke<string>('fetch_media', { url, headers });
+        const raw = await invoke<string>('fetchmedia', { url, headers });
         const json = JSON.parse(raw) as { data: string; url: string };
         const bin = atob(json.data);
         const bytes = new Uint8Array(bin.length);

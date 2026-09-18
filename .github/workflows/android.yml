@@ -59,14 +59,19 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Accept licenses & install base packages
-        run: |
-          export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
-          export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
-          yes | sdkmanager --licenses || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_on: error
+          command: |
+            export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
+            export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+            yes | sdkmanager --licenses || true
+            sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Install NDK
         uses: nttld/setup-ndk@v1

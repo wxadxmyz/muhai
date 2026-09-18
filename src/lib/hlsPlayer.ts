@@ -3,10 +3,138 @@
 // - 其余走 hls.js，并透传防盗链 headers
 // 注意：hls.js 改为动态 import（应用启动不加载），规避 1.6.17 的模块初始化循环依赖崩溃问题。
 
+import { invoke } from '@tauri-apps/api/core';
+
 type HlsOpts = {
   headers?: Record<string, string>;
   onError?: (fatal: boolean) => void;
 };
+
+// ===== 后端代理 Loader（点播/直播共用，V3.5.1 从 Live.tsx 抽取）=====
+// 让 m3u8 主/子清单与 ts 分片都经 Rust 后端 fetchmedia 拉流，
+// 既能带上防盗链/自定义头（User-Agent/Referer），又不受 WebView CORS 限制。
+
+export function streamHeaders(url: string, extra?: Record<string, string> | null): Record<string, string> {
+  let ref = '';
+  try {
+    ref = new URL(url).origin;
+  } catch {
+    /* ignore */
+  }
+  const base: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+    Referer: ref || 'https://www.google.com',
+  };
+  return extra ? { ...base, ...extra } : base;
+}
+
+// 工厂：闭包捕获 extraHeaders，适配 hls.js 用无参 `new loader()` 实例化 Loader 的约束。
+// 同一个 video 多码率切换时每个 hls 实例各自持有自己的 headers，不再依赖模块级全局变量。
+export function createBackendLoader(extraHeaders: Record<string, string> | null = null) {
+  return class BackendLoader {
+    context: any = null;
+    // V3.5.0 修复：stats 必须完整包含 hls.js LoaderStats 要求的 loading/parsing/buffering 三个嵌套对象。
+    // 否则 hls.js 在 manifest/分片加载成功后写 stats.parsing.start / stats.buffering.start 时命中 undefined，
+    // 抛 "Cannot set properties of undefined (setting 'start')"，被包装成 manifestLoadError。
+    stats: any = {
+      aborted: false,
+      loaded: 0,
+      total: 0,
+      retry: 0,
+      chunkCount: 0,
+      bwEstimate: 0,
+      loading: { start: 0, first: 0, end: 0 },
+      parsing: { start: 0, end: 0 },
+      buffering: { start: 0, first: 0, end: 0 },
+    };
+    constructor(_config?: any) {}
+    async load(context: any, _config: any, callbacks: any) {
+      this.context = context;
+      const url = context.url;
+      const headers = streamHeaders(url, extraHeaders);
+      const t0 = performance.now();
+      this.stats.loading.start = t0;
+      try {
+        const raw = await invoke<string>('fetchmedia', { url, headers });
+        if (this.stats.aborted) return;
+        const json = JSON.parse(raw) as { data: string; url: string };
+        const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
+        // hls.js 解析 m3u8 manifest 时要求 response.data 为 string，分片才用 ArrayBuffer
+        const isText = context.responseType === 'text' || context.responseType === '';
+        const data = isText ? new TextDecoder('utf-8').decode(bytes) : bytes.buffer;
+        const t1 = performance.now();
+        this.stats.loading.first = t1;
+        this.stats.loading.end = t1;
+        this.stats.loaded = bytes.length;
+        this.stats.total = bytes.length;
+        this.stats.bwEstimate = (this.stats.total * 8000) / Math.max(1, t1 - t0);
+        callbacks.onSuccess({ url: json.url || url, data, code: 200 }, this.stats, context, null);
+      } catch (e: any) {
+        if (this.stats.aborted) return;
+        const text = String(e?.message ?? e);
+        console.error('[BackendLoader]', url, text);
+        callbacks.onError({ code: e?.code ?? 0, text }, context, null, this.stats);
+      }
+    }
+    abort() {
+      this.stats.aborted = true;
+    }
+    destroy() {}
+  };
+}
+
+export async function peekIsHls(url: string, extra?: Record<string, string> | null): Promise<boolean> {
+  try {
+    const headers = streamHeaders(url, extra ?? null);
+    const raw = await invoke<string>('fetchmedia', { url, headers });
+    const json = JSON.parse(raw) as { data: string; url?: string };
+    const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
+    const head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
+    return /#EXTM3U/i.test(head);
+  } catch (e: any) {
+    console.warn('[peekIsHls]', url, e?.message ?? e);
+    return false;
+  }
+}
+
+// 走后端代理挂载 HLS：主/子清单与分片统一经 Rust fetchmedia，绕开 CORS 与自定义头限制。
+// onError 接收后端返回的具体错误文本（如 HTTP 404 / 防盗链拒绝），便于 UI 精准提示。
+export async function attachHlsWithBackend(
+  video: HTMLVideoElement,
+  url: string,
+  opts: { headers?: Record<string, string>; onError?: (msg?: string) => void } = {}
+) {
+  detachHls(video);
+  if (!url) return;
+  const Hls = await loadHls();
+  if (!Hls || !Hls.isSupported()) {
+    video.src = url; // 后端不可用 / 不支持 hls.js 时回退原生尝试
+    return;
+  }
+  const loader = createBackendLoader(opts.headers ?? null);
+  const hls = new Hls({ loader, pLoader: loader });
+  (video as any).__hls = hls;
+  INSTANCES.set(video, hls);
+  hls.loadSource(url);
+  hls.attachMedia(video);
+  hls.on(Hls.Events.ERROR, (_evt, data: any) => {
+    if (!data.fatal) return;
+    const backendErr =
+      data.response && (data.response.text || (typeof data.response.data === 'string' ? data.response.data : ''));
+    switch (data.type) {
+      case Hls.ErrorTypes.NETWORK_ERROR:
+        hls.startLoad();
+        break;
+      case Hls.ErrorTypes.MEDIA_ERROR:
+        hls.recoverMediaError();
+        break;
+      default:
+        opts.onError?.(backendErr || data.details || data.type);
+        break;
+    }
+  });
+}
 
 function isHlsUrl(url: string): boolean {
   return /\.m3u8(\?.*)?$/i.test(url) || url.toLowerCase().includes('.m3u8');

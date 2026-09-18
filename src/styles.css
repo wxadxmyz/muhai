@@ -1802,6 +1802,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 
 /* ⑨ 滑动/拖动快进：独立加载中圆圈（居中，不受控件显隐影响） */
 .vp-seek-loader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+/* V3.5.1：播放中卡顿的常驻缓冲转圈 —— 独立于 overlay、透明底（不压暗画面），控件隐藏也可见 */
+.vp-buf-loader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 9; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.vp-buf-loader .vp-spinner { width: 34px; height: 34px; border-width: 3px; }
 .vp-seek-loader-circle { width: 64px; height: 64px; border-radius: 50%; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.15); display: grid; place-items: center; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
 .vp-seek-loader-circle .vp-spinner { width: 38px; height: 38px; border-width: 3px; }
 .vp-seek-loader-text { color: #fff; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-shadow: 0 1px 4px rgba(0,0,0,.5); }

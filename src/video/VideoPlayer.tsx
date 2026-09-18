@@ -7,7 +7,7 @@ import { MediaItem, SourceConfig } from '../engine/types';
 import { gradientFor, initial } from '../lib/cover';
 import { CastOverlay } from '../components/CastOverlay';
 import { downloadStore } from '../lib/downloads';
-import { attachHls, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLevel } from '../lib/hlsPlayer';
+import { attachHlsWithBackend, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLevel } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
 import { Icon } from '../components/Icon';
@@ -476,13 +476,13 @@ export function VideoPlayer({
         setErr('该音源未返回可播放地址，换条线路或换个音源试试。');
         return;
       }
-      await attachHls(v, it.playUrl, {
+      await attachHlsWithBackend(v, it.playUrl, {
         headers: it.raw?.headers as Record<string, string> | undefined,
-        onError: () => {
+        onError: (msg?: string) => {
           if (!alive) return;
           detachHls(v);
           setResolving(false);
-          setErr('视频加载失败，可能是网络或防盗链限制，换个线路试试。');
+          setErr(msg || '视频加载失败，可能是网络或防盗链限制，换个线路试试。');
         },
       });
       const onMeta = () => {
@@ -1224,9 +1224,11 @@ export function VideoPlayer({
   const endSeekGesture = useCallback(() => {
     seekGestureActive.current = false;
     if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
-    // 抬手后等 seek 真正到位（onSeeked）再清；兜底 350ms
+    // 抬手时若仍在缓冲（视频还没出新画面），交给 onSeeked→clearSeekLoadingOnSettled 清 seekLoading，
+    // 此时常驻缓冲圈(buffering)已接力，避免"转一下就黑屏无圈"；仅未缓冲时才用 350ms 兜底清。
+    if (buffering) return;
     seekLoadingTimer.current = window.setTimeout(() => { setSeekLoading(false); setSeekHideControls(false); }, 350);
-  }, []);
+  }, [buffering]);
   const clearSeekLoadingOnSettled = useCallback(() => {
     if (!seekGestureActive.current) {
       if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
@@ -1374,6 +1376,14 @@ export function VideoPlayer({
             <div className="vp-seek-loader">
               <div className="vp-seek-loader-circle"><span className="vp-spinner" /></div>
               <span className="vp-seek-loader-text">加载中</span>
+            </div>
+          )}
+
+          {/* V3.5.1：常驻缓冲转圈，独立于 overlay（控件隐藏也可见），覆盖播放中卡顿；
+              透明底不压暗画面；seekLoading 时由 seek 圈负责、resolving 时由 vp-loading 负责，故排除二者 */}
+          {buffering && !seekLoading && !resolving && (
+            <div className="vp-buf-loader">
+              <span className="vp-spinner" />
             </div>
           )}
 

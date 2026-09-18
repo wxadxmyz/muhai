@@ -3,6 +3,7 @@ import Hls from 'hls.js';
 import { invoke } from '@tauri-apps/api/core';
 import { aggregateLives } from '../../engine';
 import { SourceConfig, LiveChannelSource } from '../../engine/types';
+import { createBackendLoader, streamHeaders, peekIsHls } from '../../lib/hlsPlayer';
 import { Icon } from '../../components/Icon';
 import { CastOverlay } from '../../components/CastOverlay';
 import { toast } from '../../lib/toast';
@@ -95,91 +96,6 @@ function parseM3U(text: string): { name: string; sources: string[]; logo?: strin
 }
 
 const ALL_CAT = '推荐';
-
-function streamHeaders(url: string, extra?: Record<string, string> | null): Record<string, string> {
-  let ref = '';
-  try {
-    ref = new URL(url).origin;
-  } catch {
-    /* ignore */
-  }
-  const base: Record<string, string> = {
-    'User-Agent':
-      'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
-    Referer: ref || 'https://www.google.com',
-  };
-    return extra ? { ...base, ...extra } : base;
-  }
-
-  // V3.4.9：直播嗅探改走 Rust 后端 fetch_media（绕开 WebView CORS + 带频道自定义头）。
-  // WebView 的 JS fetch 对无 CORS 头的服务器会被拦，导致误判「非 HLS」→ 退回原生直连 404 黑屏。
-  async function peekIsHls(url: string, extra?: Record<string, string> | null): Promise<boolean> {
-    try {
-      const headers = extra ? streamHeaders(url, extra) : streamHeaders(url);
-      const raw = await invoke<string>('fetchmedia', { url, headers });
-      const json = JSON.parse(raw) as { data: string; url?: string };
-      const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
-      const head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
-      return /#EXTM3U/i.test(head);
-    } catch (e: any) {
-      console.warn('[peekIsHls]', url, e?.message ?? e);
-      return false;
-    }
-  }
-
-  // V3.4.9：HLS.js 自定义 Loader，让 manifest / 分片都经 Rust 后端 fetch_media 请求，
-  // 既能带上频道自定义头（如 User-Agent: AptvPlayer-UA），又不受 WebView CORS 限制。
-  // headers 由播放分支在 attach 前写入模块级 LIVE_FETCH_HEADERS。
-  let LIVE_FETCH_HEADERS: Record<string, string> | null = null;
-
-  class TauriFetchLoader {
-    context: any = null;
-    // V3.5.0 修复：stats 必须完整包含 hls.js LoaderStats 要求的 loading/parsing/buffering 三个嵌套对象。
-    // 否则 hls.js 在 manifest/分片加载成功后写 stats.parsing.start / stats.buffering.start 时命中 undefined，
-    // 抛 "Cannot set properties of undefined (setting 'start')"，被包装成 manifestLoadError。
-    stats: any = {
-      aborted: false,
-      loaded: 0,
-      total: 0,
-      retry: 0,
-      chunkCount: 0,
-      bwEstimate: 0,
-      loading: { start: 0, first: 0, end: 0 },
-      parsing: { start: 0, end: 0 },
-      buffering: { start: 0, first: 0, end: 0 },
-    };
-    constructor(_config?: any) {}
-    async load(context: any, _config: any, callbacks: any) {
-      this.context = context;
-      const url = context.url;
-      const headers = LIVE_FETCH_HEADERS ? streamHeaders(url, LIVE_FETCH_HEADERS) : streamHeaders(url);
-      const t0 = performance.now();
-      this.stats.loading.start = t0;
-      try {
-        const raw = await invoke<string>('fetchmedia', { url, headers });
-        if (this.stats.aborted) return;
-        const json = JSON.parse(raw) as { data: string; url: string };
-        const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
-        // hls.js 解析 m3u8 manifest 时要求 response.data 为 string，分片才用 ArrayBuffer
-        const isText = context.responseType === 'text' || context.responseType === '';
-        const data = isText ? new TextDecoder('utf-8').decode(bytes) : bytes.buffer;
-        const t1 = performance.now();
-        this.stats.loading.first = t1;
-        this.stats.loading.end = t1;
-        this.stats.loaded = bytes.length;
-        this.stats.total = bytes.length;
-        this.stats.bwEstimate = this.stats.total * 8000 / Math.max(1, t1 - t0);
-        callbacks.onSuccess({ url: json.url || url, data, code: 200 }, this.stats, context, null);
-      } catch (e: any) {
-        if (this.stats.aborted) return;
-        const text = String(e?.message ?? e);
-        console.error('[TauriFetchLoader]', url, text);
-        callbacks.onError({ code: e?.code ?? 0, text }, context, null, this.stats);
-      }
-    }
-    abort() { this.stats.aborted = true; }
-    destroy() {}
-  }
 
   export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
@@ -467,12 +383,10 @@ function streamHeaders(url: string, extra?: Record<string, string> | null): Reco
       const e = videoRef.current;
       if (!Hls.isSupported()) { e.src = curUrl; return; }
       if (backend) {
-        // V3.4.9：走 Rust 后端 fetch_media，统一带上频道自定义头并绕开 WebView CORS。
-        // V3.4.11 关键修复：m3u8 主/子清单由 pLoader 控制，必须与 loader 同时换成
-        // TauriFetchLoader，否则清单仍走 hls.js 默认 Loader（WebView fetch），带不上
-        // 自定义 UA（如 CCTV 源的 AptvPlayer-UA）→ live.php 返回 404 → manifestLoadError。
-        LIVE_FETCH_HEADERS = channelHeaders;
-        hls = new Hls({ loader: TauriFetchLoader, pLoader: TauriFetchLoader });
+        // V3.5.1：复用 hlsPlayer 抽取的统一后端 Loader（createBackendLoader 工厂，
+        // 闭包捕获频道自定义头），m3u8 主/子清单与分片统一经 Rust fetchmedia 拉流。
+        const loader = createBackendLoader(channelHeaders);
+        hls = new Hls({ loader, pLoader: loader });
       } else {
         // 无自定义头的源保持原 xhrSetup 直连（兼容原本能播的 .m3u8 源）
         hls = new Hls({

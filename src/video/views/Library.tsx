@@ -72,7 +72,9 @@ export function VideoLibrary({
               <div className="pcard" key={key}>
                 <div
                   className="pcover"
-                  style={{ background: lhas ? undefined : gradientFor(it.title) }}
+                  // V3.5.2②：有封面时背景改 transparent —— 否则 CSS 的 --panel2 米白会垫在图后，
+                  // 返回列表重绘瞬间露白块；无封面时仍落片名渐变卡。
+                  style={{ background: lhas ? 'transparent' : gradientFor(it.title) }}
                   onClick={() => {
                     // V3.3.4：长按删除后手指抬起仍会合成一次 click，且列表已移位——
                     // 这个 click 可能落在旁边卡片上误开别的剧。700ms 内一律吞掉（同 VideoPlayer 模式）。

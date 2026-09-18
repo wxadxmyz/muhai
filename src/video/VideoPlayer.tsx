@@ -1384,6 +1384,8 @@ export function VideoPlayer({
           {buffering && !seekLoading && !resolving && (
             <div className="vp-buf-loader">
               <span className="vp-spinner" />
+              {/* V3.5.2①：缓冲圈也带「加载中…」，与解析态视觉一致 */}
+              <span className="vp-buf-text">加载中…</span>
             </div>
           )}
 
@@ -1411,8 +1413,8 @@ export function VideoPlayer({
               </div>
               <div className="center">
                 <button className="big-btn" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
-                  {/* T3：缓冲转圈与播放键原地合体 —— 同一圆圈同一位置，只换里面内容 */}
-                  {buffering ? <span className="vp-spinner" /> : <Icon name={state.isPlaying ? 'pause' : 'play'} size={30} />}
+                  {/* V3.5.2①：缓冲转圈统一由 vp-buf-loader 居中呈现（= 暂停钮小圈 + 加载中），此处不再叠第二个圈 */}
+                  <Icon name={state.isPlaying ? 'pause' : 'play'} size={30} />
                 </button>
               </div>
               <div className="bottom">
@@ -1446,100 +1448,101 @@ export function VideoPlayer({
             </div>
           )}
 
-          {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
-          {landscape && (
-            <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
-              {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
-              <div className="land-top">
-                <button className="back" onClick={toggleLandscape} title="返回"><Icon name="arrow-left" size={18} /></button>
-                <div className="ttl">
-                  <span className="name">{detail.title}</span>
-                  <span className="res">· 第{episodeIndex + 1}集 · [{qualityLabel || resText || '1920x804'}]</span>
-                </div>
-                <div className="status">
-                  <Icon name="clock" size={15} />
-                  <Icon name="battery" size={16} />
-                  <span>{clock}</span>
-                </div>
-              </div>
+        </div>
 
-              {/* 左侧边栏：锁 / 弹幕 */}
-              <div className="side left">
-                <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
-                {/* V3.3.13：横屏弹幕按钮 —— 纯单击开关弹幕（长按出面板已移除，改由底部「弹幕」按钮负责） */}
-                {/* V3.4.0：加 onTouchStart —— 部分机型 WebView 合成 click 派发不到该按钮，touch 事件可正常工作 */}
-                <button
-                  className={'icon' + (danmaku ? ' on' : '')}
-                  onClick={danmakuClickToggle}
-                  onTouchStart={danmakuTouchToggle}
-                  disabled={!detail.danmaku || detail.danmaku.length === 0}
-                  title={danmaku ? '弹幕开' : '弹幕关'}
-                ><Icon name="message" size={20} /></button>
+        {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
+        {landscape && (
+          <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
+            {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
+            <div className="land-top">
+              <button className="back" onClick={toggleLandscape} title="返回"><Icon name="arrow-left" size={18} /></button>
+              <div className="ttl">
+                <span className="name">{detail.title}</span>
+                <span className="res">· 第{episodeIndex + 1}集 · [{qualityLabel || resText || '1920x804'}]</span>
               </div>
-
-              {/* 右侧边栏：投屏 / 画中画 */}
-              <div className="side right">
-                <button className="icon" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={20} /></button>
-                <button className="icon" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={20} /></button>
-              </div>
-
-              {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}
-              <div className="center">
-                <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={26} /></button>
-                <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
-                  {/* T3：横屏主播放键同样与转圈合体，左右切集键保持可点 */}
-                  {buffering ? <span className="vp-spinner" /> : <Icon name={state.isPlaying ? 'pause' : 'play'} size={32} />}
-                </button>
-                <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={26} /></button>
-              </div>
-
-              {/* 底部：横向进度条 + 横排 10 工具按钮 */}
-              <div className="bottom">
-                <div className="prow">
-                  <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
-                  <span className="t">{fmtTime(liveCur)}</span>
-                  <div className="bar" onClick={(e) => {
-                    const v = videoRef.current; if (!v || !liveDur) return;
-                    const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                    const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-                    v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
-                  }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
-                    <div className="buffered" style={{ width: `${bufPct}%` }} />
-                  <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
-                  {/* V3.3.7 十：横屏进度条同样加播放位置圆点 */}
-                  <div className="knob" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
-                  </div>
-                  <span className="t">{fmtTime(liveDur)}</span>
-                  <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
-                </div>
-                <div className="tools">
-                  <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>解码</span></button>
-                  <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
-                  <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
-                  {/* V3.3.9：底部工具栏「弹幕」= 出样式面板（与左侧栏快速开关分工，消除重复） */}
-                  {/* V3.3.13：加 onTouchStart 双触发——部分机型 WebView 合成的 click 派发不到该按钮， */}
-                  {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
-                  {/* V3.4.0：改走 openSubStyle —— 同时记录打开时刻，配合遮罩 400ms 守卫防「同手势秒关」。 */}
-                  {/* V3.4.1：去掉 .on 高亮 —— 它是面板入口，不是状态开关，应和「设置」「选集」一样不变色。 */}
-                  {/* V3.4.2 #2：去掉 disabled —— 「设置」按钮无 disabled，弹幕按钮有会因全局 button:disabled{opacity:.4} 变暗，与「设置」不一致。
-                      无弹幕时点了打开面板即可（面板内可提示本集暂无弹幕）。 */}
-                  <button className="tool" onClick={openSubStyle} onTouchStart={openSubStyle}><Icon name="message" size={15} /><span>弹幕</span></button>
-                  <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
-                  <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
-                  <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
-                  {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
-                  <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
-                    title={levels.length === 1 ? '当前片源只有一档' : '选择清晰度'}>
-                    <Icon name="sparkles" size={15} /><span>{levels.length === 1 ? '单档' : (qualityLabel || '画质')}</span>
-                  </button>
-                  {/* ⑬ 选集改为右侧浮层（同「设置」抽屉），不再用页面内 scrollToEpisodes（会被整屏 .player-card.land 盖住） */}
-                  <button className="tool" onClick={() => setEpOpen(true)}><Icon name="list" size={15} /><span>选集</span></button>
-                  <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
-                </div>
+              <div className="status">
+                <Icon name="clock" size={15} />
+                <Icon name="battery" size={16} />
+                <span>{clock}</span>
               </div>
             </div>
-          )}
-        </div>
+
+            {/* 左侧边栏：锁 / 弹幕 */}
+            <div className="side left">
+              <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
+              {/* V3.3.13：横屏弹幕按钮 —— 纯单击开关弹幕（长按出面板已移除，改由底部「弹幕」按钮负责） */}
+              {/* V3.4.0：加 onTouchStart —— 部分机型 WebView 合成 click 派发不到该按钮，touch 事件可正常工作 */}
+              <button
+                className={'icon' + (danmaku ? ' on' : '')}
+                onClick={danmakuClickToggle}
+                onTouchStart={danmakuTouchToggle}
+                disabled={!detail.danmaku || detail.danmaku.length === 0}
+                title={danmaku ? '弹幕开' : '弹幕关'}
+              ><Icon name="message" size={20} /></button>
+            </div>
+
+            {/* 右侧边栏：投屏 / 画中画 */}
+            <div className="side right">
+              <button className="icon" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={20} /></button>
+              <button className="icon" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={20} /></button>
+            </div>
+
+            {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}
+            <div className="center">
+              <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={26} /></button>
+              <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
+                {/* V3.5.2①：横屏同理，缓冲转圈统一由 vp-buf-loader 呈现，主播放键只显图标 */}
+                <Icon name={state.isPlaying ? 'pause' : 'play'} size={32} />
+              </button>
+              <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={26} /></button>
+            </div>
+
+            {/* 底部：横向进度条 + 横排 10 工具按钮 */}
+            <div className="bottom">
+              <div className="prow">
+                <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
+                <span className="t">{fmtTime(liveCur)}</span>
+                <div className="bar" onClick={(e) => {
+                  const v = videoRef.current; if (!v || !liveDur) return;
+                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                  v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
+                }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
+                  <div className="buffered" style={{ width: `${bufPct}%` }} />
+                <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                {/* V3.3.7 十：横屏进度条同样加播放位置圆点 */}
+                <div className="knob" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                </div>
+                <span className="t">{fmtTime(liveDur)}</span>
+                <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
+              </div>
+              <div className="tools">
+                <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>解码</span></button>
+                <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
+                <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
+                {/* V3.3.9：底部工具栏「弹幕」= 出样式面板（与左侧栏快速开关分工，消除重复） */}
+                {/* V3.3.13：加 onTouchStart 双触发——部分机型 WebView 合成的 click 派发不到该按钮， */}
+                {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
+                {/* V3.4.0：改走 openSubStyle —— 同时记录打开时刻，配合遮罩 400ms 守卫防「同手势秒关」。 */}
+                {/* V3.4.1：去掉 .on 高亮 —— 它是面板入口，不是状态开关，应和「设置」「选集」一样不变色。 */}
+                {/* V3.4.2 #2：去掉 disabled —— 「设置」按钮无 disabled，弹幕按钮有会因全局 button:disabled{opacity:.4} 变暗，与「设置」不一致。
+                    无弹幕时点了打开面板即可（面板内可提示本集暂无弹幕）。 */}
+                <button className="tool" onClick={openSubStyle} onTouchStart={openSubStyle}><Icon name="message" size={15} /><span>弹幕</span></button>
+                <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
+                <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
+                <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
+                {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
+                <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
+                  title={levels.length === 1 ? '当前片源只有一档' : '选择清晰度'}>
+                  <Icon name="sparkles" size={15} /><span>{levels.length === 1 ? '单档' : (qualityLabel || '画质')}</span>
+                </button>
+                {/* ⑬ 选集改为右侧浮层（同「设置」抽屉），不再用页面内 scrollToEpisodes（会被整屏 .player-card.land 盖住） */}
+                <button className="tool" onClick={() => setEpOpen(true)}><Icon name="list" size={15} /><span>选集</span></button>
+                <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ===== 竖屏信息区（按设计文件：info-card / tags / actions / section / intro） ===== */}

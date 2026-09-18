@@ -124,7 +124,9 @@ export function ProxiedImg({ src, alt = '', className, fallbackText, onFinalFail
   // 真机上就是「深蓝渐变空白」。改为同样落片名文字卡（有片名才落，避免占位无意义）。
   if (!src) return fallbackText ? <FallbackCard className={className} text={fallbackText} /> : null;
 
-  if (dataUrl) return <img src={dataUrl} alt={alt} className={className} loading="lazy" />;
+  // V3.5.2②：去掉 loading="lazy" —— 列表返回重建时浏览器会再次卸载重绘封面，
+  // 重绘间隙露出底层背景（浅色主题就是白块）。封面图本身量小，直接 eager 加载。
+  if (dataUrl) return <img src={dataUrl} alt={alt} className={className} />;
 
   // 代理没拿到 → 让 webview 自己直接加载一次（UA/Referer 与代理不同，未必一起失败）
   if (proxyFailed && !nativeFailed) {
@@ -133,7 +135,6 @@ export function ProxiedImg({ src, alt = '', className, fallbackText, onFinalFail
         src={src}
         alt={alt}
         className={className}
-        loading="lazy"
         onError={() => setNativeFailed(true)}
       />
     );

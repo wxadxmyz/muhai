@@ -33,7 +33,10 @@
   --ease: cubic-bezier(.2, .7, .3, 1);
   --t: .18s var(--ease);
   --line: color-mix(in srgb, var(--text) 8%, transparent);
-  --glass: color-mix(in srgb, var(--bg) 72%, transparent);
+  /* V3.5.4：顶栏/底栏不再透出滚动内容。原来 --glass 只有 72% 底色，
+     亮色(简洁白)主题下海报/文字透上来发灰、显脏（真机反馈）。提到 94% 近实心，
+     同时把 backdrop 模糊从 18px 降到 8px，既有质感又不透内容。 */
+  --glass: color-mix(in srgb, var(--bg) 94%, transparent);
   --glass-line: color-mix(in srgb, var(--text) 10%, transparent);
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .28), 0 6px 16px rgba(0, 0, 0, .22);
@@ -90,7 +93,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visib
 .brand .logo svg, .brand .logo { display: grid; place-items: center; }
 
 /* 顶栏（影视） */
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-bottom: 1px solid var(--glass-line); }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; background: var(--glass); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-bottom: 1px solid var(--glass-line); }
 .topbar .nav { flex-direction: row; display: flex; gap: 4px; }
 .topbar .nav button { color: var(--muted); padding: 9px 16px; font-size: 14px; }
 .topbar .nav button.active { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
@@ -783,7 +786,7 @@ button.fav, .fav { color: var(--danger) !important; }
        与系统导航栏染色（清单 #5）连成一片 → 视觉上 Tab 栏就是 50px，底部不再拖一块白/灰。 */
     background: linear-gradient(var(--glass) 0, var(--glass) 50px, var(--bg) 50px, var(--bg) 100%);
     border-top: 1px solid var(--glass-line);
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 -4px 16px rgba(0,0,0,.25);
   }
   .bottom-nav button {
@@ -853,8 +856,14 @@ button.fav, .fav { color: var(--danger) !important; }
    正解：margin-top:7px 把上沿正好推到状态栏底（y=sat），padding-top:0 →
    home-top 完整落在遮罩下方不再露空白，顶边紧贴通知栏，与播放页视频上沿一致（空隙 0）。
    吸顶后 sticky 会轻微上移 7px（钻进同色遮罩区，视觉无差）。 */
-.home-top.v25{position:sticky;top:0;z-index:60;background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid var(--glass-line);display:flex;align-items:center;gap:10px;
-  margin-top:7px;padding:0 14px 10px;}
+/* V3.5.4：修掉「上滑时顶栏跳一下」。
+   V3.4.6 用 margin-top:7px 把非吸顶态顶栏往下推 7px，但 sticky 一旦吸顶 top:0，
+   这 7px 就被吃掉 → 视觉上顶栏向上跳 7px（真机录像已确认）。
+   正解：不用 margin，改用「吸顶态与初始态完全一致」的定位——把安全区补偿交给 .main 的
+   padding-top 承担（本来就承担），顶栏自身 top:0、无 margin、padding 上下对称，
+   这样滚动前后位置完全一致，不产生位移。 */
+.home-top.v25{position:sticky;top:0;z-index:60;background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--glass-line);display:flex;align-items:center;gap:10px;
+  margin-top:0;padding:10px 14px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;

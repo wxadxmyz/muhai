@@ -190,7 +190,7 @@ export const SKINS: Skin[] = [
       '--accent': '#6d5efc',
       '--accent2': '#2dd4bf',
       '--accent-soft': 'rgba(109,94,252,.16)',
-      '--glass': 'rgba(20,24,32,.62)',
+      '--glass': 'rgba(20,24,32,.94)',
       '--glass-line': 'rgba(255,255,255,.1)',
       '--shadow': '0 12px 34px rgba(0,0,0,.5)',
       '--shadow-sm': '0 1px 2px rgba(0,0,0,.4), 0 6px 16px rgba(0,0,0,.35)',

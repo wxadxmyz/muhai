@@ -6,6 +6,7 @@ import { ImportSourcePage } from '../components/ImportSourcePage';
 import { SourceListPage } from '../components/SourceListPage';
 import { Icon } from '../components/Icon';
 import { PlayerSettingsPage } from './PlayerSettingsPage';
+import { CloudBrowse } from './views/CloudBrowse';
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { clearProxiedCache, proxiedCacheBytes } from '../components/ProxiedImg';
@@ -115,7 +116,7 @@ function ToggleRow({
 }
 
 // 兜底版本号：真实版本由 getVersion() 从安装包动态读取，避免显示写死旧版
-const APP_VERSION_FALLBACK = '3.5.3';
+const APP_VERSION_FALLBACK = '3.5.4';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [
@@ -239,12 +240,17 @@ export function SettingsPage({
   };
 
   const count = `${store.sources.length} 个`;
+  // V3.5.4：已挂载网盘数量（对齐原型「已挂载列表 2 个」）
+  const mountCount = `${Object.values(ndTokens).filter(Boolean).length} 个`;
 
   return (
     <>
       <div className="settings-scroll">
-        {/* 源管理 */}
-        <div className="settings-group-title">源管理</div>
+        {/* V3.5.4：设置主页完全按「幕海 UI 原型」重构——
+            去掉原型中不存在的分组小标题，按原型 6 个卡片分组排布，并补齐
+            原型有而旧版缺失的「网盘浏览（alist）」「下载管理」两个入口。 */}
+
+        {/* 组 1：源 */}
         <div className="settings-card">
           <NavRow
             icon="download"
@@ -255,38 +261,31 @@ export function SettingsPage({
           <NavRow icon="list" label="仓库管理" value={count} onClick={() => setSub('sources')} />
         </div>
 
-        {/* 网盘 */}
-        <div className="settings-group-title">网盘</div>
+        {/* 组 2：网盘（原型 4 项） */}
         <div className="settings-card">
-          <NavRow icon="library" label="网盘登录" value="阿里 / 夸克 / UC" onClick={() => setSub('netdisk')} />
-          <NavRow icon="folder" label="已挂载列表" onClick={() => setSub('mounts')} />
+          <NavRow icon="folder" label="网盘登录" onClick={() => setSub('netdisk')} />
+          <NavRow icon="library" label="已挂载列表" value={mountCount} onClick={() => setSub('mounts')} />
+          <NavRow icon="cloud" label="网盘浏览（alist）" onClick={() => setSub('cloud')} />
+          <NavRow icon="download" label="下载管理" value="离线缓存任务" onClick={() => setSub('downloads')} />
         </div>
 
-        {/* 播放 */}
-        <div className="settings-group-title">播放</div>
+        {/* 组 3：播放（原型 2 项） */}
         <div className="settings-card">
           <NavRow icon="play" label="播放" onClick={() => setSub('player')} />
-        </div>
-
-        {/* 下载 */}
-        <div className="settings-group-title">下载</div>
-        <div className="settings-card">
           <NavRow icon="download" label="离线缓存" value="路径 / 清晰度 / 并发" onClick={() => setSub('downloads')} />
         </div>
 
-        {/* 外观 */}
-        <div className="settings-group-title">外观</div>
+        {/* 组 4：外观 */}
         <div className="settings-card">
-          {/* 问题 #7 修复：删除重复的「主题色」入口，皮肤已涵盖深浅色 + 整套配色；主题色仅改 --accent 与之重叠 */}
-          <NavRow icon="sliders" label="皮肤" value={skin.name} onClick={() => setSub('skin')} />
+          {/* 问题 #7 修复：删除重复的「主题色」入口，皮肤已涵盖深浅色 + 整套配色 */}
+          <NavRow icon="palette" label="皮肤" value={skin.name} onClick={() => setSub('skin')} />
           <NavRow icon="camera" label="首页壁纸" onClick={() => setSub('wallpaper')} />
         </div>
 
-        {/* 通用 */}
-        <div className="settings-group-title">通用</div>
+        {/* 组 5：更新 / 关于 */}
         <div className="settings-card">
           <NavRow
-            icon="download"
+            icon="refresh"
             label="检查更新"
             value={`v${appVersion}`}
             onClick={() => setSub('update')}
@@ -294,16 +293,15 @@ export function SettingsPage({
           <NavRow icon="file-text" label="关于" onClick={() => setSub('about')} />
         </div>
 
-        {/* 维护 */}
-        <div className="settings-group-title">维护</div>
+        {/* 组 6：维护（原型把「清除缓存」「重置 APP」合到同一张卡） */}
         <div className="settings-card">
-          <div className="settings-row danger-row" onClick={clearCache}>
+          <div className="settings-row tap" onClick={clearCache}>
             <span className="ico"><Icon name="refresh" size={20} /></span>
             <span className="label">清除缓存</span>
             <span className="value muted">{cacheBusy ? '清除中…' : fmtCache(cacheSize)}</span>
             <span className="chevron"><Icon name="arrow-right" size={18} /></span>
           </div>
-          <div className="settings-row danger-row" onClick={resetApp}>
+          <div className="settings-row danger-row tap" onClick={resetApp}>
             <span className="ico"><Icon name="trash" size={20} /></span>
             <span className="label">重置 APP</span>
             <span className="value muted">{resetBusy ? '重置中…' : '清空所有数据'}</span>
@@ -351,6 +349,24 @@ export function SettingsPage({
         </SubPage>
       )}
 
+      {/* V3.5.4：网盘浏览（alist）——原型设置页第 2 组的第三个入口 */}
+      {sub === 'cloud' && (
+        <SubPage title="网盘浏览（alist）" onBack={() => setSub(null)}>
+          <CloudBrowse
+            sources={store.sources}
+            onPlayFile={(it) => {
+              // 设置页无播放器上下文：有直链则交系统/浏览器，否则提示。
+              const url = it.episodes?.[0]?.url;
+              if (url) {
+                try { window.open(url, '_blank'); } catch { toast('无法打开该文件'); }
+              } else {
+                toast('该文件暂无可播放直链');
+              }
+            }}
+          />
+        </SubPage>
+      )}
+
       {sub === 'mounts' && (
         <SubPage title="已挂载列表" onBack={() => setSub(null)}>
           {(() => {
@@ -363,8 +379,7 @@ export function SettingsPage({
                   <p className="muted sm">先到「网盘登录」完成官网登录获取 Token</p>
                 </div>
               );
-            }
-            return (
+            }            return (
               <div className="settings-card">
                 {keys.map((k) => (
                   <MountRow

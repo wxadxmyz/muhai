@@ -1981,13 +1981,15 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .hot-banner {
   position: relative;
   margin: 12px 14px 4px;
-  height: 188px;
-  border-radius: 16px;
+  /* V3.5.4：对齐原型 .banner —— 16:9 比例 + --r-lg 圆角 + --shadow-sm 阴影 */
+  aspect-ratio: 16 / 9;
+  height: auto;
+  border-radius: var(--r-lg, 16px);
   overflow: hidden;
   touch-action: pan-y; /* V3.2.7 Q1/Q6：横幅消费横向手势、纵向才滚页面 */
   cursor: pointer;
   background: var(--panel2);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  box-shadow: var(--shadow-sm);
 }
 .hot-banner .hb-cover {
   position: absolute;

@@ -356,17 +356,24 @@ export function Home({
 
   const homeTop = (
     <div className="home-top v25">
-      <div className="ht-logo">🌊 幕海</div>
-      <button className="ht-search" onClick={() => onSearch('')}>
-        <Icon name="search" size={16} />
-        <span className="ht-search-ph">搜索电影/剧集/演员…</span>
-      </button>
-      {/* V3.2.5.1：站点选择按钮（独立 UI，与豆瓣区无关） */}
-      <button className="ht-source" onClick={() => setSheetOpen(true)} title={activeStationName}>
-        <span className="dot" />
-        <span className="name">{activeStationName}</span>
-        <span className="caret">▼</span>
-      </button>
+      {/* V3.5.4：顶栏按原型拆成两行——第 1 行品牌（主色图标 + 幕海），第 2 行搜索 + 站点。
+          原来单行「🌊 幕海 + 搜索 + 站点」挤在一起，与原型不符。 */}
+      <div className="ht-row1">
+        <span className="ht-brand-ico"><Icon name="film" size={16} /></span>
+        <span className="ht-brand-name">幕海</span>
+      </div>
+      <div className="ht-row2">
+        <button className="ht-search" onClick={() => onSearch('')}>
+          <Icon name="search" size={16} />
+          <span className="ht-search-ph">搜索电影/剧集/演员…</span>
+        </button>
+        {/* V3.2.5.1：站点选择按钮（独立 UI，与豆瓣区无关） */}
+        <button className="ht-source" onClick={() => setSheetOpen(true)} title={activeStationName}>
+          <span className="dot" />
+          <span className="name">{activeStationName}</span>
+          <span className="caret">▼</span>
+        </button>
+      </div>
     </div>
   );
 

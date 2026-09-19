@@ -190,7 +190,7 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ============ 海报网格（影视）============ */
 .poster-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; grid-auto-rows: 1fr; }
 .pcard { cursor: pointer; display: flex; flex-direction: column; height: 100%; -webkit-tap-highlight-color: transparent; outline: none; }
-.pcover { position: relative; aspect-ratio: 3/4; min-height: 0; border-radius: 12px; overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; -webkit-tap-highlight-color: transparent; outline: none; } /* V3.3.0 #5：2:3→3:4，矮一点 */
+.pcover { position: relative; aspect-ratio: 3/4; min-height: 0; border-radius: var(--r-md, 12px); box-shadow: var(--shadow-sm); overflow: hidden; background: var(--panel2); display: grid; place-items: center; font-size: 38px; color: #fff; transition: .15s; -webkit-tap-highlight-color: transparent; outline: none; } /* V3.3.0 #5：2:3→3:4，矮一点；V3.5.4：圆角令牌化 + 补原型卡片阴影 */
 /* V3.4.6：hover 蓝边只在桌面真实指针下生效；移动端（触摸）去掉，避免从播放页返回后
    WebView 把 touch 过的卡片残留 hover 态，整张卡片外面挂一圈 accent 蓝框。 */
 @media (hover: hover) and (pointer: fine) {
@@ -862,8 +862,14 @@ button.fav, .fav { color: var(--danger) !important; }
    正解：不用 margin，改用「吸顶态与初始态完全一致」的定位——把安全区补偿交给 .main 的
    padding-top 承担（本来就承担），顶栏自身 top:0、无 margin、padding 上下对称，
    这样滚动前后位置完全一致，不产生位移。 */
-.home-top.v25{position:sticky;top:0;z-index:60;background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--glass-line);display:flex;align-items:center;gap:10px;
+.home-top.v25{position:sticky;top:0;z-index:60;background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--glass-line);display:flex;flex-direction:column;gap:8px;
   margin-top:0;padding:10px 14px;}
+/* V3.5.4：顶栏两行结构（对齐原型 .home-top）
+   第 1 行：品牌（主色圆角图标 + 幕海）；第 2 行：搜索框 + 站点 pill */
+.home-top.v25 .ht-row1{display:flex;align-items:center;gap:7px;}
+.home-top.v25 .ht-brand-ico{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;color:#fff;flex:none;}
+.home-top.v25 .ht-brand-name{font-size:16px;font-weight:800;letter-spacing:.4px;}
+.home-top.v25 .ht-row2{display:flex;align-items:center;gap:10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
   border:1px solid var(--border);border-radius:999px;padding:7px 12px;color:var(--muted);font-size:12px;cursor:text;
@@ -1995,6 +2001,9 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
   inset: 0;
   background: linear-gradient(180deg, rgba(8, 14, 22, .15) 0%, rgba(8, 14, 22, .55) 55%, rgba(8, 14, 22, .92) 100%);
 }
+/* V3.5.4：无封面时 Banner 的居中占位大字原来与左下标题「同名重复」，视觉上像重影。
+   淡化为背景纹理（0.18），只保留左下 .hb-title 一处剧名。 */
+.hot-banner .hb-cover .ph-big { opacity: .18; }
 .hot-banner .hb-info {
   position: absolute;
   left: 0; right: 0; bottom: 0;

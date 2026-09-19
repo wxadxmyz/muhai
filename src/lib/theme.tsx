@@ -246,6 +246,14 @@ function syncNavBar(skin: Skin) {
 function apply(skin: Skin) {
   const root = document.documentElement;
   for (const [k, v] of Object.entries(skin.vars)) root.style.setProperty(k, v);
+  // V3.5.4：卡片阴影按明暗自适应——亮色皮肤用很轻的阴影（对齐原型亮色 --shadow-sm），
+  // 深色皮肤用较重的阴影。否则简洁白下卡片阴影过重、发脏。
+  root.style.setProperty(
+    '--shadow-sm',
+    skin.mode === 'light'
+      ? '0 1px 2px rgba(20,30,50,.06), 0 6px 16px rgba(20,30,50,.08)'
+      : '0 1px 2px rgba(0,0,0,.28), 0 6px 16px rgba(0,0,0,.22)'
+  );
   root.style.colorScheme = skin.mode;
   syncNavBar(skin);
 }

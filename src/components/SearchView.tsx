@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { ProxiedImg } from './ProxiedImg';
 import { tryCoverFallback } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
+import { devLog } from '../lib/log';
 
 type SourceState =
   | { kind: 'ok'; count: number }
@@ -134,7 +135,7 @@ export function SearchView({
       if (mySeq !== searchSeqRef.current) return;
       // v2.5.2 防御：聚合失败不抛未捕获异常（避免搜索页白屏），仅记录错误
       setErrors([{ sourceId: '', sourceName: '', message: e?.message ?? '搜索失败' }]);
-      console.log(`[spider] ${query} 搜索失败:`, e?.message ?? e);
+      devLog(`[spider] ${query} 搜索失败:`, e?.message ?? e);
     } finally {
       // V3.3.4：只有最新一次搜索才能关 loading，防止旧搜索把新搜索的加载态错关
       if (mySeq === searchSeqRef.current) setLoading(false);

@@ -115,7 +115,7 @@ function ToggleRow({
 }
 
 // 兜底版本号：真实版本由 getVersion() 从安装包动态读取，避免显示写死旧版
-const APP_VERSION_FALLBACK = '2.3.10';
+const APP_VERSION_FALLBACK = '3.5.3';
 
 // 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
 const NETDISKS = [

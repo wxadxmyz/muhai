@@ -25,6 +25,19 @@
 }
 /* 每套皮肤的 --bg/--panel/--accent 等由 theme.tsx 写到 documentElement；
    .music-theme / .video-theme 仅控制布局方向，不覆盖主色，保证皮肤色全局生效 */
+/* ============ 设计令牌（对齐 UI 原型精致化方案）============ */
+/* 半径 / 缓动为全局常量；--line/--glass/--accent-soft 等用 color-mix 基于现有主题变量生成，
+   明暗皮肤自动适配（比原型写死两套更优，且 color-mix 已在 .hero/.vp-tags 等处使用）。 */
+:root {
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px; --r-pill: 999px;
+  --ease: cubic-bezier(.2, .7, .3, 1);
+  --t: .18s var(--ease);
+  --line: color-mix(in srgb, var(--text) 8%, transparent);
+  --glass: color-mix(in srgb, var(--bg) 72%, transparent);
+  --glass-line: color-mix(in srgb, var(--text) 10%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .28), 0 6px 16px rgba(0, 0, 0, .22);
+}
 .music-theme { flex-direction: row; }
 .video-theme { flex-direction: column; }
 
@@ -77,7 +90,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visib
 .brand .logo svg, .brand .logo { display: grid; place-items: center; }
 
 /* 顶栏（影视） */
-.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-bottom: 1px solid var(--glass-line); }
 .topbar .nav { flex-direction: row; display: flex; gap: 4px; }
 .topbar .nav button { color: var(--muted); padding: 9px 16px; font-size: 14px; }
 .topbar .nav button.active { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
@@ -532,6 +545,9 @@ button.fav, .fav { color: var(--danger) !important; }
 .player-card:not(.land) .vp-error { top: 50%; bottom: auto; transform: translate(-50%, -50%); }
 .vp-error p { margin: 0; font-size: 12px; line-height: 1.5; color: #fff; }
 .vp-error .mini { margin-top: 10px; width: 58px; height: 58px; border-radius: 50%; background: var(--accent); color: #fff; border: none; font-size: 13px; display: grid; place-items: center; cursor: pointer; flex: none; }
+/* Q5：起播失败浮层增加「换源」入口——与圆形重试钮并排的胶囊按钮 */
+.vp-error-actions { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 10px; }
+.vp-error .mini.ghost { width: auto; height: auto; min-height: 30px; padding: 7px 14px; border-radius: 16px; background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.55); font-size: 12px; }
 .vp-spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: vpspin .8s linear infinite; }
 /* T3：缓冲转圈与播放键原地合体。V3.3.7 一：竖屏大钮缩到 56px，转圈同步 40px → 30px（横屏 main 76px 保持 40px） */
 .big-btn .vp-spinner { width: 30px; height: 30px; border-width: 3px; }
@@ -765,8 +781,9 @@ button.fav, .fav { color: var(--danger) !important; }
     width: 100vw; box-sizing: border-box; height: calc(50px + var(--sab)); padding-bottom: var(--sab);
     /* V3.4.4 #8：只有上方 50px 用 --panel（真正的 Tab 条），下方 --sab 避让区改用 --bg，
        与系统导航栏染色（清单 #5）连成一片 → 视觉上 Tab 栏就是 50px，底部不再拖一块白/灰。 */
-    background: linear-gradient(var(--panel) 0, var(--panel) 50px, var(--bg) 50px, var(--bg) 100%);
-    border-top: 1px solid var(--border);
+    background: linear-gradient(var(--glass) 0, var(--glass) 50px, var(--bg) 50px, var(--bg) 100%);
+    border-top: 1px solid var(--glass-line);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
     box-shadow: 0 -4px 16px rgba(0,0,0,.25);
   }
   .bottom-nav button {
@@ -777,6 +794,8 @@ button.fav, .fav { color: var(--danger) !important; }
   .bottom-nav button .ico { font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; }
   .bottom-nav button .ico svg, .icon svg { width: 22px; height: 22px; display: block; }
   .bottom-nav button.active { color: var(--accent); }
+  /* V3.5.3：与原型对齐——激活项图标加主色柔光投影（原型 .bottom-nav button.on .ic filter:drop-shadow） */
+  .bottom-nav button.active .ico svg { filter: drop-shadow(0 2px 6px var(--accent-soft)); }
   .bottom-nav button.action { color: var(--muted); }
 
   /* 音乐播放条 / 影视迷你条 上移到底部导航之上 */
@@ -834,7 +853,7 @@ button.fav, .fav { color: var(--danger) !important; }
    正解：margin-top:7px 把上沿正好推到状态栏底（y=sat），padding-top:0 →
    home-top 完整落在遮罩下方不再露空白，顶边紧贴通知栏，与播放页视频上沿一致（空隙 0）。
    吸顶后 sticky 会轻微上移 7px（钻进同色遮罩区，视觉无差）。 */
-.home-top.v25{position:sticky;top:0;z-index:60;background:var(--bg);display:flex;align-items:center;gap:10px;
+.home-top.v25{position:sticky;top:0;z-index:60;background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid var(--glass-line);display:flex;align-items:center;gap:10px;
   margin-top:7px;padding:0 14px 10px;}
 .home-top.v25 .ht-logo{flex:0 0 auto;font-size:18px;font-weight:800;letter-spacing:.5px;white-space:nowrap;}
 .home-top.v25 .ht-search{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:6px;background:var(--panel2);
@@ -936,8 +955,10 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .about-desc { font-size: 14px; color: var(--muted); line-height: 1.7; margin-top: 16px; }
 
 /* 免责声明 */
-.disclaimer-mask { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.78); display: grid; place-items: center; padding: calc(22px + var(--sat)) 22px 22px; }
-.disclaimer-card { width: 100%; max-width: 460px; background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 26px 22px; box-shadow: var(--shadow); }
+.disclaimer-mask { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.78); display: grid; place-items: center; padding: calc(22px + var(--sat)) 18px calc(22px + var(--sab)); }
+/* V3.5.3：V3.5.3 修复——窄屏(≤430px)下卡片 max-width:460px 会溢出屏幕右侧被截断，
+   改为 min(460px, 100%) 并显式 box-sizing，杜绝真机「弹窗右边出屏」。 */
+.disclaimer-card { box-sizing: border-box; width: 100%; max-width: min(460px, 100%); background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 22px 20px; box-shadow: var(--shadow); }
 .disclaimer-card h2 { margin: 0 0 14px; text-align: center; font-size: 22px; }
 .disclaimer-body { font-size: 14px; line-height: 1.75; color: var(--text); }
 .disclaimer-body p { margin: 0 0 12px; }
@@ -2017,23 +2038,49 @@ button.primary { background: var(--accent); color: #fff; border: none; border-ra
 .hot-banner .hb-dots span.on { width: 16px; background: var(--accent, #4fa3ff); }
 .hot-row { margin-top: 18px; overflow: hidden; } /* V3.2.5.1：隐藏横排 6 卡溢出滚动条 */
 .hot-card .eps.area {
-  left: 6px; right: 6px; /* V3.2.6：撤销 2a 右对齐，回顶部左侧（文字在卡片内左上角；通栏透明、文字左对齐） */
-  background: transparent; /* V3.2.5.1：去掉蓝色底，仅留文字 */
+  left: 6px; right: auto; /* V3.5.3：对齐原型——地区角标固定在左上角 */
+  top: 6px;
+  background: rgba(0, 0, 0, .55); /* V3.5.3：对齐原型 .poster .badge 黑底毛玻璃胶囊 */
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, .85); /* 压在亮封面也清晰 */
   font-size: 10px;
-  padding: 0;
-  border-radius: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
   width: auto;
   height: auto;
+  text-shadow: none;
 }
-.hot-card .pscore { /* V3.2.5.1：评分数字同样去蓝底，仅白字 + 阴影 */
-  background: transparent;
+.hot-card .pscore { /* V3.5.3：对齐原型——评分固定在右上角，主色底白字胶囊 */
+  left: auto;
+  right: 6px;
+  top: 6px;
+  background: var(--accent);
   color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
-  padding: 0;
-  border-radius: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-shadow: none;
 }
+/* V3.5.3：与原型 1:1 —— 热门行名字条内嵌封面底部（原型 .poster .nm 规格：
+   padding 14px 8px 7px / 12px 600 白字 / 底部黑色渐变遮罩 / 单行省略）。 */
+.hot-card .hot-nm {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 14px 8px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .82));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* 名字已内嵌封面 → 隐藏外置标题/副标题，杜绝同一卡片重复出现两个名字 */
+.hot-card .ptitle,
+.hot-card .psub { display: none; }
 
 /* V3.2.5 #2：HotRow 横排左右滑动 + 标题行「更多」
    V3.3.0 #1：尺寸全部 JS 实测——该真机 WebView 对 flex 内 calc(100% - Xpx) 解析不可靠

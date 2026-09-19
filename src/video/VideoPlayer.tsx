@@ -18,6 +18,7 @@ import { toast } from '../lib/toast';
 import { useSources } from '../store';
 import { crossSourceCover, cachedCrossCover, tryCoverFallback } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
+import { useBuffering } from './hooks/useBuffering';
 
 // V3.3.6 八·二：子站无 logo 时的六边形兜底图案（白色描边六边形 + 源名 hash 固定配色，同源同色）
 const SUBSITE_PALETTE: [string, string][] = [
@@ -762,6 +763,12 @@ export function VideoPlayer({
     setResolving(true);
     setRetryNonce((n) => n + 1);
   };
+  // Q5：起播失败（缓冲/解析超时、HLS fatal 错误耗尽自动重试）后的一键换源入口。
+  // 多线路源切到下一线路并重试；单线路源无路可换则直接重试（避免露出无作用的按钮）。
+  const switchSourceAndRetry = () => {
+    if (lines > 1) onLineChange((line + 1) % lines);
+    retry();
+  };
 
   // 解码循环切换
   const toggleDecode = () => {
@@ -1197,45 +1204,19 @@ export function VideoPlayer({
   const epName = cleanEp(detail.episodes?.[episodeIndex]?.name, episodeIndex);
 
   // ===== T 组：缓冲状态 =====
-  const [buffering, setBuffering] = useState(false);
-  const [bufPct, setBufPct] = useState(0);
-  const bufferingTimer = useRef<number | undefined>(undefined);
-  // T3：缓冲转圈延迟 300ms —— 快进后 200ms 内缓冲好就不显示，避免一闪而过反而像卡顿
-  const markBuffering = useCallback(() => {
-    if (bufferingTimer.current) window.clearTimeout(bufferingTimer.current);
-    bufferingTimer.current = window.setTimeout(() => setBuffering(true), 300);
-  }, []);
-  const clearBuffering = useCallback(() => {
-    if (bufferingTimer.current) { window.clearTimeout(bufferingTimer.current); bufferingTimer.current = undefined; }
-    setBuffering(false);
-  }, []);
-  // ⑨：用户主动快进/拖动时的加载转圈（独立于 overlay，控件隐藏也显示；控件显示时滑动则隐藏其余控件）
-  const [seekLoading, setSeekLoading] = useState(false);
-  const [seekHideControls, setSeekHideControls] = useState(false);
-  const seekLoadingTimer = useRef<number | undefined>(undefined);
-  const seekGestureActive = useRef(false);
-  const startSeekLoading = useCallback((hideControls: boolean) => {
-    if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
-    seekLoadingTimer.current = undefined;
-    seekGestureActive.current = true;
-    setSeekHideControls(hideControls);
-    setSeekLoading(true);
-  }, []);
-  const endSeekGesture = useCallback(() => {
-    seekGestureActive.current = false;
-    if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
-    // 抬手时若仍在缓冲（视频还没出新画面），交给 onSeeked→clearSeekLoadingOnSettled 清 seekLoading，
-    // 此时常驻缓冲圈(buffering)已接力，避免"转一下就黑屏无圈"；仅未缓冲时才用 350ms 兜底清。
-    if (buffering) return;
-    seekLoadingTimer.current = window.setTimeout(() => { setSeekLoading(false); setSeekHideControls(false); }, 350);
-  }, [buffering]);
-  const clearSeekLoadingOnSettled = useCallback(() => {
-    if (!seekGestureActive.current) {
-      if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
-      setSeekLoading(false);
-      setSeekHideControls(false);
-    }
-  }, []);
+  // Q1：缓冲/快进加载两套状态机抽到 useBuffering hook（逻辑不变，仅换位置降低回归风险）
+  const {
+    buffering,
+    bufPct,
+    setBufPct,
+    seekLoading,
+    seekHideControls,
+    markBuffering,
+    clearBuffering,
+    startSeekLoading,
+    endSeekGesture,
+    clearSeekLoadingOnSettled,
+  } = useBuffering();
   // T5：进入播放器时读系统当前音量作为手势起点（"从系统当前音量接着调，不是回到 100"）
   const systemVolRef = useRef(1);
   useEffect(() => {
@@ -1343,7 +1324,14 @@ export function VideoPlayer({
           {err && (
             <div className="vp-error">
               <p>{err}</p>
-              <button className="mini" onClick={retry}>重试</button>
+              <div className="vp-error-actions">
+                <button className="mini" onClick={retry}>重试</button>
+                {lines > 1 && (
+                  <button className="mini ghost" onClick={switchSourceAndRetry}>
+                    换源（{((detail.raw as any)?.lineNames as string[] | undefined)?.[(line + 1) % lines] || LINE_NAMES[(line + 1) % lines] || `线路${((line + 1) % lines) + 1}`}）
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

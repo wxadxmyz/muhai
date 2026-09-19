@@ -9,6 +9,7 @@ import { CastOverlay } from '../../components/CastOverlay';
 import { toast } from '../../lib/toast';
 import { pushBackHandler } from '../../lib/backStack';
 import { requestOrientation, requestImmersive } from '../../lib/orientation';
+import { devError } from '../../lib/log';
 
 interface Channel {
   name: string;
@@ -398,7 +399,7 @@ const ALL_CAT = '推荐';
       hls.loadSource(curUrl);
       hls.attachMedia(e);
       hls.on(Hls.Events.ERROR, (_event, data: any) => {
-        console.error('[HLS error]', data.type, data.details, data);
+        devError('[HLS error]', data.type, data.details, data);
         if (data.fatal) {
           // 优先展示后端 fetchmedia 返回的具体错误（如 HTTP 404 / 源拒绝），便于定位
           const detail = data.details || data.type;

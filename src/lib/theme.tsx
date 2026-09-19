@@ -170,6 +170,32 @@ export const SKINS: Skin[] = [
       '--shadow': '0 8px 30px rgba(60,10,15,.5)',
     },
   },
+  {
+    id: 'muhai',
+    name: '幕海紫',
+    mode: 'dark',
+    swatch: 'linear-gradient(135deg,#6d5efc,#2dd4bf)',
+    // V3.5.3：与「幕海 UI 原型」1:1 对齐的深色紫调皮肤（备选，非默认；默认仍为「简洁白」clean）
+    vars: {
+      '--bg': '#0c0e13',
+      '--panel': '#161a22',
+      '--panel2': '#1b2029',
+      '--panel3': '#222834',
+      '--text': '#e9ebef',
+      '--muted': '#9298a4',
+      '--border': 'rgba(255,255,255,.08)',
+      '--line': 'rgba(255,255,255,.08)',
+      '--danger': '#ff5b6e',
+      '--ok': '#3ddc84',
+      '--accent': '#6d5efc',
+      '--accent2': '#2dd4bf',
+      '--accent-soft': 'rgba(109,94,252,.16)',
+      '--glass': 'rgba(20,24,32,.62)',
+      '--glass-line': 'rgba(255,255,255,.1)',
+      '--shadow': '0 12px 34px rgba(0,0,0,.5)',
+      '--shadow-sm': '0 1px 2px rgba(0,0,0,.4), 0 6px 16px rgba(0,0,0,.35)',
+    },
+  },
 ];
 
 const KEY = 'mps_skin'; // 当前选择（可为 'auto' 或具体皮肤 id）

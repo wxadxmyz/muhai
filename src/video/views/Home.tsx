@@ -52,10 +52,11 @@ function HotPosterCard({ it, w, h, inlineTitle, onSearch }: {
         style={hasCover ? coverSize : { ...coverSize, background: gradientFor(it.name) }}
       >
         {hasCover ? <ProxiedImg src={it.pic!} alt="" fallbackText={it.name} /> : <span className="ph-big">{initial(it.name)}</span>}
-        {it.area ? <span className="eps area">{(it.area || '').slice(0, 2)}</span> : null}
+        {it.type ? <span className="eps area">{({ tv: '剧', movie: '影', variety: '综', anime: '漫' } as Record<string, string>)[it.type] ?? ''}</span> : (it.area ? <span className="eps area">{(it.area || '').slice(0, 2)}</span> : null)}
         {it.rating ? <span className="pscore">{it.rating}</span> : null}
-        {/* 名字条内嵌封面底部（更多页用），深色渐变 + 白字 */}
-        {inlineTitle ? <div className="cover-name">{it.name}</div> : null}
+        {/* V3.5.3：与原型 1:1 对齐——热门行名字以渐变条内嵌封面底部（原型 .poster .nm），
+            取代原来「名字挂在封面下方」的外置标题，视觉更紧凑、和设计稿一致。 */}
+        <div className="cover-name hot-nm">{it.name}</div>
       </div>
       {!inlineTitle && <div className="ptitle">{it.name}</div>}
       {!inlineTitle && <div className="psub">{it.year ?? ''} {it.type ? '· ' + ({ tv: '剧', movie: '影', variety: '综', anime: '漫' }[it.type] ?? '') : ''}</div>}

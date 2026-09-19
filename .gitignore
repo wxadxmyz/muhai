@@ -31,3 +31,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 *.swp
+
+# 本地出包监控临时脚本 / 结果（不进仓库）
+ci_watch*.sh
+V3.*出包结果.md

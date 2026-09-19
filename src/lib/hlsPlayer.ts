@@ -4,6 +4,7 @@
 // 注意：hls.js 改为动态 import（应用启动不加载），规避 1.6.17 的模块初始化循环依赖崩溃问题。
 
 import { invoke } from '@tauri-apps/api/core';
+import { devError, devWarn } from './log';
 
 type HlsOpts = {
   headers?: Record<string, string>;
@@ -73,7 +74,7 @@ export function createBackendLoader(extraHeaders: Record<string, string> | null 
       } catch (e: any) {
         if (this.stats.aborted) return;
         const text = String(e?.message ?? e);
-        console.error('[BackendLoader]', url, text);
+        devError('[BackendLoader]', url, text);
         callbacks.onError({ code: e?.code ?? 0, text }, context, null, this.stats);
       }
     }
@@ -93,7 +94,7 @@ export async function peekIsHls(url: string, extra?: Record<string, string> | nu
     const head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
     return /#EXTM3U/i.test(head);
   } catch (e: any) {
-    console.warn('[peekIsHls]', url, e?.message ?? e);
+    devWarn('[peekIsHls]', url, e?.message ?? e);
     return false;
   }
 }
@@ -118,16 +119,27 @@ export async function attachHlsWithBackend(
   INSTANCES.set(video, hls);
   hls.loadSource(url);
   hls.attachMedia(video);
+  // Q6：fatal 错误自动恢复，但限次——避免 NETWORK_ERROR/MEDIA_ERROR 无限 startLoad/recover
+  // 造成「转圈→失败→又转圈」死循环；次数耗尽后把后端错误文本交给 opts.onError，由播放页
+  // 展示「重试 / 换源」入口（见 VideoPlayer 的 err 浮层），而非静默卡死。
+  let netRetries = 0;
+  let mediaRetries = 0;
+  const MAX_NET_RETRIES = 3;
+  const MAX_MEDIA_RETRIES = 3;
   hls.on(Hls.Events.ERROR, (_evt, data: any) => {
     if (!data.fatal) return;
     const backendErr =
       data.response && (data.response.text || (typeof data.response.data === 'string' ? data.response.data : ''));
     switch (data.type) {
       case Hls.ErrorTypes.NETWORK_ERROR:
-        hls.startLoad();
+        netRetries += 1;
+        if (netRetries <= MAX_NET_RETRIES) hls.startLoad();
+        else opts.onError?.(backendErr || '网络错误，已自动重连多次仍失败，换个线路试试');
         break;
       case Hls.ErrorTypes.MEDIA_ERROR:
-        hls.recoverMediaError();
+        mediaRetries += 1;
+        if (mediaRetries <= MAX_MEDIA_RETRIES) hls.recoverMediaError();
+        else opts.onError?.(backendErr || '解码错误，已自动恢复多次仍失败，换个线路试试');
         break;
       default:
         opts.onError?.(backendErr || data.details || data.type);
@@ -217,14 +229,23 @@ export async function attachHls(video: HTMLVideoElement, url: string, opts: HlsO
       INSTANCES.set(video, hls);
       hls.loadSource(url);
       hls.attachMedia(video);
-      hls.on(Hls.Events.ERROR, (_evt, data) => {
+      // Q6：与 attachHlsWithBackend 一致——fatal 错误限次自动恢复，避免死循环。
+      let netRetries2 = 0;
+      let mediaRetries2 = 0;
+      const MAX_NET_RETRIES2 = 3;
+      const MAX_MEDIA_RETRIES2 = 3;
+      hls.on(Hls.Events.ERROR, (_evt, data: any) => {
         if (!data.fatal) return;
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
-            hls.startLoad();
+            netRetries2 += 1;
+            if (netRetries2 <= MAX_NET_RETRIES2) hls.startLoad();
+            else opts.onError?.(true);
             break;
           case Hls.ErrorTypes.MEDIA_ERROR:
-            hls.recoverMediaError();
+            mediaRetries2 += 1;
+            if (mediaRetries2 <= MAX_MEDIA_RETRIES2) hls.recoverMediaError();
+            else opts.onError?.(true);
             break;
           default:
             opts.onError?.(true);

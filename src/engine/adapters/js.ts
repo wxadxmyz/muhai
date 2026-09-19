@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
+import { devLog } from '../../lib/log';
 
 // v2.3.8 统一 JS 引擎源适配器（兼容 CatVod / drpy 两种生态）
 //
@@ -97,12 +98,12 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
       // 保证搜索/首页空白时错误文案一定带“原始返回”，无需 root 即可定位（之前不显示就是这路没记录）。
       const errMsg = `spiderrun 调用失败: ${e?.message ?? e}`;
       lastRaw.set(jsCfg.id, errMsg);
-      console.log(`[spider] ${jsCfg.name} ${func} 调用失败: ${errMsg}`);
+      devLog(`[spider] ${jsCfg.name} ${func} 调用失败: ${errMsg}`);
       throw new Error(errMsg);
     }
     // v2.4.2 调试：记录每个 spider 最近一次原始返回，供搜索/首页空白时回显。
     lastRaw.set(jsCfg.id, raw);
-    console.log(`[spider] ${jsCfg.name} ${func} 返回长度=${raw.length}`);
+    devLog(`[spider] ${jsCfg.name} ${func} 返回长度=${raw.length}`);
     let parsed: any;
     try {
       parsed = JSON.parse(raw);

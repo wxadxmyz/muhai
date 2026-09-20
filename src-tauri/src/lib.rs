@@ -10,6 +10,8 @@ use tauri::tray::TrayIconBuilder;
 
 // v2.3.0 统一 JS 沙箱引擎（幕海/律云共用）
 mod js_engine;
+// V3.6.0 drpy3 / drpy2 蜘蛛源引擎（影视仓生态的 JS 规则源）
+mod drpy3;
 
 // V3.3.1 #5：全局复用的 HTTP 客户端（连接池）。
 // 旧实现里 fetchsource / fetchimage 每次调用都 Client::builder().build() 新建一个客户端，
@@ -63,6 +65,7 @@ pub fn run() {
             fetchimage,
             fetchmedia,
             spiderrun,
+            drpy3run,
             dlnascan,
             castvideo,
             clear_webview_cache
@@ -307,6 +310,16 @@ async fn spiderrun(payload: js_engine::SpiderCall) -> Result<String, String> {
         .await
         .map_err(|e| format!("spider 执行线程异常：{}", e))?;
     result
+}
+
+// V3.6.0 drpy3 引擎命令（前端 js.ts 对 drpy2/drpy3 规则源走这一路）。
+// 与 spiderrun 同构：QuickJS 是同步 CPU 密集执行，必须挪到阻塞线程池，
+// 否则多源聚合搜索期间会占死 tokio worker，其它 invoke 全部排队卡顿。
+#[tauri::command]
+async fn drpy3run(payload: drpy3::Drpy3Call) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || drpy3::drpy3run(payload))
+        .await
+        .map_err(|e| format!("drpy3 执行线程异常：{}", e))?
 }
 
 // 方案C：由 Rust 后端代前端抓取外网 URL（含明文 http / 跨域源），

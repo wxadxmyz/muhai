@@ -1,6 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { devLog } from '../../lib/log';
+// V3.6.0：drpy2 / drpy3 规则源改由 drpy3 引擎承载（Rust 侧 drpy3run 命令）。
+// 检测与适配实现见 ./drpy3；这里只在"脚本是 drpy 规则"时把调用整体转派过去。
+import { createDrpy3Source, isDrpyRule } from './drpy3';
 
 // v2.3.8 统一 JS 引擎源适配器（兼容 CatVod / drpy 两种生态）
 //
@@ -68,6 +71,24 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
   const jsCfg = cfg as any;
   let cachedCode: string | null = null;
   let caps: { homeContent: boolean; searchContent: boolean; detailContent: boolean; playerContent: boolean } | null = null;
+  // V3.6.0：drpy 规则源（drpy2 的 var rule / drpy3 的 export default）走专用引擎，
+  // 裸脚本（自带 home/search/detail/play 全局函数）继续走原 QuickJS 沙箱。
+  let drpy: MediaSource | null = null;
+  let drpyChecked = false;
+
+  async function ensureDrpy(): Promise<MediaSource | null> {
+    if (drpyChecked) return drpy;
+    const code = await loadCode();
+    drpyChecked = true;
+    // 显式开关优先：extra.engine = 'drpy3' 强制走新引擎，'legacy' 强制走旧沙箱
+    const forced = String((jsCfg.extra && jsCfg.extra.engine) || (jsCfg as any).engine || '').toLowerCase();
+    const wantDrpy = forced === 'drpy3' ? true : forced === 'legacy' ? false : isDrpyRule(code);
+    if (wantDrpy) {
+      drpy = createDrpy3Source(cfg, async () => cachedCode ?? (await loadCode()));
+      devLog(`[spider] ${jsCfg.name} 识别为 drpy 规则源，转派 drpy3 引擎`);
+    }
+    return drpy;
+  }
 
   async function loadCode(): Promise<string> {
     if (cachedCode) return cachedCode;
@@ -177,12 +198,16 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
 
   return {
     async search(keyword: string) {
+      const d = await ensureDrpy();
+      if (d) return d.search(keyword);
       const data = await callCompat('searchContent', 'search', [keyword], hasList);
       const list = data?.list ?? (Array.isArray(data) ? data : []);
       return toItems(list);
     },
 
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
+      const d = await ensureDrpy();
+      if (d) return d.getPlayUrl(itemId);
       // CatVod playerContent 可能返回 {url:"..."} 或裸 URL 字符串；play 同理。
       let data: any;
       if (caps?.playerContent) {
@@ -209,6 +234,8 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
     },
 
     async getDetail(itemId: string) {
+      const d = await ensureDrpy();
+      if (d && d.getDetail) return d.getDetail(itemId);
       const data = await callCompat('detailContent', 'detail', [itemId], hasList);
       const list = data?.list ?? (Array.isArray(data) ? data : []);
       const items = toItems(list);
@@ -229,6 +256,8 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
 
     async test() {
       try {
+        const d = await ensureDrpy();
+        if (d) return d.test();
         await loadCode();
         return true;
       } catch {
@@ -237,6 +266,8 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
     },
 
     async home() {
+      const d = await ensureDrpy();
+      if (d && d.home) return d.home();
       const data = await callCompat('homeContent', 'home', [], hasList);
       const list = data?.list ?? (Array.isArray(data) ? data : []);
       return toItems(list);

@@ -5,6 +5,31 @@
 
 ---
 
+## V3.6.0
+
+本版接入 **drpy3 / drpy2 蜘蛛源引擎（P0）**——影视仓（TVBox）生态里最有价值的一批源是「JS 规则源」，
+此前幕海的裸 QuickJS 沙箱跑不了它们，V3.6.0 起可以。
+
+### 新增
+- **drpy3 引擎**：把 drpy3 引擎 + peer 链 + 库包 + cheerio 版 jsoup 四件套 + 幕海胶水打成一个自包含
+  bundle（`src-tauri/vendor/drpy3-muhai.bundle.js`，1.7MB，esbuild IIFE），在 QuickJS 里 eval 一次常驻。
+  drpy3 自带 `load2x` 兼容层，**drpy2 老源（`var rule = {...}`）零改动直接跑**，一条路吃两家。
+- **宿主补齐**：QuickJS 原生没有 `URL / TextEncoder / TextDecoder / atob / WebAssembly / crypto / ArrayBuffer.prototype.resizable`，
+  库包与 cheerio 在模块初始化期就会用到。分两层垫片补齐（`quickjs-pre.js` 零依赖先跑，`quickjs-shims.js` 再装 whatwg-url 的 URL）。
+- **同步 HTTP 桥 `__mhHttp`**：按 drpy3 宿主对接指南 §2.1 的 req 契约实现（headers/method/timeout/body/data/redirect/buffer/encoding），
+  文本响应按响应头 charset 解码（gbk 站点也能正确出字），`buffer:1/2` 走 base64 字节通道。
+- **Promise 手动泵**：QuickJS 同步宿主没有事件循环，引擎内部大量 `await`。Rust 侧 `execute_pending_job()` 循环推进
+  job 队列直到 Promise settle，等效宿主对接指南的「档 C」。
+- **专用引擎线程**：QuickJS 单线程亲和，引擎固定在一条 16MB 栈的 OS 线程上常驻，调用经 mpsc 投递，避免跨线程复用 Runtime。
+- **前端适配 `src/engine/adapters/drpy3.ts`**：识别 drpy 规则（`lang:'dr2'/'dr3'`、`var rule =`、`defineSource(`、`export default {meta,rule}`），
+  自动转派到 drpy3 引擎；TVBox 六环节结果映射回幕海 `MediaItem`（home 取前 2 个分类各一页、detail 拆选集并记住线路 flag、play 走 `play(flag,url,[])`）。
+  源配置里 `extra.engine = 'drpy3' | 'legacy'` 可强制指定走哪条路。
+
+### 验证
+- Node 侧：`drpy3 原生源`（百忙无果 dr3）与 `drpy2 老源`（百忙无果[官] dr2）六环节全通（home/category/detail/play 返回真实数据）。
+- Rust 侧（reqwest 真网）：init 214ms（含 bundle 冷启动）→ home 2ms → category 430ms → detail → play 全通。
+  search 返回空是 mgtv 搜索接口对沙箱出口 403（源注释里也写了「新版接口加了验证」），非引擎问题。
+
 ## V3.5.8
 
 本版处理 2026-09-20 反馈的 5 处 UI 问题，并完成点播源仓库瘦身。

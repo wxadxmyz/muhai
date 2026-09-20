@@ -18,21 +18,29 @@ export function CastOverlay({ onClose, onCast, videoUrl }: { onClose: () => void
   const [devices, setDevices] = useState<DlnaDevice[]>([]);
   const [error, setError] = useState('');
 
-  const scan = useCallback(async () => {
-    setScanning(true);
-    setError('');
+  const scan = useCallback(async (silent = false) => {
+    if (!silent) { setScanning(true); setError(''); }
     try {
       const list = await invoke<DlnaDevice[]>('dlnascan', { timeoutMs: 4000 });
       setDevices(list);
-      if (list.length === 0) setError('未搜到局域网投屏设备，请确认电视/盒子已开机并连同一 Wi-Fi，且支持 DLNA 接收。');
+      if (list.length === 0) {
+        if (!silent) setError('未搜到局域网投屏设备，请确认电视/盒子已开机并连同一 Wi-Fi，且支持 DLNA 接收。');
+      } else {
+        setError(''); // 轮询发现设备后清掉旧提示
+      }
     } catch (e: any) {
-      setError(String(e?.message || e || '投屏设备发现失败（需在 Tauri 打包版内运行）'));
+      if (!silent) setError(String(e?.message || e || '投屏设备发现失败（需在 Tauri 打包版内运行）'));
     } finally {
-      setScanning(false);
+      if (!silent) setScanning(false);
     }
   }, []);
 
-  useEffect(() => { scan(); }, [scan]);
+  // V3.5.7 F7：进场自动轮询（每 5s 静默重扫），UI 0 改动；组件卸载（关闭/取消）即清定时器
+  useEffect(() => {
+    scan();
+    const t = window.setInterval(() => scan(true), 5000);
+    return () => window.clearInterval(t);
+  }, [scan]);
 
   const cast = async (d: DlnaDevice) => {
     if (!videoUrl) {
@@ -72,7 +80,7 @@ export function CastOverlay({ onClose, onCast, videoUrl }: { onClose: () => void
         )}
         <p className="muted sm">提示：投屏依赖局域网 DLNA 设备（电视/盒子）。手机与设备需在同一 Wi-Fi。</p>
         <div className="modal-btns">
-          <button className="modal-btn" onClick={scan} disabled={scanning}><Icon name="refresh" size={16} /> 重新搜索</button>
+          <button className="modal-btn" onClick={() => scan()} disabled={scanning}><Icon name="refresh" size={16} /> 重新搜索</button>
           <button className="modal-btn primary" onClick={onClose}>取消</button>
         </div>
       </div>

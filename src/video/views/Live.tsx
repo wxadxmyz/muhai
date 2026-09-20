@@ -130,6 +130,10 @@ function qualityFromHeight(h: number): string {
   const [locked, setLocked] = useState(false);
   // v3.1.1：小锁独立显隐（不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"）
   const [lockHidden, setLockHidden] = useState(false);
+  // V3.5.7 F6：直播时移/回看状态
+  const [isReplay, setIsReplay] = useState(false);
+  const [replayPct, setReplayPct] = useState(100); // 100 = 直播边缘
+  const [replayLabel, setReplayLabel] = useState('');
   const lockTimer = useRef<number | undefined>(undefined);
   const landHideTimer = useRef<number | undefined>(undefined);
   const landClickTimer = useRef<number | undefined>(undefined);
@@ -242,6 +246,54 @@ function qualityFromHeight(h: number): string {
       scheduleLandHide();    // 3 秒后自动隐藏
     }
   };
+
+  // V3.5.7 F6：直播时移 / 回看。纯 HLS 直播无切片时 seekable 仅含本地缓冲段，
+  // 故「回看范围 = 缓冲段起→直播边缘」；点时间轴任意点即跳到该时刻回看，回到直播跳边缘。
+  const fmtReplay = (sec: number): string => {
+    const s = Math.max(0, Math.floor(sec));
+    const m = Math.floor(s / 60);
+    return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
+  const onTsClick = (e: React.MouseEvent) => {
+    const el = videoRef.current;
+    if (!el) return;
+    const sb = el.seekable;
+    if (!sb || sb.length === 0) { toast('当前直播源不支持回看'); return; }
+    const start = sb.start(0);
+    const end = sb.end(0);
+    if (end - start < 1) { toast('直播缓冲不足，暂无可回看内容'); return; }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const t = start + ratio * (end - start);
+    try { el.currentTime = t; } catch { /* 部分源 seek 受限，静默 */ }
+    setIsReplay(true);
+    setReplayLabel(fmtReplay(end - t));
+  };
+  const backToLive = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    const sb = el.seekable;
+    const end = sb && sb.length ? sb.end(0) : el.duration;
+    try { el.currentTime = end; } catch { /* ignore */ }
+    setIsReplay(false);
+  };
+  // 横屏态：每 500ms 同步回看进度（圆点位置 + 离直播偏移文案）
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const id = window.setInterval(() => {
+      const el = videoRef.current;
+      if (!el) return;
+      const sb = el.seekable;
+      if (!sb || !sb.length) return;
+      const start = sb.start(0);
+      const end = sb.end(0);
+      const pct = end > start ? ((el.currentTime - start) / (end - start)) * 100 : 100;
+      setReplayPct(Math.max(0, Math.min(100, pct)));
+      if (isReplay) setReplayLabel(fmtReplay(end - el.currentTime));
+    }, 500);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen, isReplay]);
 
   // 画中画（② 原生系统级：点按钮即退出 App、桌面浮 16:9 小窗）
   const handlePip = () => {
@@ -715,6 +767,16 @@ function qualityFromHeight(h: number): string {
               <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
               <span className="vp-hud-val">{hud.value}%</span>
             </div>
+          )}
+          {/* V3.5.7 F6：直播回看时间轴（点/拖即回看，圆点=当前位置，绿点=直播边缘） */}
+          <div className="ts-bar" onClick={onTsClick}>
+            <div className="ts-fill" style={{ width: replayPct + '%' }} />
+            <div className="ts-knob" style={{ left: replayPct + '%' }} />
+            <div className="ts-live" title="直播边缘" />
+          </div>
+          {isReplay && <div className="ts-replay-tag">⏪ 回看中 {replayLabel}</div>}
+          {isReplay && (
+            <button className="ts-live-btn" onClick={backToLive} title="回到直播">回到直播 ›</button>
           )}
           <div className="land-bottom">
             <button className="bb" onClick={() => { clearTapTimer(); setSrcSheet((s) => !s); }} title="换源">

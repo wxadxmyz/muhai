@@ -1774,9 +1774,9 @@ body.live-in-room .bottom-nav { display: none; }
    尺寸要求：暂停圈 ≈ 左中弹幕圈（.vp-side .side-btn 38px），上下集圈再小一点（32px）。 */
 .player-card .center { display: flex; align-items: center; justify-content: center; gap: 18px; }
 .player-card .center button.ctrl.small {
-  width: 32px !important; height: 32px !important;
-  min-width: 32px !important; min-height: 32px !important;
-  max-width: 32px !important; max-height: 32px !important;
+  width: 38px !important; height: 38px !important;
+  min-width: 38px !important; min-height: 38px !important;
+  max-width: 38px !important; max-height: 38px !important;
   flex: none !important; border-radius: 50% !important; border: none;
   background: rgba(0, 0, 0, .45); color: #fff;
   display: flex !important; align-items: center !important; justify-content: center !important;
@@ -1785,10 +1785,10 @@ body.live-in-room .bottom-nav { display: none; }
 }
 .player-card .center button.ctrl.small:active { transform: scale(.9); }
 .player-card .center button.ctrl.small:disabled { opacity: .35; cursor: not-allowed; }
-.player-card .center button.ctrl.small svg { width: 18px !important; height: 18px !important; }
-/* 暂停主钮 60 → 38px，与左中弹幕圈同规格 */
-.player-card .center .big-btn { width: 38px !important; height: 38px !important; min-width: 38px !important; min-height: 38px !important; max-width: 38px !important; max-height: 38px !important; background: rgba(0, 0, 0, .55); }
-.player-card .center .big-btn svg { width: 20px !important; height: 20px !important; }
+.player-card .center button.ctrl.small svg { width: 20px !important; height: 20px !important; }
+/* V3.5.7 问题2：暂停主钮 38 → 46px（比上一集/下一集 38px 大一圈，符合本次要求） */
+.player-card .center .big-btn { width: 46px !important; height: 46px !important; min-width: 46px !important; min-height: 46px !important; max-width: 46px !important; max-height: 46px !important; background: rgba(0, 0, 0, .55); }
+.player-card .center .big-btn svg { width: 22px !important; height: 22px !important; }
 /* V3.3.7 一：竖屏中央播放键 74px → 56px（横屏 main 76px 不变） */
 .big-btn { width: 60px !important; height: 60px !important; min-width: 60px !important; min-height: 60px !important; max-width: 60px !important; max-height: 60px !important; flex: none !important; border-radius: 50% !important; border: none; background: rgba(0,0,0,.4); color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
@@ -1851,9 +1851,14 @@ body.live-in-room .bottom-nav { display: none; }
 /* V3.3.5 A1：relative 防 ProxiedImg 占位块逃逸铺满 */
 .info-poster { position: relative; width: 84px; height: 112px; border-radius: var(--r-md, 12px); background: linear-gradient(135deg, #2a3b4f, #1a2535); overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; }
 .info-poster img { width: 100%; height: 100%; object-fit: cover; }
-.info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; }
-.info-title { font-size: 17px; font-weight: 800; margin: 0; line-height: 1.3; }
-.info-sub { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+/* V3.5.7 问题3：去掉生硬 space-between 顶底，改为自然堆叠，标题在上、信息居中、收藏紧随，整体不超出 poster 112px 高度 */
+.info-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; }
+/* V3.5.7 问题3：标题限 2 行裁切，防止过长顶出卡片上沿 */
+.info-title { font-size: 17px; font-weight: 800; margin: 0; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* V3.5.7 问题4：中间信息（年份·导演·主演）整体限 2 行省略号，超长不撑高卡片 */
+.info-sub { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .stars { font-size: 14px; color: var(--accent); letter-spacing: 2px; }
 .stars .empty { color: var(--dim); }
 /* V3.3.7 四：年份/导演/主演改回竖排（原先是一行连排 + 2 行截断，与设计稿不符），
@@ -1863,7 +1868,7 @@ body.live-in-room .bottom-nav { display: none; }
 .info-meta .label { color: color-mix(in srgb, var(--muted) 70%, #fff); margin-right: 4px; }
 /* V3.3.6 八：加入收藏——去红心，纯文字居中；点击变「已收藏」（.on） */
 /* V3.3.7 四：收藏改胶囊钮。此前缺 align-self，被竖向 flex 拉伸成通栏大按钮 */
-.fav-btn { align-self: flex-start; margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.fav-btn { align-self: flex-start; margin-top: 2px; display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
 .fav-btn.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 
 /* V3.3.6 八·二：标签行改为子站指示 [logo/六边形] │ [子站名] */
@@ -1982,6 +1987,16 @@ body.live-in-room .bottom-nav { display: none; }
 .landscape .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px calc(env(safe-area-inset-bottom, 0px) + 10px); background: linear-gradient(transparent, rgba(0,0,0,.55)); }
 /* 仅当底部含进度条（点播横屏）时才纵向堆叠 */
 .landscape .land-bottom:has(.land-progress) { flex-direction: column; align-items: stretch; justify-content: flex-end; }
+/* V3.5.7 问题1：直播横屏底部只有 4 个 .bb、无进度条 → 紧凑居中（不再 space-between 撑开两端），对齐旧版图 1 */
+.landscape .land-bottom:not(:has(.land-progress)) { justify-content: center; gap: 26px; padding-left: 16px; padding-right: 16px; }
+/* V3.5.7 F6：直播横屏回看时间轴（在底部 4 键上方，点/拖即回看） */
+.ts-bar { position: absolute; left: 16px; right: 16px; bottom: 70px; height: 4px; background: rgba(255,255,255,.25); border-radius: 999px; z-index: 4; cursor: pointer; }
+.ts-bar .ts-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 999px; transition: width .12s linear; }
+.ts-bar .ts-knob { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0,0,0,.5); pointer-events: none; }
+.ts-bar .ts-live { position: absolute; right: -2px; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #3ad17a; transform: translate(0, -50%); box-shadow: 0 0 6px #3ad17a; }
+/* 回看态左上标签 + 右上「回到直播」按钮 */
+.ts-replay-tag { position: absolute; left: 16px; top: 54px; z-index: 5; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; font-weight: 600; }
+.ts-live-btn { position: absolute; right: 16px; top: 50px; z-index: 5; padding: 5px 12px; border-radius: 999px; background: var(--accent); color: #fff; border: none; font-size: 12px; font-weight: 700; cursor: pointer; }
 /* 进度条：当前时间 + 拖动条 + 总时间（尺寸收敛、贴近底部工具行） */
 .landscape .land-bottom .land-progress { display: flex; align-items: center; gap: 10px; }
 .landscape .land-bottom .land-progress .t { font-size: 12px; color: rgba(255,255,255,.9); font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 36px; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.5); }

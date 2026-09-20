@@ -1750,9 +1750,9 @@ body.live-in-room .bottom-nav { display: none; }
 .big-btn svg { width: 30px !important; height: 30px !important; }
 /* 点播横屏顶栏/侧栏圆钮 → 图标 24px */
 .landscape .land-top .back svg, .landscape .land-top .rt svg, .landscape .side button svg { width: 24px; height: 24px; }
-/* 点播横屏中央：小钮 48px → 28px；大钮 60px → 36px（V3.5.2⑥ 随按钮一并收小） */
-.landscape .center button svg, .land-center button svg { width: 30px; height: 30px; }
-.landscape .center button.main svg, .land-center button.main svg { width: 40px !important; height: 40px !important; }
+/* 点播横屏中央：小钮 44px → 22px；大钮 52px → 26px（V3.5.6 随按钮一并收小） */
+.landscape .center button svg, .land-center button svg { width: 22px; height: 22px; }
+.landscape .center button.main svg, .land-center button.main svg { width: 26px !important; height: 26px !important; }
 /* 点播横屏底栏 → 图标 24px */
 .landscape .bottom .prow .pi svg, .landscape .bottom .prow .land svg { width: 24px; height: 24px; }
 .landscape .tools button svg { width: 18px; height: 18px; }
@@ -1770,6 +1770,25 @@ body.live-in-room .bottom-nav { display: none; }
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }
 .player-card .center { flex: 1; display: grid; place-items: center; position: relative; z-index: 2; }
+/* V3.5.6 #4+#5：竖屏中央改三连钮（上一集 / 暂停 / 下一集）。
+   尺寸要求：暂停圈 ≈ 左中弹幕圈（.vp-side .side-btn 38px），上下集圈再小一点（32px）。 */
+.player-card .center { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.player-card .center button.ctrl.small {
+  width: 32px !important; height: 32px !important;
+  min-width: 32px !important; min-height: 32px !important;
+  max-width: 32px !important; max-height: 32px !important;
+  flex: none !important; border-radius: 50% !important; border: none;
+  background: rgba(0, 0, 0, .45); color: #fff;
+  display: flex !important; align-items: center !important; justify-content: center !important;
+  cursor: pointer; box-sizing: border-box !important; padding: 0;
+  transition: var(--t, .15s);
+}
+.player-card .center button.ctrl.small:active { transform: scale(.9); }
+.player-card .center button.ctrl.small:disabled { opacity: .35; cursor: not-allowed; }
+.player-card .center button.ctrl.small svg { width: 18px !important; height: 18px !important; }
+/* 暂停主钮 60 → 38px，与左中弹幕圈同规格 */
+.player-card .center .big-btn { width: 38px !important; height: 38px !important; min-width: 38px !important; min-height: 38px !important; max-width: 38px !important; max-height: 38px !important; background: rgba(0, 0, 0, .55); }
+.player-card .center .big-btn svg { width: 20px !important; height: 20px !important; }
 /* V3.3.7 一：竖屏中央播放键 74px → 56px（横屏 main 76px 不变） */
 .big-btn { width: 60px !important; height: 60px !important; min-width: 60px !important; min-height: 60px !important; max-width: 60px !important; max-height: 60px !important; flex: none !important; border-radius: 50% !important; border: none; background: rgba(0,0,0,.4); color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; backdrop-filter: blur(4px); cursor: pointer; box-sizing: border-box !important; }
 .player-card .bottom { position: relative; z-index: 3; padding: 10px 14px 14px; display: flex; align-items: center; gap: 10px; }
@@ -1939,10 +1958,12 @@ body.live-in-room .bottom-nav { display: none; }
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* V3.5.2⑥：横屏中央组整体收小 —— 小钮 58→48、大钮 76→60、间距 20→16 */
-.landscape .center, .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 26px; flex-wrap: nowrap; }
-.landscape .center button, .land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(255,255,255,.14); border: none; color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; transition: var(--t, .15s); }
+/* V3.5.6 #6+#7：继续收小 —— 上下集 62→44、暂停主钮 64→52、间距 26→22。
+   直播横屏与点播横屏共用这一组规则（.land-center），两处同步生效。 */
+.landscape .center, .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 22px; flex-wrap: nowrap; }
+.landscape .center button, .land-center button { width: 44px !important; height: 44px !important; min-width: 44px !important; min-height: 44px !important; max-width: 44px !important; max-height: 44px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(255,255,255,.14); border: none; color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; transition: var(--t, .15s); }
 .landscape .center button:active, .land-center button:active { transform: scale(.92); }
-.landscape .center button.main, .land-center button.main { width: 64px !important; height: 64px !important; min-width: 64px !important; min-height: 64px !important; max-width: 64px !important; max-height: 64px !important; aspect-ratio: 1 !important; color: #fff; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.landscape .center button.main, .land-center button.main { width: 52px !important; height: 52px !important; min-width: 52px !important; min-height: 52px !important; max-width: 52px !important; max-height: 52px !important; aspect-ratio: 1 !important; color: #fff; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
 
 /* V3.5.5 横屏左右中圆钮（弹幕开关 / 画中画）：压在视频画面内侧，避免落进两侧黑边（letterbox）。
    竖屏那套 .vp-side(left:10/right:10) 在横屏全屏下会贴到屏幕最边、跑到黑边里。 */
@@ -1955,8 +1976,12 @@ body.live-in-room .bottom-nav { display: none; }
 
 /* 横屏底部：进度条（当前时间 + 拖动条 + 总时间）+ 工具行（9 个 .bb）。
    整块改为纵向——进度条在上、工具行在下；底部留足 12px 安全区 + 8px 内边距，
-   避免 9 个按钮贴到屏幕最底边（V3.5.5 实测贴边）。 */
-.landscape .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 8px; padding: 10px 18px calc(env(safe-area-inset-bottom, 0px) + 10px); background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+   避免 9 个按钮贴到屏幕最底边（V3.5.5 实测贴边）。
+   V3.5.6：column 只作用于「有点播进度条」的场景（.land-bottom 内含 .land-progress）。
+   直播横屏底部只有 4 个 .bb、没有进度条，若也被 column 命中会竖排到左侧（V3.5.5 回归 bug）。 */
+.landscape .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px calc(env(safe-area-inset-bottom, 0px) + 10px); background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+/* 仅当底部含进度条（点播横屏）时才纵向堆叠 */
+.landscape .land-bottom:has(.land-progress) { flex-direction: column; align-items: stretch; justify-content: flex-end; }
 /* 进度条：当前时间 + 拖动条 + 总时间（尺寸收敛、贴近底部工具行） */
 .landscape .land-bottom .land-progress { display: flex; align-items: center; gap: 10px; }
 .landscape .land-bottom .land-progress .t { font-size: 12px; color: rgba(255,255,255,.9); font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 36px; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
@@ -2049,8 +2074,15 @@ body.live-in-room .bottom-nav { display: none; }
 .sec-hint { font-size: 12px; color: var(--muted); margin: -4px 0 18px; opacity: .85; line-height: 1.5; }
 /* ⑧ 片头/片尾一键设定后：图标位置换成已设秒数（mm:ss） */
 .skip-num { font-weight: 700; color: var(--accent); line-height: 1; }
+/* V3.5.6：激活态（紫底）里的 skip-num 必须跟随父级白字，
+   否则「紫字压紫底」会完全看不见（竖屏设置浮层「快捷操作」片头/片尾时间不显示的根因）。 */
+.line-btns button.on .skip-num,
+button.on > .skip-num { color: currentColor; }
 .vp-tools .skip-num { font-size: 13px; }
 .landscape .tools .skip-num { font-size: 13px; }
+/* V3.5.6 #2：横屏底部工具行（9 个 .bb）里的片头/片尾时间 —— 比主标签更小、用 accent 色 */
+.landscape .land-bottom .bb .skip-num { font-size: 10px; margin-top: -2px; }
+.landscape .land-bottom .bb:disabled .skip-num { color: rgba(255,255,255,.4); }
 .dg-quick .skip-num { font-size: 14px; }
 
 /* 复用既有浮层样式（加载/错误/字幕/投屏/面板） */

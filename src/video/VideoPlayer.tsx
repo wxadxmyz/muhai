@@ -253,6 +253,8 @@ export function VideoPlayer({
   // ⑬ 去掉全局兜底（settings.skipIntro/skipOutro），严格只认单剧标记：符合「单剧跳过、不污染其他影片」
   const introSec = perItem?.intro ?? 0;
   const outroSec = perItem?.outro ?? 0;
+  // V3.5.6 #4：总集数 > 1 才在竖屏中央显示「上一集/下一集」（单集影片不显示，避免误点）
+  const hasMultiEp = !!detail.episodes && detail.episodes.length > 1;
 
   // ===== N 组：续播（写入节流 + 加载恢复 + 暂停/切集/退出补写） =====
   const lastSaveRef = useRef(0);
@@ -1449,11 +1451,34 @@ export function VideoPlayer({
                   <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
                 </div>
               </div>
+              {/* V3.5.6 #4：竖屏中央改三连钮 —— 上一集 / 暂停 / 下一集。
+                  仅在总集数 > 1 时显示上下集（单集影片不显示，避免误点）。
+                  当前集为首集时「上一集」置灰禁用，末集时「下一集」禁用。 */}
               <div className="center">
+                {hasMultiEp && (
+                  <button
+                    className="ctrl small"
+                    onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)}
+                    disabled={episodeIndex <= 0}
+                    title="上一集"
+                  >
+                    <Icon name="prev" size={22} />
+                  </button>
+                )}
                 <button className="big-btn" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
                   {/* V3.5.2①：缓冲转圈统一由 vp-buf-loader 居中呈现（= 暂停钮小圈 + 加载中），此处不再叠第二个圈 */}
                   <Icon name={state.isPlaying ? 'pause' : 'play'} size={30} />
                 </button>
+                {hasMultiEp && (
+                  <button
+                    className="ctrl small"
+                    onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)}
+                    disabled={!detail.episodes || episodeIndex >= detail.episodes.length - 1}
+                    title="下一集"
+                  >
+                    <Icon name="next" size={22} />
+                  </button>
+                )}
               </div>
               <div className="bottom">
                 <div className="bottom-row">
@@ -1546,8 +1571,13 @@ export function VideoPlayer({
                 <button className="bb" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }} title="从头重播"><Icon name="replay" size={22} /><span>重播</span></button>
                 {/* 底部弹幕：弹幕样式面板入口（与左中开关区分） */}
                 <button className="bb" onClick={openSubStyle} onTouchStart={openSubStyle} title="弹幕样式"><Icon name="message" size={22} /><span>弹幕</span></button>
-                <button className="bb" onClick={() => { const v = videoRef.current; if (v && introSec) { v.currentTime = introSec; player.seek(introSec); } }} title={introSec ? `跳过片头（${introSec}s）` : '未设置片头'} disabled={!introSec}><Icon name="skip-forward" size={22} /><span>片头</span></button>
-                <button className="bb" onClick={() => { const v = videoRef.current; const d = v && isFinite(v.duration) && v.duration > 0 ? v.duration : (state.duration || 0); if (v && outroSec && d > 0) { const t = Math.max(0, d - outroSec); v.currentTime = t; player.seek(t); } }} title={outroSec ? `跳过片尾（${outroSec}s）` : '未设置片尾'} disabled={!outroSec}><Icon name="skip-back" size={22} /><span>片尾</span></button>
+                {/* V3.5.6：#3 图标换回 —— 片头=向左(skip-back)、片尾=向右(skip-forward)；
+                    #2 横屏必须能点（不再置灰）：
+                       · 已设过时间 → 点击直接跳到该时间点
+                       · 未设过    → 点击用当前播放进度一键设定（与竖屏设置浮层同一套 setSkipOneTap 逻辑）
+                    并补时间显示：设好后按钮上带出对应时间（竖向小字，见 .land-bottom .bb .skip-num） */}
+                <button className="bb" onClick={() => { const v = videoRef.current; if (introSec > 0) { if (v) { v.currentTime = introSec; player.seek(introSec); } } else { setSkipOneTap('intro'); } }} title={introSec ? `跳过片头（${fmtTime(introSec)}）` : '点击设片头'}><Icon name="skip-back" size={22} /><span>片头</span>{introSec > 0 && <span className="skip-num">{fmtTime(introSec)}</span>}</button>
+                <button className="bb" onClick={() => { const v = videoRef.current; if (outroSec <= 0) { setSkipOneTap('outro'); return; } const d = v && isFinite(v.duration) && v.duration > 0 ? v.duration : (state.duration || 0); if (d > 0) { const t = Math.max(0, d - outroSec); if (v) v.currentTime = t; player.seek(t); } }} title={outroSec ? `跳过片尾（${fmtTime(outroSec)}）` : '点击设片尾'}><Icon name="skip-forward" size={22} /><span>片尾</span>{outroSec > 0 && <span className="skip-num">{fmtTime(outroSec)}</span>}</button>
                 <button className="bb" onClick={() => setEpOpen(true)} title="选集"><Icon name="list" size={22} /><span>选集</span></button>
                 <button className="bb" onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={22} /><span>设置</span></button>
               </div>

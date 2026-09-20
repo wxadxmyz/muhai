@@ -12,6 +12,8 @@ const P: Record<string, ReactNode> = {
   film: <><rect x="3" y="3" width="18" height="18" rx="2.5" /><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4" /></>,
   music: <><path d="M9 18V5l11-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="17" cy="16" r="3" /></>,
   library: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z" /><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20" /></>,
+  // 网盘浏览（alist）：对齐原型 i-cloud
+  cloud: <path d="M7 18h10.5a3.5 3.5 0 0 0 .4-6.98A5.5 5.5 0 0 0 7.2 9.6a4.2 4.2 0 0 0-.2 8.4z" />,
   plug: <><path d="M9 2v6M15 2v6" /><path d="M7 8h10v3a5 5 0 0 1-10 0z" /><path d="M12 16v6" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d={GEAR_PATH} /></>,
   x: <path d="M6 6l12 12M18 6L6 18" />,
@@ -76,7 +78,7 @@ const P: Record<string, ReactNode> = {
   // 风格：描边主体 + 局部填色（门 / 屏幕 / 表盘 / 齿轮圆心）。
   'tab-home': <><path d="M4.7 10.1 12 4.1l7.3 6V19.3a1.2 1.2 0 0 1-1.2 1.2h-4.2v-5.5h-3.8v5.5H5.9a1.2 1.2 0 0 1-1.2-1.2z" /><path d="M10 14.2h4v6.3h-4z" fill="currentColor" stroke="none" /></>,
   'tab-live': <><rect x="2.8" y="6.8" width="18.4" height="13.4" rx="2.2" /><path d="M6.4 10.4h11.2v6.2H6.4z" fill="currentColor" stroke="none" /><path d="M8.3 2.5 12 6.1l3.7-3.6" /></>,
-  'tab-history': <><path d="M3.9 12a8.1 8.1 0 1 0 2.3-5.7" /><path d="M3.9 3.6v4.7h4.7" /><circle cx="12" cy="12" r="4.8" fill="currentColor" stroke="none" opacity=".25" /><path d="M12 7.7v4.5l3.2 2" /></>,
+  'tab-history': <><path d="M3.9 12a8.1 8.1 0 1 0 2.3-5.7" /><path d="M3.9 3.6v4.7h4.7" /><path d="M12 7.7v4.5l3.2 2" /></>,
   'tab-settings': <><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="3" /><path d={GEAR_PATH} /></>,
 } satisfies Record<string, ReactNode>;
 

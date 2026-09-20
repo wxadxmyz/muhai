@@ -8,10 +8,12 @@ export function SourceListPage({
   mediaType,
   onClose,
   title = '仓库管理',
+  onAddSource,
 }: {
   mediaType: 'video' | 'music';
   onClose: () => void;
   title?: string;
+  onAddSource?: () => void;
 }) {
   const store = useSources(mediaType);
 
@@ -19,26 +21,27 @@ export function SourceListPage({
     <SubPage title={title} onBack={onClose}>
 
       {store.sources.length === 0 ? (
-        <div className="empty-hint">
-          <Icon name="list" size={40} />
-          <p>还没有添加任何源</p>
-          <span className="muted sm">请在设置中通过「导入 json 源」添加</span>
+        <div className="empty">
+          <span className="ic"><Icon name="cast" size={48} /></span>
+          <div className="big">还没有添加任何源</div>
+          <div className="sm">请在设置中通过「导入 json 源」添加</div>
         </div>
       ) : (
         <div className="source-cards">
           {store.sources.map((s, i) => (
             <div key={s.id} className={`source-card ${s.enabled ? '' : 'off'}`}>
               <div className="sc-row-1">
-                <div className="sc-name">{s.name}</div>
+                <span className="sc-ic"><Icon name="cast" size={22} /></span>
+                <div className="sc-head">
+                  <div className="sc-name">{s.name}</div>
+                  <div className="sc-url">{s.baseUrl}</div>
+                </div>
                 <button
                   className={`switch ${s.enabled ? 'on' : ''}`}
                   onClick={() => store.toggle(s.id)}
                   title={s.enabled ? '已启用，点击停用' : '已停用，点击启用'}
                   aria-label="启用开关"
                 />
-              </div>
-              <div className="sc-row-2">
-                <span className="sc-url">{s.baseUrl}</span>
               </div>
               <div className="sc-row-3">
                 <button
@@ -65,6 +68,11 @@ export function SourceListPage({
             </div>
           ))}
         </div>
+      )}
+      {onAddSource && (
+        <button className="primary block add-source-btn" onClick={onAddSource}>
+          <Icon name="plus" size={18} /> 新增源
+        </button>
       )}
     </SubPage>
   );

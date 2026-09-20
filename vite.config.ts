@@ -3,14 +3,13 @@ import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
 
-// 读取 tauri.conf.json 的 version，作为前端资源缓存戳。
-// 每次发版 version 变化 → 资源 URL 带新 ?v= → 强制 WebView 丢弃旧缓存重新加载，
-// 杜绝"APK 升了但前端还是旧壳"的问题。
+// #15 版本号自动化：package.json 为「单一真源」。
+// - 前端资源缓存戳（?v=）与 __APP_VERSION__ 都从这里读；
+// - tauri.conf.json / Cargo.toml 由 `npm run version:sync`（scripts/sync-version.mjs）同步。
 function appVersion(): string {
   try {
-    const raw = readFileSync(resolve(__dirname, 'src-tauri/tauri.conf.json'), 'utf-8');
-    const m = raw.match(/"version"\s*:\s*"([^"]+)"/);
-    if (m) return m[1];
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+    if (pkg?.version) return String(pkg.version);
   } catch {
     /* ignore */
   }
@@ -21,6 +20,10 @@ const VER = appVersion();
 
 // 单入口：幕海 App（video.html）
 export default defineConfig({
+  // 把版本号注入前端（避免在 SettingsPage 等处以 fallback 常量硬编码写死）
+  define: {
+    __APP_VERSION__: JSON.stringify(VER),
+  },
   plugins: [
     react(),
     {

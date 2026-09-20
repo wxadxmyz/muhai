@@ -1,5 +1,11 @@
 /// <reference types="vite/client" />
 
+// #15 版本号自动化：构建期由 vite.config.ts 从 package.json 注入。
+// 注意：本文件含顶层 import，已是模块，须用 declare global 才能声明全局常量。
+declare global {
+  const __APP_VERSION__: string;
+}
+
 // V3.5.3：补齐历史遗留的 Tauri 窗口返回键监听类型。
 // 代码里用 getCurrentWindow().onBackButton(cb) 监听安卓返回键，
 // 但当前 @tauri-apps/api 版本已在类型层移除了该方法（迁到 app.onBackButtonPress）。

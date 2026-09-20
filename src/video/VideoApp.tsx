@@ -9,7 +9,6 @@ import { useSwipeBack } from '../lib/swipeBack';
 import { MediaItem, createSource } from '../engine';
 import { alistClient } from '../lib/alistClient';
 import { SearchView } from '../components/SearchView';
-import { DebugPanel } from '../components/DebugPanel';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { VideoPlayer } from './VideoPlayer';
 import { Home } from './views/Home';
@@ -42,7 +41,6 @@ export default function VideoApp() {
   const [episodeIndex, setEpisodeIndex] = useState(0);
   const [line, setLine] = useState(0);
   const [startAt, setStartAt] = useState(0);
-  const [showDebug, setShowDebug] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [showCloud, setShowCloud] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string | undefined>(undefined);
@@ -63,14 +61,13 @@ export default function VideoApp() {
 
   // Android 原生返回键桥接：Kotlin MainActivity 通过 __onAndroidBack 调用此函数
   // V3.3.5 B2：返回键改为栈式调度——各浮层/子页经 pushBackHandler 压栈，这里先问栈
-  //（谁消费谁拦截），栈空才走 VideoApp 自己的外层分级（播放器→调试→网盘→搜索→详情→…）。
+  //（谁消费谁拦截），栈空才走 VideoApp 自己的外层分级（播放器→网盘→搜索→详情→…）。
   // 旧的 __playerBack 单槽与各组件 prev 链式覆盖全部废除，不再有断链风险。
   useEffect(() => {
     (window as any).__onAndroidBack = () => {
       if (dispatchBack()) return false; // 栈内某层已消费（浮层逐层退）
       const s = navRef.current;
       if (s.playingVideo) { closeVideo(); return false; }
-      if (s.showDebug) { setShowDebug(false); return false; }
       if (s.showCloud) { setShowCloud(false); return false; }
       if (s.searchOpen) { setSearchOpen(false); return false; }
       if (s.detail) { setDetail(null); return false; }
@@ -89,9 +86,8 @@ export default function VideoApp() {
     searchOpen: false,
     settingsSub: null as string | null,
     showCloud: false,
-    showDebug: false,
   });
-  navRef.current = { tab, detail, playingVideo: !!detail && state.current?.mediaType === 'video', searchOpen, settingsSub, showCloud, showDebug };
+  navRef.current = { tab, detail, playingVideo: !!detail && state.current?.mediaType === 'video', searchOpen, settingsSub, showCloud };
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     (async () => {
@@ -106,13 +102,10 @@ export default function VideoApp() {
               if (handled === false) { event.preventDefault(); return; }
             } catch { /* 钩子异常忽略，继续外层逻辑 */ }
           }
-          // 外层分级：播放器 → 调试 → 网盘 → 搜索 → 详情 → 设置子页 → 切回主页
+          // 外层分级：播放器 → 网盘 → 搜索 → 详情 → 设置子页 → 切回主页
           if (s.playingVideo) {
             event.preventDefault();
             closeVideo();
-          } else if (s.showDebug) {
-            event.preventDefault();
-            setShowDebug(false);
           } else if (s.showCloud) {
             event.preventDefault();
             setShowCloud(false);
@@ -233,6 +226,14 @@ export default function VideoApp() {
 
   const openSources = () => setTab('settings');
 
+  // #14：离线缓存浮层「查看任务」→ 关播放器 + 切到设置 tab 的「下载管理」子页
+  const openDownloads = () => {
+    player.clearQueue();
+    setDetail(null);
+    setTab('settings');
+    setSettingsSub('downloads');
+  };
+
   // 重置 APP：清空全部源 + 观看记录/收藏/进度（内存与持久化），清 WebView 缓存，回到主页（不提示重启）
   const doReset = async () => {
     try { store.clearAll(); } catch { /* ignore */ }
@@ -248,11 +249,7 @@ export default function VideoApp() {
 
   return (
     <>
-      <SplashScreen
-        appName="幕海"
-        iconSrc={import.meta.env.BASE_URL + 'icon.png'}
-        gradient="linear-gradient(160deg, #3DB8FF 0%, #6A6BFF 45%, #3B1F7A 100%)"
-      />
+      <SplashScreen appName="幕海" />
       <div
         className="app video-theme"
         style={
@@ -314,6 +311,7 @@ export default function VideoApp() {
             library={library}
             sources={store.sources}
             settings={settings}
+            onOpenDownloads={openDownloads}
           />
           </ErrorBoundary>
           </div>
@@ -416,11 +414,6 @@ export default function VideoApp() {
       )}
 
       <Disclaimer onAccept={() => {}} />
-      {showDebug && (
-        <ErrorBoundary name="调试面板">
-          <DebugPanel onClose={() => setShowDebug(false)} />
-        </ErrorBoundary>
-      )}
     </div>
     </>
   );

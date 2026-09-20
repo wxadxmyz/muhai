@@ -98,6 +98,15 @@ function parseM3U(text: string): { name: string; sources: string[]; logo?: strin
 
 const ALL_CAT = '推荐';
 
+// 清晰度档位文案（竖屏 res-pill / 横屏 qlt），对齐原型「高清」胶囊语义：按真实高度映射档位
+function qualityFromHeight(h: number): string {
+  if (h >= 2160) return '4K';
+  if (h >= 1080) return '超清';
+  if (h >= 720) return '高清';
+  if (h >= 480) return '标清';
+  return '流畅';
+}
+
   export function Live({ sources, onOpenSources }: { sources: SourceConfig[]; onOpenSources: () => void }) {
   const [lives, setLives] = useState<(LiveChannelSource & { sourceName: string })[]>([]);
   const [channels, setChannels] = useState<ReturnType<typeof parseM3U> | null>(null);
@@ -132,8 +141,8 @@ const ALL_CAT = '推荐';
     if (landClickTimer.current) { window.clearTimeout(landClickTimer.current); landClickTimer.current = undefined; }
   }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
-  // 真实分辨率药丸（设计文件 [1920×1080]）+ 亮度/音量手势状态
-  const [resolution, setResolution] = useState('1920×1080');
+  // 清晰度档位药丸文案（对齐原型「高清」；onLoadedMetadata 里按真实高度刷新）
+  const [resolution, setResolution] = useState('高清');
   const [brightness, setBrightness] = useState(1);
   const brightnessRef = useRef(1);
   const [hud, setHud] = useState<{ type: 'bright' | 'vol'; value: number } | null>(null);
@@ -438,7 +447,9 @@ const ALL_CAT = '推荐';
       el.removeAttribute('src');
       el.load();
     };
-  }, [curUrl]);
+    // 依赖加 playing：openLive 已预选 activeName，首次点台时 curUrl 不变，
+    // 若只依赖 curUrl，video 首次挂载后 effect 不会重跑 → 第一频道永远黑屏。
+  }, [curUrl, playing]);
 
   const openLive = async (live: LiveChannelSource & { sourceName: string }) => {
     setLoading(true);
@@ -493,6 +504,12 @@ const ALL_CAT = '推荐';
     return channels.filter((c) => c.group === activeCat);
   }, [channels, activeCat]);
 
+  // 播放室态同步到 body：隐藏底部导航（原型 live-room data-nav="none"，全屏呈现）
+  useEffect(() => {
+    document.body.classList.toggle('live-in-room', !!channels);
+    return () => document.body.classList.remove('live-in-room');
+  }, [channels]);
+
   // 逐级返回：频道列表态（channels 不为 null）先退源列表；否则放行外层
   // V3.3.5 B2：改压返回栈（true=消费拦截，false=交还下一层），不再 prev 链式覆盖
   useEffect(
@@ -516,57 +533,43 @@ const ALL_CAT = '推荐';
       {/* 一级：直播源列表 */}
       {!channels ? (
         livesLoading ? (
-          <div className="blank-state">
-            <div className="blank-art"><Icon name="cast" size={44} /></div>
-            <h2>正在加载直播源…</h2>
-            <p className="muted">正在从你导入的 tvbox 配置拉取直播线路，请稍候。</p>
+          <div className="empty fill">
+            <span className="ic"><Icon name="cast" size={48} /></span>
+            <div className="big">正在加载直播源…</div>
+            <div className="sm">正在从你导入的 tvbox 配置拉取直播线路，请稍候</div>
           </div>
         ) : lives.length ? (
+          /* 一级：直播源列表（对齐原型 .live-list / .live-src） */
           <div className="live-list">
-            <div className="live-list-head">
-              <Icon name="cast" size={20} />
-              <span>直播源</span>
-            </div>
             {lives.map((l, i) => (
-              <div key={i} className="settings-row tap" onClick={() => openLive(l)}>
-                <span className="ico"><Icon name="cast" size={20} /></span>
-                <span className="label">{l.name}</span>
-                <span className="value muted">{l.sourceName}</span>
-                <span className="chevron"><Icon name="arrow-right" size={18} /></span>
+              <div key={i} className="live-src" onClick={() => openLive(l)}>
+                <span className="ic"><Icon name="cast" size={18} /></span>
+                <div className="src-body">
+                  <div className="nm">{l.name}</div>
+                  <div className="sub">lives[] · {l.sourceName}</div>
+                </div>
+                <span className="ic chev"><Icon name="chevron-right" size={18} /></span>
               </div>
             ))}
           </div>
         ) : (
-          <div className="blank-state">
-            <div className="blank-art"><Icon name="cast" size={44} /></div>
-            <h2>{error || '直播源未配置'}</h2>
-            <p className="muted">直播线路来自你导入的 tvbox 配置中的 lives[]。<br />导入含直播线路的源后，这里即可观看。</p>
-            <button className="primary" onClick={onOpenSources}>去源管理添加</button>
+          <div className="empty fill">
+            <span className="ic"><Icon name="cast" size={48} /></span>
+            <div className="big">{error || '直播源未配置'}</div>
+            <div className="sm">直播线路来自你导入的 tvbox 配置中的 lives[]</div>
+            <button className="act" onClick={onOpenSources}>去源管理添加</button>
           </div>
         )
       ) : (
-        /* 二级：选台 + 播放 */
+        /* 二级：直播播放室（对齐原型 live-room：顶栏叠加 stage + 中央大播放 + 右下角锁/横屏 + 两栏选台） */
         <div className="live-room">
-          {/* 顶栏 + 小窗 合并为同一卡片块 */}
-          <div className="lp-head-stage">
-            <div className="lp-hd">
-              <button className="lp-back" onClick={() => { clearTapTimer(); setChannels(null); setActiveName(''); setPlaying(null); }}>
-                <Icon name="arrow-left" size={18} />
-              </button>
-              <div className="lp-title">
-                <span className="lp-ch-name">{activeName || '未播放'}</span>
-                <span className="lp-res">[{resolution}]</span>
-              </div>
-              <button className="lp-tv" onClick={() => { clearTapTimer(); handleCast(); }} title="投屏">
-                <Icon name="tv" size={18} />
-              </button>
-            </div>
-            <div className="lp-stage"
-              onTouchStart={onStageTouchStart}
-              onTouchMove={onStageTouchMove}
-              onTouchEnd={onStageTouchEnd}
-            >
-              {playing ? (
+          <div
+            className="live-stage"
+            onTouchStart={onStageTouchStart}
+            onTouchMove={onStageTouchMove}
+            onTouchEnd={onStageTouchEnd}
+          >
+            {playing && (
               <video
                 ref={videoRef}
                 autoPlay
@@ -577,40 +580,55 @@ const ALL_CAT = '推荐';
                 onPause={() => setPaused(true)}
                 onLoadedMetadata={(e) => {
                   const v = e.currentTarget as HTMLVideoElement;
-                  if (v.videoWidth && v.videoHeight) setResolution(`${v.videoWidth}×${v.videoHeight}`);
+                  if (v.videoHeight) setResolution(qualityFromHeight(v.videoHeight));
                 }}
               />
-              ) : (
-                <div className="lp-empty">
-                  <Icon name="play" size={28} />
-                  <span>点击频道开始播放</span>
-                </div>
-              )}
-              <div className={'lp-ctl' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}>
-                {playing && (
-                  <button className="lp-big" title={paused ? '播放' : '暂停'} onClick={togglePlay}>
-                    <Icon name={paused ? 'play' : 'pause'} size={28} />
-                  </button>
-                )}
-                {/* A 组：直播竖屏新增小锁（与右下角横屏钮同尺寸、竖排在其正上方） */}
+            )}
+            {/* 顶栏叠加在画面上（原型 .live-stage .topbar：渐变底 + 34px 半透明圆钮），常显 */}
+            <div className="lp-topbar">
+              <button className="lp-back" onClick={() => { clearTapTimer(); setChannels(null); setActiveName(''); setPlaying(null); }} title="返回">
+                <Icon name="arrow-left" size={17} />
+              </button>
+              <div className="ttl">
+                <span className="name">{activeName || '未播放'}</span>
+                <span className="res-pill">{resolution}</span>
+              </div>
+              <button className="rt" onClick={() => { clearTapTimer(); handleCast(); }} title="投屏">
+                <Icon name="tv" size={17} />
+              </button>
+            </div>
+            {/* 控件层：中央大播放（原型 .bigplay 56px）+ 右下角 side（原型 .side：锁/横屏 竖排） */}
+            <div className={'lp-ctl' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}>
+              <button
+                className="lp-big"
+                title={playing ? (paused ? '播放' : '暂停') : '播放'}
+                onClick={() => {
+                  clearTapTimer();
+                  if (!playing) { if (activeName) pickChannel(activeName); else toast('请先在下方选择频道'); }
+                  else togglePlay();
+                }}
+              >
+                <Icon name={!playing || paused ? 'play' : 'pause'} size={26} />
+              </button>
+              <div className="lp-side">
                 <button className={'lp-lock' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => { clearTapTimer(); toggleLock(); }} title={locked ? '已锁定' : '锁定屏幕'}>
-                  <Icon name={locked ? 'lock' : 'lock-open'} size={18} />
+                  <Icon name={locked ? 'lock' : 'lock-open'} size={17} />
                 </button>
                 <button className="lp-rotate" onClick={() => { clearTapTimer(); toggleFullscreen(); }} title="横屏">
-                  <Icon name="rotate" size={18} />
+                  <Icon name="rotate" size={17} />
                 </button>
               </div>
-              {hud && (
-                <div className="vp-hud">
-                  <span className="vp-hud-ico"><Icon name={hud.type === 'bright' ? 'sun' : 'volume'} size={20} /></span>
-                  <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
-                  <span className="vp-hud-val">{hud.value}%</span>
-                </div>
-              )}
             </div>
+            {hud && (
+              <div className="vp-hud">
+                <span className="vp-hud-ico"><Icon name={hud.type === 'bright' ? 'sun' : 'volume'} size={20} /></span>
+                <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
+                <span className="vp-hud-val">{hud.value}%</span>
+              </div>
+            )}
           </div>
 
-          {/* 两栏选台 */}
+          {/* 两栏选台（原型 .live-pick：96px 分类列 + 单行频道「绿点+台名」） */}
           <div className="lp-pick">
             <div className="lp-cats" role="tablist">
               {cats.map((cat) => (
@@ -632,10 +650,7 @@ const ALL_CAT = '推荐';
                   onClick={() => pickChannel(c.name)}
                 >
                   <span className="ch-dot" />
-                  <div className="ch-body">
-                    <div className="ch-name">{c.name}</div>
-                    {c.sources.length > 0 && <div className="ch-src-hint">源 {c.sources.length} 个</div>}
-                  </div>
+                  {c.name}
                 </div>
               ))}
               {visibleChannels.length === 0 && <div className="empty sm">该分类暂无频道</div>}
@@ -661,9 +676,10 @@ const ALL_CAT = '推荐';
       {/* C1 · 横屏黑底遮罩：遮住下面的竖屏页面（先于控件层渲染，z-index 9998） */}
       {isFullscreen && channels && <div className="land-backdrop" />}
 
-      {/* 横屏浮层：选台 + 换源条 + 底部控制 */}
+      {/* 横屏浮层（对齐原型 live-land：.land 结构 + 右侧选台抽屉 + 底部换源胶囊条）。
+          根加 landscape 类：复用点播横屏 .landscape .land-top/.land-center/.land-bottom 全套规格 */}
       {isFullscreen && channels && (
-        <div className={'land-overlay' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}
+        <div className={'land-overlay landscape' + (landControls ? '' : ' hide') + (locked ? ' locked' : '')}
           // B4+B11：锁定态仍要接收 touchStart（B11 的「单击切小锁显隐」要靠它记录轻触起点），
           // 滑动则在 onStageTouchMove 内部被 locked 拦掉，所以这里不再整体 return。
           onTouchStart={onStageTouchStart}
@@ -671,26 +687,27 @@ const ALL_CAT = '推荐';
           onTouchEnd={onStageTouchEnd}
         >
           <div className="land-top">
-            <button className="land-back" onClick={() => { clearTapTimer(); toggleFullscreen(); }}>
-              <Icon name="arrow-left" size={18} />
+            <button className="back" onClick={() => { clearTapTimer(); toggleFullscreen(); }} title="退出横屏">
+              <Icon name="arrow-left" size={19} />
             </button>
-            <div className="land-title">
-              <span>{activeName}</span>
-              <span className="lp-res">[{resolution}]</span>
+            <div className="ttl">
+              <span className="name">{activeName}</span>
+              {/* 原型 live-land 标题尾缀：11px 半透明档位 */}
+              <span className="qlt">{resolution}</span>
             </div>
-            <button className={'land-lock' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => { clearTapTimer(); toggleLock(); }} title={locked ? '已锁定' : '锁定屏幕'}>
+            <button className={'rt lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => { clearTapTimer(); toggleLock(); }} title={locked ? '已锁定' : '锁定屏幕'}>
               <Icon name={locked ? 'lock' : 'lock-open'} size={18} />
             </button>
-            <button className="land-tv" onClick={(e) => { e.stopPropagation(); clearTapTimer(); handleCast(); }} title="投屏">
+            <button className="rt" onClick={(e) => { e.stopPropagation(); clearTapTimer(); handleCast(); }} title="投屏">
               <Icon name="tv" size={18} />
             </button>
           </div>
           <div className="land-center">
-            <button onClick={() => changeChannel(-1)} title="上一个"><Icon name="skip-back" size={26} /></button>
-            <button className="main" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
-              <Icon name={paused ? 'play' : 'pause'} size={32} />
+            <button className="ctrl" onClick={() => changeChannel(-1)} title="上一台"><Icon name="skip-back" size={30} /></button>
+            <button className="ctrl main" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
+              <Icon name={paused ? 'play' : 'pause'} size={34} />
             </button>
-            <button onClick={() => changeChannel(1)} title="下一个"><Icon name="skip-forward" size={26} /></button>
+            <button className="ctrl" onClick={() => changeChannel(1)} title="下一台"><Icon name="skip-forward" size={30} /></button>
           </div>
           {hud && (
             <div className="vp-hud">
@@ -700,54 +717,56 @@ const ALL_CAT = '推荐';
             </div>
           )}
           <div className="land-bottom">
-            <button className={'land-src' + (srcSheet ? ' on' : '')} onClick={() => setSrcSheet((s) => !s)} title="换源">
-              源{activeSrc}
+            <button className="bb" onClick={() => { clearTapTimer(); setSrcSheet((s) => !s); }} title="换源">
+              <Icon name="tv" size={22} /><span>源{activeSrc}</span>
             </button>
-            <button className="land-pip" onClick={handlePip} title="画中画"><Icon name="pip" size={18} /></button>
-            <button className="land-pbtn" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
-              <Icon name={paused ? 'play' : 'pause'} size={18} />
+            <button className="bb" onClick={(e) => { e.stopPropagation(); handlePip(); }} title="画中画">
+              <Icon name="pip" size={22} /><span>画中画</span>
             </button>
-            <button className={'land-list' + (pickSheet ? ' on' : '')} onClick={() => setPickSheet((s) => !s)} title="选台">
-              <Icon name="list" size={18} />
+            <button className="bb" onClick={togglePlay} title={paused ? '播放' : '暂停'}>
+              <Icon name={paused ? 'play' : 'pause'} size={22} /><span>播放</span>
+            </button>
+            <button className="bb" onClick={() => { clearTapTimer(); setPickSheet((s) => !s); }} title="选台">
+              <Icon name="list" size={22} /><span>选台</span>
             </button>
           </div>
 
-          {/* 横屏选台浮层 */}
+          {/* 横屏选台浮层：原型 = 右 78% 抽屉（.epsheet：标题行「选台」+ 单行频道） */}
           {pickSheet && (
-            <div className="land-pick" onTouchEnd={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-              <div className="lp-cats">
-                {cats.map((cat) => (
-                  <div key={cat} className={'cat' + (activeCat === cat ? ' on' : '')} onClick={() => setActiveCat(cat)}>{cat}</div>
-                ))}
-              </div>
-              <div className="lp-chs">
-                {visibleChannels.map((c) => (
-                  <div key={c.name} data-name={c.name} className={'ch' + (c.name === activeName ? ' on' : '')} onClick={() => pickChannel(c.name)}>
-                    <span className="ch-dot" />
-                    <div className="ch-body">
-                      <div className="ch-name">{c.name}</div>
-                      {c.sources.length > 0 && <div className="ch-src-hint">源 {c.sources.length} 个</div>}
+            <div className="drawer-mask open" onClick={() => setPickSheet(false)} onTouchEnd={(e) => e.stopPropagation()}>
+              <div className="epsheet open live-pick-sheet" onClick={(e) => e.stopPropagation()} onTouchEnd={(e) => e.stopPropagation()}>
+                <div className="eh">
+                  <h4>选台</h4>
+                  <button className="ic-btn" onClick={() => setPickSheet(false)} title="关闭"><Icon name="x" size={16} /></button>
+                </div>
+                <div className="live-chs">
+                  {visibleChannels.map((c) => (
+                    <div key={c.name} data-name={c.name} className={'live-ch' + (c.name === activeName ? ' on' : '')} onClick={() => pickChannel(c.name)}>
+                      <span className="ch-dot" />
+                      {c.name}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
-          {/* 横屏换源条 */}
+          {/* 横屏换源条：原型 = 底部浮条（标题行「切换源」+ .pill-sel 胶囊） */}
           {srcSheet && curChannel && (
-            <div className="land-srcbar" onTouchEnd={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-              <span className="land-srcbar-label">切换源</span>
-              <div className="land-srcbar-row">
-                {curChannel.sources.map((_, i) => (
-                  <div key={i} className={'src' + (i + 1 === activeSrc ? ' on' : '')} onClick={() => pickSrc(i + 1)}>
-                    源{i + 1}
-                  </div>
-                ))}
+            <div className="drawer-mask open" onClick={() => setSrcSheet(false)} onTouchEnd={(e) => e.stopPropagation()}>
+              <div className="epsheet open live-srcbar-sheet" onClick={(e) => e.stopPropagation()} onTouchEnd={(e) => e.stopPropagation()}>
+                <div className="srcbar-head">
+                  <span>切换源</span>
+                  <button className="ic-btn" onClick={() => setSrcSheet(false)} title="关闭"><Icon name="x" size={15} /></button>
+                </div>
+                <div className="pill-sel">
+                  {curChannel.sources.map((_, i) => (
+                    <button key={i} className={i + 1 === activeSrc ? 'on' : ''} onClick={() => pickSrc(i + 1)}>
+                      源{i + 1}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <button className="land-srcbar-close" onClick={() => setSrcSheet(false)}>
-                <Icon name="x" size={14} />
-              </button>
             </div>
           )}
         </div>

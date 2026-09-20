@@ -52,7 +52,9 @@ export function CastOverlay({ onClose, onCast, videoUrl }: { onClose: () => void
   return (
     <div className="modal-mask" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>投屏设备</h3>
+        <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Icon name="cast" size={18} style={{ color: 'var(--accent)' }} /> 投屏设备
+        </h2>
         {scanning ? (
           <div className="loading">正在搜索局域网设备…</div>
         ) : error ? (
@@ -60,18 +62,18 @@ export function CastOverlay({ onClose, onCast, videoUrl }: { onClose: () => void
         ) : (
           <div className="cast-list">
             {devices.map((d, i) => (
-              <button key={i} className="cast-device" onClick={() => cast(d)}>
-                <span className="cast-ico"><Icon name="cast" size={22} /></span>
-                <span>{d.name}</span>
-                <span className="badge">DLNA</span>
+              <button key={i} className="dev" onClick={() => cast(d)}>
+                <Icon name="tv" size={20} className="ic" />
+                <span className="nm">{d.name}</span>
+                <span className="dlna">DLNA</span>
               </button>
             ))}
           </div>
         )}
         <p className="muted sm">提示：投屏依赖局域网 DLNA 设备（电视/盒子）。手机与设备需在同一 Wi-Fi。</p>
-        <div className="modal-actions">
-          <button className="ghost" onClick={scan} disabled={scanning}>重新搜索</button>
-          <button className="primary" onClick={onClose}>取消</button>
+        <div className="modal-btns">
+          <button className="modal-btn" onClick={scan} disabled={scanning}><Icon name="refresh" size={16} /> 重新搜索</button>
+          <button className="modal-btn primary" onClick={onClose}>取消</button>
         </div>
       </div>
     </div>

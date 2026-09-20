@@ -11,8 +11,6 @@ import { attachHlsWithBackend, detachHls, getLevels, getCurrentLevel, setLevel, 
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
 import { Icon } from '../components/Icon';
-// V3.4.4 #1：与播放页进度条同款的自定义滑动条，替换原生 input[type=range]
-import { RangeBar } from '../components/RangeBar';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { toast } from '../lib/toast';
 import { useSources } from '../store';
@@ -34,7 +32,7 @@ const subsiteColor = (name: string): string => {
 };
 
 // ===== 播放器选项（持久化到 localStorage） =====
-const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const SPEEDS = [0.5, 1, 1.25, 1.5, 2];
 // 解码循环：系统 → 硬解 → 软解 → Exo（文字仅需显示这四个，不带 IJK 前缀）
 const DECODE_CYCLE = ['system', 'ijk-hard', 'ijk-soft', 'exo'] as const;
 const DECODE_LABEL: Record<string, string> = { system: '系统', 'ijk-hard': '硬解', 'ijk-soft': '软解', exo: 'Exo' };
@@ -64,7 +62,19 @@ const AUDIO_OPTS = ['关闭', '影院', '重低音', '环绕', 'HiFi', '人声']
 // 线路命名：对齐设计文件“默认线路 / 备用线路 A / 备用线路 B / 海外线路”
 const LINE_NAMES = ['默认线路', '备用线路 A', '备用线路 B', '海外线路'];
 
-const speedLabel = (s: number) => (s === 1 ? '1.0x' : s + 'x');
+// 弹幕样式预设色（对齐原型 #danmakuStyle .color-row：白 / 红 / 黄 / 蓝 / 绿）
+const DANMAKU_COLORS = ['#ffffff', '#ff5b5b', '#ffd54a', '#5bd6ff', '#7cff9b'];
+// 弹幕显示区域（对齐原型 .pill-sel 全屏 / 顶部 / 底部）
+const AREA_LABEL: Record<'full' | 'top' | 'bottom', string> = { full: '全屏', top: '顶部', bottom: '底部' };
+// 外挂字幕样式预设色（对齐原型 #subtitleStyle .color-row：白 / 黄 / 蓝）
+const SUBTITLE_COLORS = ['#ffffff', '#ffd54a', '#5bd6ff'];
+
+const speedLabel = (s: number) => {
+  if (s === 0.5) return '.5';
+  if (s === 1) return '1.0';
+  if (s === 2) return '2.0';
+  return String(s);
+};
 
 // 解析 .srt / .vtt 字幕为 {time, text} 队列
 function parseSubtitle(text: string): { time: number; text: string }[] {
@@ -114,6 +124,7 @@ export function VideoPlayer({
   library,
   sources,
   settings,
+  onOpenDownloads,
 }: {
   detail: MediaItem;
   episodeIndex: number;
@@ -126,6 +137,7 @@ export function VideoPlayer({
   library: ReturnType<typeof useLibrary>;
   sources: SourceConfig[];
   settings: AppSettings;
+  onOpenDownloads?: () => void; // #14：离线缓存浮层「查看任务」→ 跳转下载管理
 }) {
   // ⑭ 关键：写入走全局单例（settings.ts 的 updateSettingsGlobal），读取走 props.settings。
   //     旧写法在这里又调了一次 useSettings()，拿到的是第 2 份互不相通的 state：
@@ -159,7 +171,7 @@ export function VideoPlayer({
   // 控件显隐：单击切换、播放态 3s 自动隐藏、锁屏强制常显（竖屏/横屏通用）
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimer = useRef<number | undefined>(undefined);
-  const [asc, setAsc] = useState(true);
+  const [asc, setAsc] = useState(true); // 默认正序，对齐原型选集浮层默认状态
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
   const seekBubbleTimer = useRef<number | undefined>(undefined);
@@ -191,7 +203,6 @@ export function VideoPlayer({
   const [epSheetOpen, setEpSheetOpen] = useState(false);
   const epSheetRef = useRef<HTMLDivElement | null>(null); // 浮层滚动容器（用于打开时定位当前集）
   // V3.3.5 A3：简介原地折叠（阅读型内容，不进浮层）
-  const [introExpanded, setIntroExpanded] = useState(false);
   // V3.3.5 B4：多源封面回退——本源封面被网络阻断时，用其它启用源的同名封面顶上（仅展示层）
   // （组件 props 已有 sources=当前详情的源 id，这里取名 allSources 表示「全部已启用源列表」）
   const { sources: allSources } = useSources('video');
@@ -349,7 +360,7 @@ export function VideoPlayer({
     if (!epSheetOpen) return;
     requestAnimationFrame(() => {
       const c = epSheetRef.current;
-      const el = c?.querySelector<HTMLElement>('.ep-cur');
+      const el = c?.querySelector<HTMLElement>('.cur');
       if (!c || !el) return;
       c.scrollTop = Math.max(0, el.offsetTop - c.clientHeight / 2 + el.offsetHeight / 2);
     });
@@ -792,6 +803,10 @@ export function VideoPlayer({
   // 唯一可行路径就是 m3u8 自带的多个码率档位。
   const [levels, setLevels] = useState<HlsLevel[]>([]);
   const [levelOpen, setLevelOpen] = useState(false);
+  // #14：离线缓存浮层（真功能）——对齐原型 #cacheSheet（底部 epsheet：当前集/清晰度/仅WiFi/后续集数 + 双按钮）
+  const [cacheSheetOpen, setCacheSheetOpen] = useState(false);
+  const [cacheWifiOnly, setCacheWifiOnly] = useState<boolean>(() => localStorage.getItem('rf_cache_wifi') !== '0');
+  const [cacheNextCount, setCacheNextCount] = useState<boolean>(() => localStorage.getItem('rf_cache_next') === '1');
   const refreshLevels = useCallback(() => { setLevels(getLevels(videoRef.current)); }, []);
   // S3：切集 / 换线路 / 重试后档位列表会变，重新读一次并恢复用户选过的档位
   useEffect(() => {
@@ -835,6 +850,28 @@ export function VideoPlayer({
     const n = AUDIO_OPTS[(i + 1) % AUDIO_OPTS.length];
     setAudioMode(n);
     localStorage.setItem('rf_audio', n);
+  };
+
+  // #14：离线缓存——打开浮层（对齐原型 #cacheSheet，不再一点就静默开下）
+  const openCacheSheet = () => {
+    setCacheSheetOpen(true);
+    setControlsVisible(true);
+    scheduleHide();
+  };
+  // #14：真正发起缓存。当前集 +（可选）后续 3 集。清晰度沿用播放器已选档位（playUrl 已按档位解析）。
+  const doCacheCurrent = () => {
+    const cur = state.current?.playUrl ? state.current : detail;
+    downloadStore.start(cur);
+    if (cacheNextCount && detail.episodes && detail.episodes.length > 1) {
+      const next = detail.episodes.slice(episodeIndex + 1, episodeIndex + 4);
+      for (const ep of next) {
+        const url = ep.url || (ep as any).playUrl;
+        if (!url) continue;
+        downloadStore.start({ ...detail, id: detail.id + '#' + ep.name, title: `${detail.title} ${ep.name}`, playUrl: url, episodes: [ep] } as typeof detail);
+      }
+    }
+    setCacheSheetOpen(false);
+    toast(cacheNextCount ? '已加入缓存队列（含后续 3 集）' : '已加入缓存队列');
   };
 
   // V3.3.7 十一：正在等待原生旋转结果（防连点重复下发指令）
@@ -1189,7 +1226,6 @@ export function VideoPlayer({
   // 而 LZ 实测追更剧的 remarks 是「更新至第157集」这类格式，永远匹配不上 → 用户从未见过集数标签。
   // 现改为原文显示（「更新至第157集」/「已完结」），只过滤 HD 这类无集数信息的占位值。
   const rawRemarks = String(vr?.vod_remarks || '').trim();
-  const statusTag = rawRemarks && !/^(hd|hd高清|高清|tc|ts)$/i.test(rawRemarks) ? rawRemarks : '';
   // V3.3.6 八·二：genre/4K/杜比 标签整行删除（由子站指示取代）；statusTag 改放「选集」标题右侧
 
   // V3.3.6 二：集数去汉字、去前导 0、从 1 开始——「第01集」→「1」、「第108集」→「108」；
@@ -1197,9 +1233,9 @@ export function VideoPlayer({
   const cleanEp = (name?: string, idx?: number): string => {
     if (name) {
       const m = name.replace(/^第/, '').replace(/集$/, '').match(/\d+/);
-      if (m) return String(parseInt(m[0], 10));
+      if (m) return String(parseInt(m[0], 10)).padStart(2, '0');
     }
-    return idx != null ? String(idx + 1) : '';
+    return idx != null ? String(idx + 1).padStart(2, '0') : '';
   };
   const epName = cleanEp(detail.episodes?.[episodeIndex]?.name, episodeIndex);
 
@@ -1391,9 +1427,10 @@ export function VideoPlayer({
             <div className={'overlay' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
               <div className="top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
+                {/* 对齐原型 .ov-top .ttl：`片名 第N集` + 清晰度胶囊（res-pill） */}
                 <div className="ttl">
-                  <span className="name">{detail.title} · {epName}</span>
-                  <span className="res">[{qualityLabel || resText || '1920x804'}]</span>
+                  <span className="name">{detail.title} 第{epName}集</span>
+                  <span className="res" onClick={() => setLevelOpen(true)} title="选择清晰度">{qualityLabel || resText || '自动'}</span>
                 </div>
                 <div className="acts">
                   <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
@@ -1438,96 +1475,39 @@ export function VideoPlayer({
 
         </div>
 
-        {/* ============ 横屏：水平布局（对齐视频播放器UI.html：顶栏 + 左右边栏 + 中央水平播放控制 + 底部进度条 + 底部横排工具） ============ */}
+        {/* ============ 横屏（对齐原型 .land：顶栏 返回/标题/锁/投屏 + 中央 上一个/播放/下一个 + 底部 5 个图标钮） ============ */}
         {landscape && (
           <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
-            {/* 顶栏：返回 / 标题 / 状态时钟电量 */}
+            {/* .l-top：返回 + `片名 第N集 画质小字` + 锁 + 投屏（38px 圆钮 rgba(255,255,255,.14)） */}
             <div className="land-top">
-              <button className="back" onClick={toggleLandscape} title="返回"><Icon name="arrow-left" size={18} /></button>
+              <button className="back" onClick={toggleLandscape} title="退出横屏"><Icon name="arrow-left" size={19} /></button>
               <div className="ttl">
-                <span className="name">{detail.title}</span>
-                <span className="res">· 第{episodeIndex + 1}集 · [{qualityLabel || resText || '1920x804'}]</span>
+                <span className="name">{detail.title} 第{epName}集</span>
+                <span className="qlt">{qualityLabel || resText || '自动'}</span>
               </div>
-              <div className="status">
-                <Icon name="clock" size={15} />
-                <Icon name="battery" size={16} />
-                <span>{clock}</span>
-              </div>
+              <button className={'icon rt lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={18} /></button>
+              <button className="icon rt" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={18} /></button>
             </div>
 
-            {/* 左侧边栏：锁 / 弹幕 */}
-            <div className="side left">
-              <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={20} /></button>
-              {/* V3.3.13：横屏弹幕按钮 —— 纯单击开关弹幕（长按出面板已移除，改由底部「弹幕」按钮负责） */}
-              {/* V3.4.0：加 onTouchStart —— 部分机型 WebView 合成 click 派发不到该按钮，touch 事件可正常工作 */}
-              <button
-                className={'icon' + (danmaku ? ' on' : '')}
-                onClick={danmakuClickToggle}
-                onTouchStart={danmakuTouchToggle}
-                disabled={!detail.danmaku || detail.danmaku.length === 0}
-                title={danmaku ? '弹幕开' : '弹幕关'}
-              ><Icon name="message" size={20} /></button>
-            </div>
-
-            {/* 右侧边栏：投屏 / 画中画 */}
-            <div className="side right">
-              <button className="icon" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={20} /></button>
-              <button className="icon" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={20} /></button>
-            </div>
-
-            {/* 中央水平播放控制：上一集 / 播放 / 下一集 */}
-            <div className="center">
-              <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={26} /></button>
+            {/* .l-center：上一集 / 播放（80px 渐变主钮）/ 下一集，gap 34px */}
+            <div className="land-center">
+              <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={30} /></button>
               <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
-                {/* V3.5.2①：横屏同理，缓冲转圈统一由 vp-buf-loader 呈现，主播放键只显图标 */}
-                <Icon name={state.isPlaying ? 'pause' : 'play'} size={32} />
+                {/* 缓冲转圈统一由 vp-buf-loader 呈现，主播放键只显图标 */}
+                <Icon name={state.isPlaying ? 'pause' : 'play'} size={34} />
               </button>
-              <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={26} /></button>
+              <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={30} /></button>
             </div>
 
-            {/* 底部：横向进度条 + 横排 10 工具按钮 */}
-            <div className="bottom">
-              <div className="prow">
-                <span className="pi" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}><Icon name={state.isPlaying ? 'pause' : 'play'} size={18} /></span>
-                <span className="t">{fmtTime(liveCur)}</span>
-                <div className="bar" onClick={(e) => {
-                  const v = videoRef.current; if (!v || !liveDur) return;
-                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-                  v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
-                }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
-                  <div className="buffered" style={{ width: `${bufPct}%` }} />
-                <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
-                {/* V3.3.7 十：横屏进度条同样加播放位置圆点 */}
-                <div className="knob" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
-                </div>
-                <span className="t">{fmtTime(liveDur)}</span>
-                <button className="land" onClick={toggleLandscape} title="退出横屏"><Icon name="rotate" size={18} /></button>
-              </div>
-              <div className="tools">
-                <button className={'tool' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode}><Icon name="sliders" size={15} /><span>解码</span></button>
-                <button className="tool" onClick={retry}><Icon name="refresh" size={15} /><span>刷新</span></button>
-                <button className="tool" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}><Icon name="replay" size={15} /><span>重播</span></button>
-                {/* V3.3.9：底部工具栏「弹幕」= 出样式面板（与左侧栏快速开关分工，消除重复） */}
-                {/* V3.3.13：加 onTouchStart 双触发——部分机型 WebView 合成的 click 派发不到该按钮， */}
-                {/*          touch 事件可正常工作；重复调用 setShowSubStyle(true) 幂等无害。 */}
-                {/* V3.4.0：改走 openSubStyle —— 同时记录打开时刻，配合遮罩 400ms 守卫防「同手势秒关」。 */}
-                {/* V3.4.1：去掉 .on 高亮 —— 它是面板入口，不是状态开关，应和「设置」「选集」一样不变色。 */}
-                {/* V3.4.2 #2：去掉 disabled —— 「设置」按钮无 disabled，弹幕按钮有会因全局 button:disabled{opacity:.4} 变暗，与「设置」不一致。
-                    无弹幕时点了打开面板即可（面板内可提示本集暂无弹幕）。 */}
-                <button className="tool" onClick={openSubStyle} onTouchStart={openSubStyle}><Icon name="message" size={15} /><span>弹幕</span></button>
-                <button className={'tool' + (introSec ? ' on' : '')} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="skip-back" size={15} />}<span>片头</span></button>
-                <button className={'tool' + (outroSec ? ' on' : '')} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="skip-forward" size={15} />}<span>片尾</span></button>
-                <button className={'tool' + (audioMode !== '关闭' ? ' on' : '')} onClick={cycleAudio}><Icon name="volume" size={15} /><span>音效</span></button>
-                {/* S2：单码率片源（levels.length === 1）置灰并显示「单档」，让用户知道不是按钮坏了 */}
-                <button className="tool" onClick={cycleQuality} disabled={levels.length === 1}
-                  title={levels.length === 1 ? '当前片源只有一档' : '选择清晰度'}>
-                  <Icon name="sparkles" size={15} /><span>{levels.length === 1 ? '单档' : (qualityLabel || '画质')}</span>
-                </button>
-                {/* ⑬ 选集改为右侧浮层（同「设置」抽屉），不再用页面内 scrollToEpisodes（会被整屏 .player-card.land 盖住） */}
-                <button className="tool" onClick={() => setEpOpen(true)}><Icon name="list" size={15} /><span>选集</span></button>
-                <button className="tool" onClick={() => setSettingsOpen(true)}><Icon name="settings" size={15} /><span>设置</span></button>
-              </div>
+            {/* .l-bottom：画质 / 选集 / 弹幕 / 设置 / 画中画 —— 5 个图标(26px)+文字(11px)，gap 26px。
+                原底部 10 工具（解码/刷新/重播/片头/片尾/音效/画质文本/选集/设置）收进「设置」抽屉（playerDrawer 对齐时接入） */}
+            <div className="land-bottom">
+              <button className="bb" onClick={() => setLevelOpen(true)} title="选择清晰度"><Icon name="maximize" size={22} /><span>画质</span></button>
+              <button className="bb" onClick={() => setEpOpen(true)} title="选集"><Icon name="list" size={22} /><span>选集</span></button>
+              {/* V3.4.0：弹幕走 openSubStyle（面板入口）；touch 双触发兜底部分机型 click 派发缺失 */}
+              <button className="bb" onClick={openSubStyle} onTouchStart={openSubStyle} title="弹幕样式"><Icon name="message" size={22} /><span>弹幕</span></button>
+              <button className="bb" onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={22} /><span>设置</span></button>
+              <button className="bb" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={22} /><span>画中画</span></button>
             </div>
           </div>
         )}
@@ -1559,46 +1539,36 @@ export function VideoPlayer({
             </div>
             <div className="info-body">
               <div className="info-title">{detail.title}</div>
-              <div className="info-score">{(detail.raw as any)?.rating || '8.4'}<span className="stars">★★★★<span className="empty">★</span></span></div>
-              {/* V3.3.7 四：一行连排 + 2 行截断 → 改回竖排，每行一条、单行省略（对齐设计稿） */}
-              <div className="info-meta">
-                {filmYear && <div className="row"><span className="label">年份</span>{filmYear}</div>}
-                {(vr as any)?.vod_area && <div className="row"><span className="label">地区</span>{(vr as any).vod_area}</div>}
-                {director && <div className="row"><span className="label">导演</span>{director}</div>}
-                {actor && <div className="row"><span className="label">主演</span>{actor}</div>}
+              {/* 对齐原型 .vp-info .meta .s：`年份 · 类型 · 导演 执导` + 主演，两行 12px 灰字（替代旧星级评分块） */}
+              <div className="info-sub">
+                {[filmYear, (vr as any)?.vod_type || (vr as any)?.type_name, director ? director + ' 执导' : ''].filter(Boolean).join(' · ')}
+                {actor && <><br />{actor.split(/[,，、]+/).join(' / ')}</>}
               </div>
               <button className={'fav-btn' + (faved ? ' on' : '')} onClick={() => { library.toggleFavorite(detail); setFaved(library.isFavorite(detail)); }}>
+                {faved && <Icon name="heart-filled" size={15} />}
                 {faved ? '已收藏' : '加入收藏'}
               </button>
             </div>
           </div>
 
-          {/* V3.3.6 八·二：子站指示 [logo/六边形] │ [子站名] */}
+          {/* 对齐原型 .src-badge：cast 图标（accent）+ `源名 · 线路 N`，panel2 圆角条 */}
           <div className="src-chip">
-            {curSource?.logo ? (
-              <img className="src-logo" src={curSource.logo} alt="" />
-            ) : (
-              <span className="src-hex" style={{ background: subsiteColor(curSourceName) }}>
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 3.5 L19 7.8 L19 16.2 L12 20.5 L5 16.2 L5 7.8 Z" fill="none" stroke="#fff" strokeWidth="2" /></svg>
-              </span>
-            )}
-            <span className="sep" />
-            <span className="src-name">{curSourceName}</span>
+            <span className="src-cast-ic"><Icon name="cast" size={16} /></span>
+            <span className="src-name">{curSourceName} · 线路 {line + 1}</span>
           </div>
 
-          {/* 4 操作按钮（缓存/解码/投屏/设置）— 占位展示，待用户确认哪些要接 */}
+          {/* 4 操作卡片（对齐原型 .ops .op：flex 卡片、icon accent、11px 文字） */}
           <div className="actions">
-            {/* V3.3.4 #14：缓存改用解析后的播放对象（state.current 带 playUrl）——旧版传原始列表项
-                detail，realDownload 拿不到地址直接抛"该源不支持直接下载"，缓存对常规流程必然失败 */}
-            <button onClick={() => downloadStore.start(state.current?.playUrl ? state.current : detail)} title="缓存"><span className="circle"><Icon name="download" size={24} /></span>缓存</button>
-            <button className={DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? 'on' : ''} onClick={toggleDecode} title="解码/音效"><span className="circle"><Icon name="sliders" size={24} /></span>系统</button>
-            <button onClick={() => setShowCast(true)} title="投屏"><span className="circle"><Icon name="tv" size={24} /></span>投屏</button>
-            <button onClick={() => setSettingsOpen(true)} title="播放器设置"><span className="circle"><Icon name="settings" size={24} /></span>设置</button>
+            {/* #14：缓存改为打开「离线缓存」浮层（原型 #cacheSheet），在浮层内确认清晰度/Wi-Fi/后续集数后再真正入队 */}
+            <button onClick={openCacheSheet} title="缓存"><Icon name="download" size={20} /><span>缓存</span></button>
+            <button className={DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? 'on' : ''} onClick={toggleDecode} title="解码方式"><Icon name="sliders" size={20} /><span>硬解</span></button>
+            <button onClick={() => setShowCast(true)} title="投屏"><Icon name="tv" size={20} /><span>投屏</span></button>
+            <button onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={20} /><span>设置</span></button>
           </div>
 
           {lines > 0 && (
             <div className="section">
-              <div className="sec-head"><span className="sec-title">线路</span><span className="sec-more" onClick={() => {}}>自动选速 &gt;</span></div>
+              <div className="sec-head"><span className="sec-title">线路</span></div>
               {/* V3.3.5 A3：优先显示源返回的真实线路名（normal.ts toLineGroups 解析 vod_play_from，
                   如 LZ 的 liangzi / lzm3u8），没有才回退到编号 */}
               <div className="line-row">
@@ -1614,16 +1584,14 @@ export function VideoPlayer({
               115 集的剧不再把信息区拉成 29 行（≈1580px）。横屏仍走 epOpen 抽屉不变。 */}
           <div className="section">
             <div className="sec-head">
+              {/* 对齐原型 .lh「选集（倒序）」：顺序并入标题，点击标题切换正/倒序（功能保留） */}
               <div className="sec-left">
-                <span className="sec-title">选集</span>
-                {statusTag && <span className="ep-update">{statusTag}</span>}
+                {detail.episodes && detail.episodes.length > 1 ? (
+                  <span className="sec-title clickable" onClick={() => setAsc((v) => !v)} title="点击切换正/倒序">选集{asc ? '（正序）' : '（倒序）'}</span>
+                ) : (
+                  <span className="sec-title">选集</span>
+                )}
               </div>
-              {detail.episodes && detail.episodes.length > 0 && (
-                <span className="sec-actions">
-                  {detail.episodes.length > 1 && <span className="sec-more" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>}
-                  <span className="sec-more ep-all" onClick={() => setEpSheetOpen(true)}>全部 {detail.episodes.length} 集 ›</span>
-                </span>
-              )}
             </div>
             {detail.episodes && detail.episodes.length > 0 ? (
               <div className="ep-grid">
@@ -1642,7 +1610,6 @@ export function VideoPlayer({
                     return (
                       <button key={i} className={(cur ? 'active ep-cur' : '') + (ep.locked ? ' locked' : '')} onClick={() => onSelectEpisode(i)}>
                         {ep.locked ? '锁' : cleanEp(ep.name, i)}
-                        {cur && <span className="ep-dot" />}
                       </button>
                     );
                   });
@@ -1650,6 +1617,13 @@ export function VideoPlayer({
               </div>
             ) : (
               <p className="detail-note">该源未提供选集列表，可尝试切换线路或换其它源。</p>
+            )}
+            {/* 对齐原型：<button class="btn block">☰ 全部 30 集 ›</button>（Icon 默认 margin:auto 会在 flex 里吸走空隙，显式归零保持内容整体居中） */}
+            {detail.episodes && detail.episodes.length > 0 && (
+              <button className="ep-all-btn" onClick={() => setEpSheetOpen(true)}>
+                <Icon name="list" size={16} style={{ margin: 0 }} />
+                <span style={{ margin: 0 }}>全部 {detail.episodes.length} 集 ›</span>
+              </button>
             )}
           </div>
 
@@ -1662,27 +1636,15 @@ export function VideoPlayer({
               <>
                 {detailLoading && (
                   <div className="intro">
-                    <div className="sec-head"><span className="sec-title">介绍</span></div>
+                    <div className="sec-head"><span className="sec-title">简介</span></div>
                     <div className="skel-block"><div className="skel-line w60" /><div className="skel-line" /><div className="skel-line w40" /></div>
                   </div>
                 )}
                 {!detailLoading && (
                   <div className="intro">
-                    <div className="sec-head"><span className="sec-title">介绍</span></div>
-                    {/* V3.3.5 A3：简介原地折叠——默认 3 行，点「展开 ▾」就地长开全文、变「收起 ▴」。
-                        阅读型内容不适合塞进浮层（那是选集这类操作型内容用的），故原地展开。 */}
-                    {intro ? (
-                      <>
-                        {director && <p className="intro-extra"><span className="label">导演</span> {director}</p>}
-                        {actor && <p className="intro-extra"><span className="label">主演</span> {actor}</p>}
-                        <p className={introExpanded ? '' : 'intro-clamp'}>{String(intro)}</p>
-                        {String(intro).length > 60 && (
-                          <button className="intro-toggle" onClick={() => setIntroExpanded((v) => !v)}>
-                            {introExpanded ? '收起 ▴' : '展开 ▾'}
-                          </button>
-                        )}
-                      </>
-                    ) : <p className="intro-empty">暂无介绍</p>}
+                    <div className="sec-head"><span className="sec-title">简介</span></div>
+                    {/* 对齐原型 .intro：12px 灰字直接全文（导演/主演已在信息区副行展示，不再重复） */}
+                    {intro ? <p>{String(intro)}</p> : <p className="intro-empty">暂无介绍</p>}
                   </div>
                 )}
               </>
@@ -1691,98 +1653,161 @@ export function VideoPlayer({
         </div>
       )}
 
+      {/* #14 离线缓存浮层：对齐原型 #cacheSheet —— .epsheet（handle + eh[h4「离线缓存」+ 30px X]
+          + .set-list（当前集 / 清晰度 pill / 仅Wi-Fi / 同时缓存后续3集）+ 底部双按钮）
+          「缓存本集」真正调用 downloadStore.start；「查看任务」跳转下载管理。 */}
+      {cacheSheetOpen && (
+        <div className="drawer-mask" onClick={() => setCacheSheetOpen(false)}>
+          <div className="epsheet cache-sheet open" onClick={(e) => e.stopPropagation()}>
+            <div className="handle" />
+            <div className="eh">
+              <h4>离线缓存</h4>
+              <button className="ic-btn" onClick={() => setCacheSheetOpen(false)}><Icon name="x" size={16} /></button>
+            </div>
+            <div className="set-list">
+              <div className="set-row">
+                <Icon name="film" size={20} className="ic" />
+                <span className="lbl">当前集 · {detail.episodes?.[episodeIndex]?.name || `第${episodeIndex + 1}集`}</span>
+                <span className="val">{qualityLabel || quality}</span>
+              </div>
+              <div className="set-row">
+                <span className="lbl">清晰度</span>
+                <div className="pill-sel" style={{ margin: 0 }}>
+                  {QUALITIES.map((q) => (
+                    <button key={q} className={quality === q ? 'on' : ''} onClick={() => { setQuality(q); localStorage.setItem('rf_quality', q); }}>{q}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="set-row">
+                <span className="lbl">仅 Wi-Fi 下载</span>
+                <div className={'switch' + (cacheWifiOnly ? ' on' : '')} onClick={() => { const v = !cacheWifiOnly; setCacheWifiOnly(v); localStorage.setItem('rf_cache_wifi', v ? '1' : '0'); }} />
+              </div>
+              <div className="set-row">
+                <span className="lbl">同时缓存后续 3 集</span>
+                <div className={'switch' + (cacheNextCount ? ' on' : '')} onClick={() => { const v = !cacheNextCount; setCacheNextCount(v); localStorage.setItem('rf_cache_next', v ? '1' : '0'); }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button className="btn primary" style={{ flex: 1 }} onClick={doCacheCurrent}><Icon name="download" size={16} /> 缓存本集</button>
+              <button className="btn" style={{ flex: 1 }} onClick={() => { setCacheSheetOpen(false); onOpenDownloads?.(); }}><Icon name="list" size={16} /> 查看任务</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* S2 · 清晰度档位选择：多码率 m3u8 才出现，选中即刻生效 */}
+      {/* 选择清晰度浮层：对齐原型 #levelOpen —— .epsheet（handle + eh[h4「选择清晰度」+ 30px X] + .line-btns.col 竖排按钮） */}
       {levelOpen && (
-        <div className="vp-drawer-mask" onClick={() => setLevelOpen(false)}>
-          <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
-          <div className="vp-panel-head">选择清晰度
-            <button className="link" onClick={() => setLevelOpen(false)}>关闭</button>
-          </div>
-          <div className="vp-levels">
-            <button
-              className={getCurrentLevel(videoRef.current) < 0 ? 'on' : ''}
-              onClick={() => pickLevel(-1)}
-            >自动{getCurrentLevel(videoRef.current) < 0 ? '（当前）' : ''}</button>
-            {levels.map((l) => (
-              <button
-                key={l.index}
-                className={getCurrentLevel(videoRef.current) === l.index ? 'on' : ''}
-                onClick={() => pickLevel(l.index)}
-              >
-                {l.height ? `${l.height}P` : `档位 ${l.index + 1}`}
-                {l.bitrate ? <span className="sub">{Math.round(l.bitrate / 1000)} kbps</span> : null}
+        <div className="drawer-mask" onClick={() => setLevelOpen(false)}>
+          <div className="epsheet level-sheet open" onClick={(e) => e.stopPropagation()}>
+            <div className="handle" />
+            <div className="eh">
+              <h4>选择清晰度</h4>
+              <button className="ic-btn" onClick={() => setLevelOpen(false)}><Icon name="x" size={16} /></button>
+            </div>
+            <div className="line-btns col">
+              <button className={getCurrentLevel(videoRef.current) < 0 ? 'on' : ''} onClick={() => pickLevel(-1)}>
+                自动{getCurrentLevel(videoRef.current) < 0 ? '（当前）' : ''}
               </button>
-            ))}
-          </div>
+              {levels.map((l) => (
+                <button
+                  key={l.index}
+                  className={getCurrentLevel(videoRef.current) === l.index ? 'on' : ''}
+                  onClick={() => pickLevel(l.index)}
+                >
+                  {l.height ? `${l.height}P` : `档位 ${l.index + 1}`}
+                  {l.bitrate ? <span> · {(l.bitrate / 1_000_000).toFixed(1)} Mbps</span> : null}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
 
-      {/* V3.3.7 六：原「字幕样式」面板改「弹幕样式」——此前它控制的是外挂字幕（.vp-subtitle，
-          仅在片源自带 SRT/VTT 且弹幕关闭时才显示），而用户日常看到的是弹幕，
-          于是反馈「这个不是字幕样式，是弹幕样式」。现在字号/颜色/描边/速度/区域/透明度全部落到 .dm。
-          关闭按钮已删除（点遮罩关闭），外挂字幕入口并入播放器设置抽屉。 */}
+      {/* 弹幕样式面板：对齐原型 #danmakuStyle —— .drawer（右侧抽屉）> .dh[弹幕样式 + 30px X]
+          + .sec[.st 标题 + 控件]。开启弹幕 / 描边用 .switch；字号 / 不透明度 / 滚动速度用原生
+          .range（accent 主色）；颜色用 .color-row 5 预设；显示区域用 .pill-sel 全屏 / 顶部 / 底部。
+          点遮罩 / X 关闭。 */}
       {showSubStyle && (
-        <div className="vp-drawer-mask" onClick={() => { if (Date.now() - subStyleOpenAt.current < 400) return; setShowSubStyle(false); }}>
-          <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="vp-panel-head">弹幕样式</div>
-            <div className="vp-panel-row">
-              <span>开启弹幕</span>
-              <button className={'mini' + (danmaku ? ' active' : '')} onClick={() => toggleDanmaku()}>{danmaku ? '开' : '关'}</button>
+        <div className="drawer-mask" onClick={() => { if (Date.now() - subStyleOpenAt.current < 400) return; setShowSubStyle(false); }}>
+          <div className="drawer danmaku-style-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="dh">
+              <span>弹幕样式</span>
+              <button className="ic-btn" onClick={() => setShowSubStyle(false)}><Icon name="x" size={16} /></button>
             </div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">字号</span><span className="val">{ds.size}px</span></div>
-              <RangeBar min={12} max={40} step={1} value={ds.size}
-                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, size: v } })} />
+
+            <div className="sec"><div className="st">开启弹幕</div><div className={'switch' + (danmaku ? ' on' : '')} onClick={() => toggleDanmaku()} /></div>
+
+            <div className="sec"><div className="st">字号</div>
+              <input className="range" type="range" min={12} max={32} value={ds.size}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, size: Number(e.target.value) } })} />
             </div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">颜色</span>
-                <input type="color" value={ds.color} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, color: e.target.value } })} /></div>
+
+            <div className="sec"><div className="st">颜色</div><div className="color-row">
+              {DANMAKU_COLORS.map((c) => (
+                <span key={c} className={ds.color.toLowerCase() === c.toLowerCase() ? 'on' : ''}
+                  style={{ background: c }} onClick={() => updateSettings({ danmakuStyle: { ...ds, color: c } })} />
+              ))}
+            </div></div>
+
+            <div className="sec"><div className="st">不透明度</div>
+              <input className="range" type="range" min={20} max={100} value={ds.opacity}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, opacity: Number(e.target.value) } })} />
             </div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">不透明度</span><span className="val">{ds.opacity}%</span></div>
-              <RangeBar min={20} max={100} step={5} value={ds.opacity}
-                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, opacity: v } })} />
+
+            <div className="sec"><div className="st">滚动速度</div>
+              <input className="range" type="range" min={1} max={10} value={ds.speed}
+                onChange={(e) => updateSettings({ danmakuStyle: { ...ds, speed: Number(e.target.value) } })} />
             </div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">滚动速度</span><span className="val">{(ds.speed / 100).toFixed(1)}x</span></div>
-              <RangeBar min={50} max={200} step={10} value={ds.speed}
-                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, speed: v } })} />
-            </div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">显示区域</span><span className="val">{ds.area}%</span></div>
-              <RangeBar min={20} max={100} step={10} value={ds.area}
-                onChange={(v) => updateSettings({ danmakuStyle: { ...ds, area: v } })} />
-            </div>
-            <div className="vp-panel-row">
-              <label className="row"><input type="checkbox" checked={ds.outline} onChange={(e) => updateSettings({ danmakuStyle: { ...ds, outline: e.target.checked } })} /> 描边</label>
+
+            <div className="sec"><div className="st">显示区域</div><div className="pill-sel">
+              {(['full', 'top', 'bottom'] as const).map((a) => (
+                <button key={a} className={ds.area === a ? 'on' : ''}
+                  onClick={() => updateSettings({ danmakuStyle: { ...ds, area: a } })}>{AREA_LABEL[a]}</button>
+              ))}
+            </div></div>
+
+            <div className="sec"><div className="st">描边</div>
+              <div className={'switch' + (ds.outline ? ' on' : '')} onClick={() => updateSettings({ danmakuStyle: { ...ds, outline: !ds.outline } })} />
             </div>
           </div>
         </div>
       )}
 
-      {/* V3.3.7 六：外挂字幕样式保留（仅片源自带 SRT/VTT 时才有内容），入口从工具栏挪进设置抽屉 */}
+      {/* 外挂字幕样式面板：对齐原型 #subtitleStyle —— .drawer（右侧抽屉）> .dh[外挂字幕样式 + 30px X]
+          + .sec[.st 标题 + 控件]。字号 .range(14~36)；颜色 .color-row 3 预设；位置 .pill-sel 底部 / 顶部；
+          描边 / 背景条用 .switch。点遮罩 / X 关闭。 */}
       {showSubtitleStyle && (
-        <div className="vp-drawer-mask" onClick={() => { if (Date.now() - subStyleOpenAt.current < 400) return; setShowSubtitleStyle(false); }}>
-          <div className="vp-sub-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="vp-panel-head">外挂字幕样式</div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">字号</span><span className="val">{ss.size}px</span></div>
-              <RangeBar min={14} max={48} step={1} value={ss.size}
-                onChange={(v) => updateSettings({ subtitleStyle: { ...ss, size: v } })} />
+        <div className="drawer-mask" onClick={() => { if (Date.now() - subStyleOpenAt.current < 400) return; setShowSubtitleStyle(false); }}>
+          <div className="drawer subtitle-style-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="dh">
+              <span>外挂字幕样式</span>
+              <button className="ic-btn" onClick={() => setShowSubtitleStyle(false)}><Icon name="x" size={16} /></button>
             </div>
-            <div className="dm-row">
-              <div className="dm-row-head"><span className="name">颜色</span>
-                <input type="color" value={ss.color} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, color: e.target.value } })} /></div>
+
+            <div className="sec"><div className="st">字号</div>
+              <input className="range" type="range" min={14} max={36} value={ss.size}
+                onChange={(e) => updateSettings({ subtitleStyle: { ...ss, size: Number(e.target.value) } })} />
             </div>
-            <div className="vp-panel-row">
-              <span>位置</span>
-              <button className={'mini' + (ss.position === 'bottom' ? ' active' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'bottom' } })}>底部</button>
-              <button className={'mini' + (ss.position === 'top' ? ' active' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'top' } })}>顶部</button>
+
+            <div className="sec"><div className="st">颜色</div><div className="color-row">
+              {SUBTITLE_COLORS.map((c) => (
+                <span key={c} className={ss.color.toLowerCase() === c.toLowerCase() ? 'on' : ''}
+                  style={{ background: c }} onClick={() => updateSettings({ subtitleStyle: { ...ss, color: c } })} />
+              ))}
+            </div></div>
+
+            <div className="sec"><div className="st">位置</div><div className="pill-sel">
+              <button className={ss.position === 'bottom' ? 'on' : ''} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'bottom' } })}>底部</button>
+              <button className={ss.position === 'top' ? 'on' : ''} onClick={() => updateSettings({ subtitleStyle: { ...ss, position: 'top' } })}>顶部</button>
+            </div></div>
+
+            <div className="sec"><div className="st">描边</div>
+              <div className={'switch' + (ss.outline ? ' on' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, outline: !ss.outline } })} />
             </div>
-            <div className="vp-panel-row">
-              <label className="row"><input type="checkbox" checked={ss.outline} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, outline: e.target.checked } })} /> 描边</label>
-              <label className="row"><input type="checkbox" checked={ss.bg} onChange={(e) => updateSettings({ subtitleStyle: { ...ss, bg: e.target.checked } })} /> 背景条</label>
+
+            <div className="sec"><div className="st">背景条</div>
+              <div className={'switch' + (ss.bg ? ' on' : '')} onClick={() => updateSettings({ subtitleStyle: { ...ss, bg: !ss.bg } })} />
             </div>
           </div>
         </div>
@@ -1790,68 +1815,76 @@ export function VideoPlayer({
 
       {/* 跳过片头片尾：播放页内一键设定，无独立输入面板 */}
 
-      {/* 播放器设置抽屉（按设计文件 .drawer） */}
+      {/* 播放器设置抽屉：对齐原型 #playerDrawer —— .epsheet（handle + eh[h4「播放器设置」+ 30px X] + .sec[.st 标题 + .pill-sel/.line-btns]）；
+          激活项实心紫底白字（复用 .pill-sel.on）。点遮罩/X 关闭。 */}
       {settingsOpen && (
         <div className="drawer-mask" onClick={() => setSettingsOpen(false)}>
-          <div className="drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-handle" />
-            <div className="drawer-title">播放器</div>
+          <div className="epsheet settings-drawer open" onClick={(e) => e.stopPropagation()}>
+            <div className="handle" />
+            <div className="eh">
+              <h4>播放器设置</h4>
+              <button className="ic-btn" onClick={() => setSettingsOpen(false)}><Icon name="x" size={16} /></button>
+            </div>
 
-            <div className="dg"><div className="dg-label">解码器</div><div className="dg-row">
-              {DECODE_CYCLE.map((d) => (
-                <button key={d} className={decodeMode === d ? 'on' : ''} onClick={() => setDecode(d)}>{DECODE_LABEL[d]}</button>
-              ))}
-            </div></div>
-
-            <div className="dg"><div className="dg-label">画面缩放</div><div className="dg-row">
-              {SCALE_OPTS.map((s) => (
-                <button key={s} className={scaleMode === s ? 'on' : ''} onClick={() => { setScaleMode(s); localStorage.setItem('rf_scale', s); }}>{s}</button>
-              ))}
-            </div></div>
-            {/* P5-4：当前所选档位的说明，避免再混淆「会不会变形 / 会不会裁边」 */}
-            <div className="dg-hint">{SCALE_HINT[scaleMode] || SCALE_HINT['默认']}</div>
-
-            <div className="dg"><div className="dg-label">倍速播放</div><div className="dg-row">
+            <div className="sec"><div className="st">倍速</div><div className="pill-sel">
               {SPEEDS.map((s) => (
                 <button key={s} className={speed === s ? 'on' : ''} onClick={() => setSpeed(s)}>{speedLabel(s)}</button>
               ))}
             </div></div>
 
-            <div className="dg"><div className="dg-label">音效模式</div><div className="dg-row">
+            <div className="sec"><div className="st">音效</div><div className="pill-sel">
               {AUDIO_OPTS.map((a) => (
                 <button key={a} className={audioMode === a ? 'on' : ''} onClick={() => { setAudioMode(a); localStorage.setItem('rf_audio', a); }}>{a}</button>
               ))}
             </div></div>
 
             {/* V3.3.7 六：弹幕样式 / 外挂字幕样式入口（工具栏不再占「字幕」按钮位） */}
-            <div className="dg"><div className="dg-label">字幕与弹幕</div><div className="dg-row">
+            <div className="sec"><div className="st">字幕与弹幕</div><div className="line-btns">
               <button onClick={() => { setSettingsOpen(false); openSubStyle(); }}>弹幕样式</button>
               <button onClick={() => { subStyleOpenAt.current = Date.now(); setSettingsOpen(false); setShowSubtitleStyle(true); }}>外挂字幕</button>
             </div></div>
 
             {!landscape && (
-            <div className="dg"><div className="dg-label">快捷操作</div><div className="dg-quick">
-              <button className={introSec ? 'on' : ''} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : <Icon name="fast-forward" size={22} style={{ transform: 'scaleX(-1)' }} />}<span>片头</span></button>
-              <button className={outroSec ? 'on' : ''} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : <Icon name="fast-forward" size={22} />}<span>片尾</span></button>
-              <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}><Icon name="repeat" size={22} /><span>连播</span></button>
-              <button onClick={retry}><Icon name="refresh" size={22} /><span>刷新</span></button>
+            <div className="sec"><div className="st">快捷操作</div><div className="line-btns">
+              <button className={introSec ? 'on' : ''} onClick={() => setSkipOneTap('intro')}>{introSec > 0 ? <span className="skip-num">{fmtTime(introSec)}</span> : '片头'}</button>
+              <button className={outroSec ? 'on' : ''} onClick={() => setSkipOneTap('outro')}>{outroSec > 0 ? <span className="skip-num">{fmtTime(outroSec)}</span> : '片尾'}</button>
+              <button className={autoPlay ? 'on' : ''} onClick={() => { setAutoPlay((v) => { localStorage.setItem('rf_autoplay', v ? '0' : '1'); return !v; }); }}>连播</button>
+              <button onClick={retry}>刷新</button>
             </div></div>
             )}
+
+            <div className="sec"><div className="st">解码器</div><div className="pill-sel">
+              {DECODE_CYCLE.map((d) => (
+                <button key={d} className={decodeMode === d ? 'on' : ''} onClick={() => setDecode(d)}>{DECODE_LABEL[d]}</button>
+              ))}
+            </div></div>
+
+            {/* 画面缩放：原型 playerDrawer 无此项，软件功能保留 */}
+            <div className="sec"><div className="st">画面缩放</div><div className="pill-sel">
+              {SCALE_OPTS.map((s) => (
+                <button key={s} className={scaleMode === s ? 'on' : ''} onClick={() => { setScaleMode(s); localStorage.setItem('rf_scale', s); }}>{s}</button>
+              ))}
+            </div></div>
+            <div className="sec-hint">{SCALE_HINT[scaleMode] || SCALE_HINT['默认']}</div>
           </div>
         </div>
       )}
 
-      {/* V3.3.5 A3：竖屏选集半屏浮层——底部向上滑出，复用竖屏设置抽屉（.drawer-mask/.drawer）样式；
-          点遮罩关闭、选完集立即切播并关闭、面板内独立滚动且滚动条完全隐藏。 */}
+      {/* 竖屏选集半屏浮层：对齐原型 #epsheet —— .epsheet（handle + eh[h4「选集 · 共 N 集」+ pill-sel 正/倒序 + 30px X] + .eps 6 列网格）；
+          点遮罩/X 关闭、选完集立即切播并关闭、面板自身滚动（max-height 72%）且滚动条完全隐藏。 */}
       {epSheetOpen && (
         <div className="drawer-mask" onClick={() => setEpSheetOpen(false)}>
-          <div className="ep-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-handle" />
-            <div className="ep-head">
-              <span>选集 · 共 {detail.episodes?.length ?? 0} 集</span>
-              <span className="ep-toggle" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>
+          <div className="epsheet open" ref={epSheetRef} onClick={(e) => e.stopPropagation()}>
+            <div className="handle" />
+            <div className="eh">
+              <h4>选集·共 {detail.episodes?.length ?? 0} 集</h4>
+              <div className="pill-sel">
+                <button className={asc ? 'on' : ''} onClick={() => setAsc(true)}>正序</button>
+                <button className={!asc ? 'on' : ''} onClick={() => setAsc(false)}>倒序</button>
+              </div>
+              <button className="ic-btn" onClick={() => setEpSheetOpen(false)} title="关闭"><Icon name="x" size={16} /></button>
             </div>
-            <div className="ep-sheet-grid" ref={epSheetRef}>
+            <div className="ep-eps" style={{ gridTemplateColumns: 'repeat(6,1fr)' }}>
               {(() => {
                 const list = detail.episodes ?? [];
                 const order = asc ? list.map((_, i) => i) : list.map((_, i) => list.length - 1 - i);
@@ -1861,11 +1894,10 @@ export function VideoPlayer({
                   return (
                     <button
                       key={i}
-                      className={(cur ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')}
+                      className={(cur ? 'on cur' : '') + (ep?.locked ? ' locked' : '')}
                       onClick={() => { onSelectEpisode(i); setEpSheetOpen(false); }}
                     >
                       {ep?.locked ? '锁' : cleanEp(ep?.name, i)}
-                      {cur && <span className="ep-dot" />}
                     </button>
                   );
                 });
@@ -1875,24 +1907,27 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* ⑦ 横屏选集浮层：点选集弹出，点集切换；点遮罩/播放窗口空白关闭 */}
+      {/* 横屏选集浮层：对齐原型 #playerLandEp —— 右侧 74% .epsheet（eh[h4 + pill-sel + 30px X] + .eps 6 列 padding 0 14px）；点遮罩/播放窗口空白关闭 */}
       {epOpen && (
-        <div className="ep-mask" onClick={() => setEpOpen(false)}>
-          <div className="ep-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="ep-head">
-              <span>选集</span>
-              <span className="ep-toggle" onClick={() => setAsc((v) => !v)}>{asc ? '正序 ▾' : '倒序 ▴'}</span>
+        <div className="drawer-mask" onClick={() => setEpOpen(false)}>
+          <div className="epsheet open land-ep-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="eh">
+              <h4>选集·共 {detail.episodes?.length ?? 0} 集</h4>
+              <div className="pill-sel">
+                <button className={asc ? 'on' : ''} onClick={() => setAsc(true)}>正序</button>
+                <button className={!asc ? 'on' : ''} onClick={() => setAsc(false)}>倒序</button>
+              </div>
+              <button className="ic-btn" onClick={() => setEpOpen(false)} title="关闭"><Icon name="x" size={16} /></button>
             </div>
-            <div className="ep-grid">
+            <div className="ep-eps" style={{ gridTemplateColumns: 'repeat(6,1fr)', padding: '0 14px' }}>
               {(() => {
                 const list = detail.episodes ?? [];
                 const order = asc ? list.map((_, i) => i) : list.map((_, i) => list.length - 1 - i);
                 return order.map((i) => {
                   const ep = list[i];
-                  // V3.3.7 五：此前输出原始集名「第01集」，4~5 个字在正方块里挤成三行把格子撑高，
-                  // 视觉上像「5 列正方块没生效」。改走 cleanEp，与竖屏三处保持一致。
+                  // V3.3.7 五：输出 cleanEp 短集名，避免长集名在格子里挤成多行
                   return (
-                    <button key={i} className={(i === episodeIndex ? 'active ep-cur' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : cleanEp(ep?.name, i)}{i === episodeIndex && <span className="ep-dot" />}</button>
+                    <button key={i} className={(i === episodeIndex ? 'on cur' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : cleanEp(ep?.name, i)}</button>
                   );
                 });
               })()}
@@ -1935,7 +1970,7 @@ function Danmaku({
   active: boolean;
   seed: string;
   items: string[];
-  style: { size: number; color: string; opacity: number; speed: number; area: number; outline: boolean };
+  style: { size: number; color: string; opacity: number; speed: number; area: 'full' | 'top' | 'bottom'; outline: boolean };
 }) {
   const [bullets, setBullets] = useState<{ id: number; text: string; top: number; dur: number }[]>([]);
   useEffect(() => {
@@ -1947,11 +1982,14 @@ function Danmaku({
     const timer = setInterval(() => {
       const text = items[Math.floor(Math.random() * items.length)];
       const id = Date.now() + n++;
-      // area：弹幕出现区域占画面高度的百分比（100 = 全屏，50 = 只在上半屏）
-      const top = 4 + Math.random() * Math.max(4, style.area - 8);
-      // speed：100 = 基准 6~10 秒飘完；调大更快（时长更短）
+      // area：显示区域（全屏 / 顶部 / 底部），控制弹幕出现的纵向区间
+      const zoneTop = style.area === 'top' ? 4 : style.area === 'bottom' ? 50 : 4;
+      const zoneBot = style.area === 'top' ? 46 : style.area === 'bottom' ? 92 : 92;
+      const top = zoneTop + Math.random() * (zoneBot - zoneTop);
+      // speed：1~10 档，5 = 基准（6~10s 飘完）；档位越大越快（时长越短）
+      const sp = Math.max(1, Math.min(10, style.speed));
       const base = 6 + Math.random() * 4;
-      const dur = Math.max(2, base * (100 / Math.max(20, style.speed)));
+      const dur = Math.max(2, base * (5 / sp));
       setBullets((b) => [...b, { id, text, top, dur }]);
       setTimeout(() => setBullets((b) => b.filter((x) => x.id !== id)), dur * 1000);
     }, 800);

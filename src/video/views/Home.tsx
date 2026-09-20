@@ -180,7 +180,7 @@ function MorePage({ title, items, onBack, onSearch }: {
   onBack: () => void;
   onSearch: (q: string) => void;
 }) {
-  const grid = useCardGrid({ cols: 3, gap: 8, pad: 10 });
+  const grid = useCardGrid({ cols: 3, gap: 12, pad: 14 });
   // 更多页打开时接管系统返回——首次返回关更多页回主页，再返回才退桌面
   // 更多页打开时接管系统返回——首次返回关更多页回主页，再返回才退桌面
   // V3.3.5 B2：改压返回栈（更多页开着=消费返回键；关掉=组件卸载自动弹栈）
@@ -198,7 +198,7 @@ function MorePage({ title, items, onBack, onSearch }: {
         <button className="mp-back" onClick={onBack}>‹ 返回</button>
         <h3>{title}</h3>
       </div>
-      <div className="mp-grid" ref={grid.ref} style={{ gap: 8, padding: '12px 10px' }}>
+      <div className="mp-grid" ref={grid.ref} style={{ gap: 12, padding: 14 }}>
         {items.map((it) => (
           <HotPosterCard key={it.id} it={it} w={grid.cardW} h={grid.cardH} inlineTitle onSearch={onSearch} />
         ))}
@@ -356,42 +356,25 @@ export function Home({
 
   const homeTop = (
     <div className="home-top v25">
-      {/* V3.5.4：顶栏按原型拆成两行——第 1 行品牌（主色图标 + 幕海），第 2 行搜索 + 站点。
-          原来单行「🌊 幕海 + 搜索 + 站点」挤在一起，与原型不符。 */}
-      <div className="ht-row1">
-        <span className="ht-brand-ico"><Icon name="film" size={16} /></span>
-        <span className="ht-brand-name">幕海</span>
-      </div>
+      {/* V3.5.5：与原型 home 顶栏 1:1 对齐——单行搜索框 + 站点选择 pill，去掉品牌行。 */}
       <div className="ht-row2">
         <button className="ht-search" onClick={() => onSearch('')}>
-          <Icon name="search" size={16} />
+          <Icon name="search" size={18} />
           <span className="ht-search-ph">搜索电影/剧集/演员…</span>
         </button>
         {/* V3.2.5.1：站点选择按钮（独立 UI，与豆瓣区无关） */}
         <button className="ht-source" onClick={() => setSheetOpen(true)} title={activeStationName}>
           <span className="dot" />
           <span className="name">{activeStationName}</span>
-          <span className="caret">▼</span>
+          <Icon name="chevron-down" size={16} />
         </button>
       </div>
     </div>
   );
 
-  if (sources.length === 0) {
-    return (
-      <div className="view home">
-        {homeTop}
-        <div className="blank-state">
-          <div className="blank-art"><Icon name="film" size={44} /></div>
-          <h2>导入 JSON 源，开始看片</h2>
-          <p className="muted">在「设置 → 源管理」里导入一个 JSON 源，<br />首页就会列出可看的影视与直播。</p>
-          <button className="import-fab" onClick={onOpenSources}>
-            <Icon name="plus" size={18} /> 导入 JSON 源
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // #13：去掉无源拦截——热门内容是豆瓣公开接口，与用户自己添加的源无关，
+  // 因此即便没导源也直接展示主页（Banner + 四板块），保证进入 APP 即有内容可看。
+  // 需要导源时通过顶栏搜索/设置里的「导入 JSON 源」入口引导，不再用整页空态挡住首页。
 
   return (
     <div className="view home v25">
@@ -443,36 +426,36 @@ export function Home({
         />
       )}
 
-      {/* V3.2.5.1：站点选择面板（来自已导入源，不内置任何资源） */}
+      {/* 站点选择抽屉：对齐原型 #station —— .epsheet（底部抽屉）> .handle + .eh[选择站点 + 30px X]
+          + 说明 + .set-list > .set-line（lbl + val + check/chevron）+ 完成按钮。 */}
       {sheetOpen && (
-        <div className="station-mask" onClick={() => setSheetOpen(false)}>
-          <div className="station-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="station-head">
-              <span>选择站点</span>
-              <button className="station-close" onClick={() => setSheetOpen(false)}>✕</button>
+        <div className="drawer-mask" onClick={() => setSheetOpen(false)}>
+          <div className="epsheet station-epsheet open" onClick={(e) => e.stopPropagation()}>
+            <div className="handle" />
+            <div className="eh">
+              <h4>选择站点</h4>
+              <button className="ic-btn" onClick={() => setSheetOpen(false)}><Icon name="x" size={16} /></button>
             </div>
-            <div className="station-list">
-              <div
-                className={'station-item' + (activeStation === 'all' ? ' on' : '')}
-                onClick={() => { setActiveStation('all'); setSheetOpen(false); }}
-              >
-                <span className="si-name">全部站点</span>
-                <span className="si-sub">聚合所有已开启源</span>
-                {activeStation === 'all' && <span className="si-check">✓</span>}
+            <p className="muted sm" style={{ margin: '-4px 0 10px' }}>当前源的站点列表，选择后主页热搜随之切换。</p>
+            <div className="set-list">
+              <div className="set-line" style={{ cursor: 'pointer' }}
+                onClick={() => { setActiveStation('all'); setSheetOpen(false); }}>
+                <span className="lbl">全部站点</span>
+                <span className="val">聚合</span>
+                {activeStation === 'all' && <Icon name="check" size={18} className="ic" style={{ color: 'var(--accent)' }} />}
               </div>
               {stations.map((st) => (
-                <div
-                  key={st.id}
-                  className={'station-item' + (activeStation === st.id ? ' on' : '')}
-                  onClick={() => { setActiveStation(st.id); setSheetOpen(false); }}
-                >
-                  <span className="si-name">{st.name}</span>
-                  <span className="si-sub">{((st as any).parentName ?? '') || '子站'}</span>
-                  {activeStation === st.id && <span className="si-check">✓</span>}
+                <div className="set-line" style={{ cursor: 'pointer' }} key={st.id}
+                  onClick={() => { setActiveStation(st.id); setSheetOpen(false); }}>
+                  <span className="lbl">{st.name}</span>
+                  <span className="val">{((st as any).parentName ?? '') || '子站'}</span>
+                  {activeStation === st.id
+                    ? <Icon name="check" size={18} className="ic" style={{ color: 'var(--accent)' }} />
+                    : <Icon name="chevron-right" size={18} className="ic chev" />}
                 </div>
               ))}
             </div>
-            <p className="station-note">站点来自你导入的源配置，App 不提供任何影视资源。</p>
+            <button className="btn block" style={{ marginTop: 12 }} onClick={() => setSheetOpen(false)}>完成</button>
           </div>
         </div>
       )}

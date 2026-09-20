@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { SourceConfig, MediaItem, uuid } from '../../engine';
 import { alistClient, AlistFile } from '../../lib/alistClient';
 import { debugLog } from '../../lib/debug';
@@ -7,9 +7,12 @@ import { Icon } from '../../components/Icon';
 export function CloudBrowse({
   sources,
   onPlayFile,
+  onHeadSlot,
 }: {
   sources: SourceConfig[];
   onPlayFile: (item: MediaItem) => void;
+  /** 把「网盘选择下拉」挂到子页顶栏（对齐原型：下拉在 sp-head 内）。不传则渲染在内容区。 */
+  onHeadSlot?: (node: ReactNode) => void;
 }) {
   const alistSources = sources.filter((s) => s.type === 'alist');
   // 未配置真实 alist 源时，使用一个内置示例盘，保证开箱即可体验文件浏览（仅为演示数据）
@@ -37,6 +40,22 @@ export function CloudBrowse({
 
   const crumbs = path.split('/').filter(Boolean);
 
+  // 网盘选择下拉：优先挂到子页顶栏（对齐原型），否则就地渲染在标题行
+  const picker = (
+    <select
+      className="text-input nd-pick"
+      value={srcId}
+      onChange={(e) => { setSrcId(e.target.value); setPath('/'); }}
+      disabled={effective.length === 0}
+    >
+      {effective.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+    </select>
+  );
+  useEffect(() => {
+    onHeadSlot?.(picker);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srcId, effective.length]);
+
   const open = (f: AlistFile) => {
     if (f.isDir) setPath(f.path);
     else if (alistClient.VIDEO_EXT.test(f.name)) {
@@ -57,35 +76,45 @@ export function CloudBrowse({
 
   return (
     <div className="view cloud-browse">
-      <div className="page-title-row">
-        <h2 className="page-title">网盘浏览（alist）</h2>
-        <select value={srcId} onChange={(e) => { setSrcId(e.target.value); setPath('/'); }} disabled={effective.length === 0}>
-          {effective.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      </div>
-      {alistSources.length === 0 && <p className="muted sm hint-demo">当前为内置示例盘（演示数据，不可播放真实内容）。在「音源管理」添加一个真实的 alist 源（baseUrl + Token）即可浏览并播放你的网盘。</p>}
-      <p className="muted sm">像文件管理器一样逛你挂载的网盘（阿里云盘/夸克/UC/115…）。未填真实 alist 地址时显示示例文件。点击视频文件即可播放（需真实 alist 提供直链）。</p>
+      {/* 内容区标题：仅在未挂顶栏时显示（避免与子页标题重复） */}
+      {!onHeadSlot && (
+        <div className="page-title-row">
+          <h2 className="page-title">网盘浏览</h2>
+          {picker}
+        </div>
+      )}
+      <p className="muted sm cb-tip">像文件管理器一样逛挂载的网盘。点击文件夹进入，点击视频文件直接播放（需真实 alist 源提供直链）。</p>
 
+      {/* 面包屑（对齐原型：根目录 › 影视 › 剧集） */}
       <div className="breadcrumb">
         <button className="link" onClick={() => setPath('/')}>根目录</button>
         {crumbs.map((c, i) => (
-          <span key={i}>
-            <span className="sep">/</span>
+          <span key={i} className="crumb-seg">
+            <Icon name="chevron-right" size={13} />
             <button className="link" onClick={() => setPath('/' + crumbs.slice(0, i + 1).join('/'))}>{c}</button>
           </span>
         ))}
       </div>
 
       {loading && <div className="loading">读取目录中…</div>}
-      <div className="cloud-grid">
-        {files.length === 0 && !loading && <div className="empty">该目录为空，或尚未配置云盘源（在音源管理里添加一个 alist 源）。</div>}
-        {files.map((f) => (
-          <button key={f.path} className={'cloud-item' + (f.isDir ? ' dir' : ' file')} onClick={() => open(f)}>
-            <span className="ci-ico"><Icon name={f.isDir ? 'folder' : alistClient.VIDEO_EXT.test(f.name) ? 'film' : 'file'} size={20} /></span>
-            <span className="ci-name">{f.name}</span>
-            {!f.isDir && f.size && <span className="ci-size">{(f.size / 1e9).toFixed(2)} GB</span>}
-          </button>
-        ))}
+      <div className="file-grid">
+        {files.length === 0 && !loading && (
+          <div className="empty" style={{ gridColumn: '1 / -1' }}>
+            <span className="ic"><Icon name="folder" size={48} /></span>
+            <div className="big">该目录为空</div>
+            <div className="sm">尚未配置云盘源，可在「音源管理」添加一个 alist 源</div>
+          </div>
+        )}
+        {files.map((f) => {
+          const isVid = !f.isDir && alistClient.VIDEO_EXT.test(f.name);
+          return (
+            <div key={f.path} className="file-cell" onClick={() => open(f)}>
+              <span className="ic"><Icon name={f.isDir ? 'folder' : isVid ? 'film' : 'file'} size={30} /></span>
+              <div className="nm">{f.name}</div>
+              {!f.isDir && (f.size ?? 0) > 0 && <div className="nm sz">{((f.size ?? 0) / 1e9).toFixed(2)} GB</div>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

@@ -1,17 +1,20 @@
 import { useDownloads, downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
 
-export function DownloadManager({ title = '下载管理' }: { title?: string }) {
+/** 下载任务列表（标题与「清除已完成」由外层子页顶栏提供，此处只渲染内容）。 */
+export function DownloadManager() {
   const tasks = useDownloads();
   return (
     <div className="view">
-      <div className="page-title-row">
-        <h2 className="page-title">{title}</h2>
-        <button onClick={() => downloadStore.clearDone()}>清除已完成</button>
-      </div>
-      <p className="muted sm">下载进度实时显示；同源或允许跨域(CORS)的源会触发浏览器原生下载（Tauri WebView 走系统默认下载位置）。不支持直接下载的源会如实标记为「失败」，不再假装完成。</p>
+      <p className="muted sm dl-tip">下载进度实时显示；同源或允许跨域(CORS)的源会触发浏览器原生下载。不支持直接下载的源会标记为「失败」。</p>
       <div className="dl-list">
-        {tasks.length === 0 && <div className="empty">还没有下载任务。在搜索结果或详情页点「下载」即可。</div>}
+        {tasks.length === 0 && (
+          <div className="empty">
+            <span className="ic"><Icon name="download" size={48} /></span>
+            <div className="big">还没有下载任务</div>
+            <div className="sm">在搜索结果或详情页点「下载」即可</div>
+          </div>
+        )}
         {tasks.map((t) => (
           <div key={t.id} className={'dl-item' + (t.status === 'error' ? ' is-error' : '')}>
             <div className="dl-cover"><Icon name={t.item.mediaType === 'music' ? 'music' : 'play'} size={18} /></div>
@@ -23,8 +26,10 @@ export function DownloadManager({ title = '下载管理' }: { title?: string }) 
               </div>
               <div className="dl-bar"><span style={{ width: t.progress + '%' }} /></div>
             </div>
-            <div className="dl-pct">{t.progress}%</div>
-            <button className="link danger" onClick={() => downloadStore.remove(t.id)}>移除</button>
+            <div className="dl-pct">{t.status === 'done' ? '完成' : t.progress + '%'}</div>
+            <button className="dl-remove" onClick={() => downloadStore.remove(t.id)} aria-label="移除任务">
+              <Icon name="x" size={16} />
+            </button>
           </div>
         ))}
       </div>

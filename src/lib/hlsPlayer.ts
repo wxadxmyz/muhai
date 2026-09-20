@@ -5,6 +5,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { devError, devWarn } from './log';
+import { isTauri } from './tauriBridge';
 
 type HlsOpts = {
   headers?: Record<string, string>;
@@ -56,6 +57,28 @@ export function createBackendLoader(extraHeaders: Record<string, string> | null 
       const headers = streamHeaders(url, extraHeaders);
       const t0 = performance.now();
       this.stats.loading.start = t0;
+      // 纯 Web/dev 环境：没有 Tauri 后端（invoke 不可用），回退浏览器直连。
+      // 仅对 CORS 放行的源有效（如公开测试流）；生产 APK 始终有后端，不走此分支。
+      if (!isTauri()) {
+        try {
+          const res = await fetch(url, Object.keys(headers).length ? { headers } : undefined);
+          if (this.stats.aborted) return;
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const buf = await res.arrayBuffer();
+          const isText = context.responseType === 'text' || context.responseType === '';
+          const data = isText ? new TextDecoder('utf-8').decode(buf) : buf;
+          const t1 = performance.now();
+          this.stats.loading.first = t1; this.stats.loading.end = t1;
+          this.stats.loaded = buf.byteLength; this.stats.total = buf.byteLength;
+          this.stats.bwEstimate = (buf.byteLength * 8000) / Math.max(1, t1 - t0);
+          callbacks.onSuccess({ url, data, code: 200 }, this.stats, context, null);
+        } catch (e: any) {
+          if (this.stats.aborted) return;
+          devError('[BackendLoader:web]', url, String(e?.message ?? e));
+          callbacks.onError({ code: 0, text: String(e?.message ?? e) }, context, null, this.stats);
+        }
+        return;
+      }
       try {
         const raw = await invoke<string>('fetchmedia', { url, headers });
         if (this.stats.aborted) return;
@@ -88,10 +111,18 @@ export function createBackendLoader(extraHeaders: Record<string, string> | null 
 export async function peekIsHls(url: string, extra?: Record<string, string> | null): Promise<boolean> {
   try {
     const headers = streamHeaders(url, extra ?? null);
-    const raw = await invoke<string>('fetchmedia', { url, headers });
-    const json = JSON.parse(raw) as { data: string; url?: string };
-    const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
-    const head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
+    let head = '';
+    if (!isTauri()) {
+      // 纯 Web/dev：浏览器直连试探前 512 字节
+      const res = await fetch(url, Object.keys(headers).length ? { headers } : undefined);
+      if (!res.ok) return false;
+      head = (await res.text()).slice(0, 512);
+    } else {
+      const raw = await invoke<string>('fetchmedia', { url, headers });
+      const json = JSON.parse(raw) as { data: string; url?: string };
+      const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
+      head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
+    }
     return /#EXTM3U/i.test(head);
   } catch (e: any) {
     devWarn('[peekIsHls]', url, e?.message ?? e);

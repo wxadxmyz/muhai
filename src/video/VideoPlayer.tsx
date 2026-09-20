@@ -1058,7 +1058,10 @@ export function VideoPlayer({
         if (locked) {
           if (tapTimer.current) { window.clearTimeout(tapTimer.current); tapTimer.current = undefined; }
           if (singleHideTimer.current) { window.clearTimeout(singleHideTimer.current); singleHideTimer.current = undefined; }
-          setLockHidden((v) => !v);
+          // V3.5.5：锁定态点屏幕 = 唤出/收起小锁，同时把整层从 .hide 里拉回来
+          // （否则小锁 pointer-events:none，用户看不到也点不到锁，无法解锁）
+          if (!controlsVisible) { setControlsVisible(true); setLockHidden(false); }
+          else setLockHidden((v) => !v);
         } else if (epOpen) {
           setEpOpen(false); // ⑦ 横屏选集浮层：点播放窗口空白即关
         } else if (settingsOpen) {
@@ -1132,7 +1135,9 @@ export function VideoPlayer({
   // stopPropagation 会拦住后续冒泡，按钮自己的 onClick 就不会执行了。
   // 锁定态不拦截 —— 锁定态下小锁是唯一可点元素，交给 onStageTouchEnd 的 locked 分支处理。
   const guardTapWhenHidden = (e: React.MouseEvent) => {
-    if (locked) return;
+    // V3.5.5：锁定态若整层处于 .hide（状态异常残留），点屏幕要能把整层唤回来，
+    // 否则小锁 pointer-events:none + 本函数放行 = 点屏幕永远无法让小锁再现。
+    if (locked) { if (!controlsVisible) setControlsVisible(true); return; }
     if (controlsVisible) return;
     e.stopPropagation();
     e.preventDefault();
@@ -1160,13 +1165,21 @@ export function VideoPlayer({
       return next;
     });
   };
-  // B7+B9：锁定/解锁都要走这里 —— 锁定瞬间先让小锁亮起，3 秒后被 scheduleHide 藏掉；
-  //        解锁时控件立刻出现并重启 3 秒倒计时。
+  // B7+B9：状态变化时让控件层重新出现。
+  // V3.5.5 修正三处（解决「锁定后点屏幕小锁不回来 / 点锁解锁没反应」）：
+  //  1) 依赖里去掉 state.isPlaying —— 播放中 onTimeUpdate(250ms 级) 会不断刷新 player 状态，
+  //     旧写法导致这个 effect 高频重跑，把 controlsVisible 强行拉回 true，整层 .hide 被反复抹掉，
+  //     与锁定态「整层保持 hide、小锁由 .lock-hidden 独立控制」的设计互相打架。
+  //  2) 锁定态不再调用 scheduleHide()：锁定态不需要「3 秒隐藏整层」，小锁的 3 秒自动隐藏
+  //     由 toggleLock 里的 lockTimer 单独负责（setLockHidden(true)）。
+  //     此前 scheduleHide 会把 controlsVisible 置 false → 整层进 .hide → 小锁 pointer-events:none，
+  //     而 guardTapWhenHidden 在 locked 时直接放行，于是点屏幕永远唤不回小锁、点锁也解锁不了。
+  //  3) 仅在「解锁」时才重启 3 秒自动隐藏倒计时。
   useEffect(() => {
     setControlsVisible(true);
-    if (state.isPlaying) scheduleHide();
+    if (!locked && state.isPlaying) scheduleHide();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.isPlaying, locked]);
+  }, [locked]);
 
   // V3.3.13：原「横屏弹幕长按唤出面板」的长按手势（V3.3.7~V3.3.8 引入）已整段移除——
   // 用户要求弹幕按钮=纯开关、面板改由底部「弹幕」按钮负责。相关死代码（longPressTimer /
@@ -1478,7 +1491,7 @@ export function VideoPlayer({
         {/* ============ 横屏（对齐原型 .land：顶栏 返回/标题/锁/投屏 + 中央 上一个/播放/下一个 + 底部 5 个图标钮） ============ */}
         {landscape && (
           <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
-            {/* .l-top：返回 + `片名 第N集 画质小字` + 锁 + 投屏（38px 圆钮 rgba(255,255,255,.14)） */}
+            {/* .l-top：返回 + `片名 第N集 画质小字` + 锁 + 投屏（38px 圆钮 rgba(255,255,255,.14)，图标 grid 居中） */}
             <div className="land-top">
               <button className="back" onClick={toggleLandscape} title="退出横屏"><Icon name="arrow-left" size={19} /></button>
               <div className="ttl">
@@ -1489,25 +1502,55 @@ export function VideoPlayer({
               <button className="icon rt" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={18} /></button>
             </div>
 
-            {/* .l-center：上一集 / 播放（80px 渐变主钮）/ 下一集，gap 34px */}
-            <div className="land-center">
-              <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={30} /></button>
-              <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
-                {/* 缓冲转圈统一由 vp-buf-loader 呈现，主播放键只显图标 */}
-                <Icon name={state.isPlaying ? 'pause' : 'play'} size={34} />
-              </button>
-              <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={30} /></button>
+            {/* 左中：弹幕开关（点一下开/点一下关，高亮=开） */}
+            <div className="vp-side vp-side-left land-side-left">
+              <button className={'side-btn' + (danmaku ? ' on' : '')} onClick={danmakuClickToggle} onTouchStart={danmakuTouchToggle} disabled={!detail.danmaku || detail.danmaku.length === 0} title={danmaku ? '弹幕开' : '弹幕关'}><Icon name="message" size={16} /></button>
+            </div>
+            {/* 右中：画中画（绑原生桥 enterPip） */}
+            <div className="vp-side vp-side-right land-side-right">
+              <button className="side-btn" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={16} /></button>
             </div>
 
-            {/* .l-bottom：画质 / 选集 / 弹幕 / 设置 / 画中画 —— 5 个图标(26px)+文字(11px)，gap 26px。
-                原底部 10 工具（解码/刷新/重播/片头/片尾/音效/画质文本/选集/设置）收进「设置」抽屉（playerDrawer 对齐时接入） */}
+            {/* .l-center：上一集 / 播放（64px 渐变主钮）/ 下一集，gap 34px */}
+            <div className="land-center">
+              <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={28} /></button>
+              <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
+                {/* 缓冲转圈统一由 vp-buf-loader 呈现，主播放键只显图标 */}
+                <Icon name={state.isPlaying ? 'pause' : 'play'} size={30} />
+              </button>
+              <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={28} /></button>
+            </div>
+
+            {/* .l-bottom：进度条（当前时间 + 拖动条 + 总时间）+ 9 个工具钮
+                画质/解码/刷新/重播/弹幕(面板)/片头/片尾/选集/设置。
+                底部弹幕=弹幕样式面板入口；左中圆钮=弹幕开关。 */}
             <div className="land-bottom">
-              <button className="bb" onClick={() => setLevelOpen(true)} title="选择清晰度"><Icon name="maximize" size={22} /><span>画质</span></button>
-              <button className="bb" onClick={() => setEpOpen(true)} title="选集"><Icon name="list" size={22} /><span>选集</span></button>
-              {/* V3.4.0：弹幕走 openSubStyle（面板入口）；touch 双触发兜底部分机型 click 派发缺失 */}
-              <button className="bb" onClick={openSubStyle} onTouchStart={openSubStyle} title="弹幕样式"><Icon name="message" size={22} /><span>弹幕</span></button>
-              <button className="bb" onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={22} /><span>设置</span></button>
-              <button className="bb" onClick={(e) => { e.stopPropagation(); onPip(); }} title="画中画" disabled={!settings.pipEnabled}><Icon name="pip" size={22} /><span>画中画</span></button>
+              <div className="land-progress">
+                <span className="t cur">{fmtTime(liveCur)}</span>
+                <div className="bar" onClick={(e) => {
+                  const v = videoRef.current; if (!v || !liveDur) return;
+                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                  v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
+                }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
+                  <div className="buffered" style={{ width: `${bufPct}%` }} />
+                  <div className="fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                  <div className="knob" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                </div>
+                <span className="t dur">{fmtTime(liveDur)}</span>
+              </div>
+              <div className="land-tools">
+                <button className="bb" onClick={() => setLevelOpen(true)} title="选择清晰度"><Icon name="maximize" size={22} /><span>画质</span></button>
+                <button className={'bb' + (DECODE_CYCLE.indexOf(decodeMode as any) >= 0 ? ' on' : '')} onClick={toggleDecode} title={'解码方式：' + decodeLabel()}><Icon name="sliders" size={22} /><span>解码</span></button>
+                <button className="bb" onClick={retry} title="刷新当前视频"><Icon name="refresh" size={22} /><span>刷新</span></button>
+                <button className="bb" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }} title="从头重播"><Icon name="replay" size={22} /><span>重播</span></button>
+                {/* 底部弹幕：弹幕样式面板入口（与左中开关区分） */}
+                <button className="bb" onClick={openSubStyle} onTouchStart={openSubStyle} title="弹幕样式"><Icon name="message" size={22} /><span>弹幕</span></button>
+                <button className="bb" onClick={() => { const v = videoRef.current; if (v && introSec) { v.currentTime = introSec; player.seek(introSec); } }} title={introSec ? `跳过片头（${introSec}s）` : '未设置片头'} disabled={!introSec}><Icon name="skip-forward" size={22} /><span>片头</span></button>
+                <button className="bb" onClick={() => { const v = videoRef.current; const d = v && isFinite(v.duration) && v.duration > 0 ? v.duration : (state.duration || 0); if (v && outroSec && d > 0) { const t = Math.max(0, d - outroSec); v.currentTime = t; player.seek(t); } }} title={outroSec ? `跳过片尾（${outroSec}s）` : '未设置片尾'} disabled={!outroSec}><Icon name="skip-back" size={22} /><span>片尾</span></button>
+                <button className="bb" onClick={() => setEpOpen(true)} title="选集"><Icon name="list" size={22} /><span>选集</span></button>
+                <button className="bb" onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={22} /><span>设置</span></button>
+              </div>
             </div>
           </div>
         )}

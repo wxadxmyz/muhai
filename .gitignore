@@ -35,3 +35,6 @@ Thumbs.db
 # 本地出包监控临时脚本 / 结果（不进仓库）
 ci_watch*.sh
 V3.*出包结果.md
+
+# 本地 UI 验证探针（只用于 dev 渲染测试，不进仓库）
+public/_probe/

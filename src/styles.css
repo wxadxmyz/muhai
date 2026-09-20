@@ -1160,6 +1160,16 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .searchview .searchtop .sinput .search-ico{color:var(--muted);display:flex;}
 .searchview .searchtop .sclear{width:18px;height:18px;border-radius:50%;background:#3a3a42;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none;border:none;cursor:pointer;padding:0;line-height:1;}
 
+/* 无源空态：进入搜索页且当前没有任何源时出现（正文区居中，复用软件 .empty 视觉语言）。
+   仅描述状态、不引导配置第三方接口；「去添加」跳源管理让用户自行配置合法源。 */
+.searchview .search-nosource{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:40px 28px;text-align:center;}
+.searchview .search-nosource .ic{display:inline-flex;color:var(--muted);opacity:.55;margin-bottom:4px;}
+.searchview .search-nosource .ic svg{display:block;}
+.searchview .search-nosource .big{font-size:15px;font-weight:600;color:var(--text);}
+.searchview .search-nosource .sm{font-size:12px;color:var(--muted);line-height:1.6;}
+.searchview .search-nosource .act{margin-top:14px;height:38px;padding:0 22px;border:none;border-radius:19px;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:14px;font-weight:600;font-family:inherit;}
+.searchview .search-nosource .act:active{opacity:.88;}
+
 /* ============ 启动屏 Splash（律云 / 幕海 共用）============ */
 /* ===== 启动页 —— 1:1 对齐原型 .splash（原型 161-168 行） ===== */
 .splash{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;color:#fff;transition:opacity .5s;will-change:opacity;
@@ -1172,7 +1182,8 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .splash-name{font-size:26px;font-weight:800;letter-spacing:3px;}
 .splash-bar{width:160px;height:4px;border-radius:999px;background:rgba(255,255,255,.2);overflow:hidden;}
 .splash-bar-fill{display:block;height:100%;width:0;border-radius:999px;background:#fff;animation:splash-fill 1.6s cubic-bezier(.22,1,.36,1) forwards;}
-.splash-skip{position:absolute;top:calc(54px + var(--sat,0px));right:22px;color:rgba(255,255,255,.8);font-size:13px;
+/* V3.5.5：跳过按钮由右上角改为底部右下角（bottom: 28px + 底部安全区，避让系统手势条） */
+.splash-skip{position:absolute;bottom:calc(28px + var(--sab,0px));right:22px;color:rgba(255,255,255,.8);font-size:13px;
   background:rgba(255,255,255,.12);border:0;padding:6px 14px;border-radius:999px;cursor:pointer;}
 .splash-skip:hover{background:rgba(255,255,255,.2);}
 @keyframes splash-fill{from{width:0}to{width:100%}}
@@ -1439,7 +1450,7 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .live { display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--bg); }
 .live > .empty, .live > .live-list { flex: 1 1 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* 对齐原型：.live-list{padding:14px} .live-src{padding:14px 16px;gap:12px;border-radius:var(--r-md);margin-bottom:10px} */
-.live-list { padding: 14px; }
+.live-list { padding: calc(14px + var(--sat)) 14px 14px; }
 .live-src {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 16px; margin-bottom: 10px;
@@ -1459,7 +1470,7 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 
 /* 二级：直播房间整体（对齐原型 .live-room：stage + 两栏选台）
    原型 live-room 页 data-nav="none"：进播放室后隐藏底部导航，全屏呈现（返回钮退出） */
-.live-room { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.live-room { flex: 1; display: flex; flex-direction: column; min-height: 0; padding-top: var(--sat); }
 body.live-in-room .bottom-nav { display: none; }
 
 /* 播放舞台：原型 .live-stage —— 16:9 黑底、底部圆角 r-lg、顶栏/控件全部叠加其上 */
@@ -1476,7 +1487,7 @@ body.live-in-room .bottom-nav { display: none; }
 
 /* 顶栏叠加在画面上：原型 .live-stage .topbar（渐变底 + 34px 半透明圆钮 + 13px 白标题 + accent 药丸）
    padding-top 预留 --sat（真机状态栏/刘海，dev 回退 26px），避免被 .app::before 状态栏遮罩盖住 */
-.lp-topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 8px; padding: calc(var(--sat) + 10px) 12px 10px; background: linear-gradient(rgba(0,0,0,.66), transparent); }
+.lp-topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px; background: linear-gradient(rgba(0,0,0,.66), transparent); }
 .lp-topbar .lp-back, .lp-topbar .rt { width: 34px; height: 34px; min-width: 34px; min-height: 34px; flex: 0 0 auto; border-radius: 50%; background: rgba(0,0,0,.4); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; box-sizing: border-box; }
 .lp-topbar .ttl { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: #fff; font-size: 13px; font-weight: 600; }
 .lp-topbar .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1565,6 +1576,7 @@ body.live-in-room .bottom-nav { display: none; }
 /* v3.1.1 · 小锁独立显隐（lockHidden）：锁定态小锁不再随整层 .hide 一起消失，解决"点一下锁就没了点不回来"。
    锁定态我们保持整层不进入 .hide（JS 侧 controlsVisible/landControls 维持 true），小锁显隐完全由 .lock-hidden 控制。 */
 .player-card .overlay.locked .top .acts .lock-btn.lock-hidden,
+.landscape .overlay.land-h.locked .land-top .lock-btn.lock-hidden,
 .landscape .overlay.land-h.locked .side.left .lock-btn.lock-hidden,
 .lp-ctl.locked .lp-lock.lock-hidden,
 .land-overlay.locked .lock-btn.lock-hidden { opacity: 0; pointer-events: none; }
@@ -1911,7 +1923,9 @@ body.live-in-room .bottom-nav { display: none; }
 /* P2：安全区由顶栏自己吃掉。安卓横屏顶部通常无状态栏，env 兜底 0（竖屏的 26px 兜底不适用横屏），
    dev/无刘海设备 = 10px，与原型 .l-top 一致 */
 .landscape .land-top { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; }
-.landscape .land-top .back, .landscape .land-top .rt { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.14); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.landscape .land-top .back, .landscape .land-top .rt { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.14); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; padding: 0; box-sizing: border-box; }
+/* 图标强制居中：grid 拉满 + 固定尺寸 + 去外边距，杜绝被按钮内边距/line-height 带偏（解决圆钮里图标不居中） */
+.landscape .land-top .back svg, .landscape .land-top .rt svg { width: 20px; height: 20px; margin: auto; display: block; }
 .landscape .land-top .rt.on { color: var(--accent); }
 .landscape .land-top .ttl { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .landscape .land-top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1925,14 +1939,40 @@ body.live-in-room .bottom-nav { display: none; }
 .landscape .side button.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 
 /* V3.5.2⑥：横屏中央组整体收小 —— 小钮 58→48、大钮 76→60、间距 20→16 */
-.landscape .center, .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 34px; flex-wrap: nowrap; }
+.landscape .center, .land-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; display: flex; align-items: center; gap: 26px; flex-wrap: nowrap; }
 .landscape .center button, .land-center button { width: 62px !important; height: 62px !important; min-width: 62px !important; min-height: 62px !important; max-width: 62px !important; max-height: 62px !important; flex: none !important; align-self: center; border-radius: 50% !important; background: rgba(255,255,255,.14); border: none; color: #fff; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer; box-sizing: border-box !important; overflow: hidden; transition: var(--t, .15s); }
 .landscape .center button:active, .land-center button:active { transform: scale(.92); }
-.landscape .center button.main, .land-center button.main { width: 80px !important; height: 80px !important; min-width: 80px !important; min-height: 80px !important; max-width: 80px !important; max-height: 80px !important; aspect-ratio: 1 !important; color: #fff; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.landscape .center button.main, .land-center button.main { width: 64px !important; height: 64px !important; min-width: 64px !important; min-height: 64px !important; max-width: 64px !important; max-height: 64px !important; aspect-ratio: 1 !important; color: #fff; border: none; background: linear-gradient(135deg, var(--accent), var(--accent2)); }
 
-.landscape .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; align-items: center; justify-content: center; gap: 26px; padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, rgba(0,0,0,.45)); }
-.landscape .land-bottom .bb { display: flex; flex-direction: column; align-items: center; gap: 5px; background: none; border: none; color: #fff; font-size: 11px; font-weight: 500; cursor: pointer; padding: 0; }
-.landscape .land-bottom .bb svg { width: 26px; height: 26px; }
+/* V3.5.5 横屏左右中圆钮（弹幕开关 / 画中画）：压在视频画面内侧，避免落进两侧黑边（letterbox）。
+   竖屏那套 .vp-side(left:10/right:10) 在横屏全屏下会贴到屏幕最边、跑到黑边里。 */
+.player-root.landscape .land-side-left { left: 16px; }
+.player-root.landscape .land-side-right { right: 16px; }
+.player-root.landscape .land-side-left .side-btn,
+.player-root.landscape .land-side-right .side-btn { width: 40px; height: 40px; background: rgba(0,0,0,.5); backdrop-filter: blur(4px); }
+.player-root.landscape .land-side-left .side-btn svg,
+.player-root.landscape .land-side-right .side-btn svg { width: 20px; height: 20px; }
+
+/* 横屏底部：进度条（当前时间 + 拖动条 + 总时间）+ 工具行（9 个 .bb）。
+   整块改为纵向——进度条在上、工具行在下；底部留足 12px 安全区 + 8px 内边距，
+   避免 9 个按钮贴到屏幕最底边（V3.5.5 实测贴边）。 */
+.landscape .land-bottom { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 8px; padding: 10px 18px calc(env(safe-area-inset-bottom, 0px) + 10px); background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+/* 进度条：当前时间 + 拖动条 + 总时间（尺寸收敛、贴近底部工具行） */
+.landscape .land-bottom .land-progress { display: flex; align-items: center; gap: 10px; }
+.landscape .land-bottom .land-progress .t { font-size: 12px; color: rgba(255,255,255,.9); font-variant-numeric: tabular-nums; flex: 0 0 auto; min-width: 36px; text-align: center; text-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.landscape .land-bottom .land-progress .t.cur { text-align: right; }
+.landscape .land-bottom .land-progress .t.dur { text-align: left; }
+/* V3.5.5 横屏进度条：基础 .bar 样式只作用于 .player-card .bottom .bar（竖屏），
+   横屏这条不在 .bottom 内 → 原来 height 为 0，进度条整个不可见。这里补齐完整轨道样式。 */
+.landscape .land-bottom .land-progress .bar { flex: 1 1 auto; height: 4px; background: rgba(255,255,255,.25); border-radius: 999px; position: relative; overflow: visible; cursor: pointer; }
+.landscape .land-bottom .land-progress .bar .buffered { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,255,255,.32); border-radius: 3px; z-index: 1; }
+.landscape .land-bottom .land-progress .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; transition: width .12s linear; z-index: 2; }
+.landscape .land-bottom .land-progress .bar .knob { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0,0,0,.5); z-index: 3; pointer-events: none; }
+/* 工具行：9 个 .bb 横向铺满，左右各留一段外边距，避免首尾按钮贴屏边 */
+.landscape .land-bottom .land-tools { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; padding: 0 6px; }
+.landscape .land-bottom .bb { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: #fff; font-size: 11px; font-weight: 500; cursor: pointer; padding: 0; flex: 1 1 0; min-width: 0; max-width: 64px; }
+.landscape .land-bottom .bb svg { width: 23px; height: 23px; }
+.landscape .land-bottom .bb.on { color: var(--accent); }
 .landscape .land-bottom .bb:disabled { opacity: .4; cursor: not-allowed; }
 /* V3.3.7 二：gap 10 → 8，与竖屏一致 */
 .landscape .bottom .prow { display: flex; align-items: center; gap: 8px; }
@@ -2074,9 +2114,17 @@ body.live-in-room .bottom-nav { display: none; }
 .landscape .overlay.land-h.locked .land-top { background: none; padding: 14px 16px; justify-content: flex-end; }
 .landscape .overlay.land-h.locked .side.left { gap: 0; }
 /* 锁按钮在锁屏态可点（B10：去掉 opacity:1 !important，否则 B9 的 3 秒自动隐藏会被顶掉，
-   小锁会永远亮着。现在它跟 .overlay 的 hide 状态联动：显→出现，隐→藏起来） */
+   小锁会永远亮着。现在它跟 .overlay 的 hide 状态联动：显→出现，隐→藏起来）
+   V3.5.5 修正：横屏小锁实际在 .land-top 下（原型 DOM 为 `.land-top > .lock-btn`），
+   原选择器写的是 `.side.left .lock-btn`，匹配不到真实节点 → locked 时 pointer-events 不生效，
+   小锁进 .hide 后再也点不到，表现为「点屏幕锁不出来 / 锁不了也解不了」。两条路径都保留兜底。 */
 .player-card .overlay.locked .top .acts .lock-btn,
+.landscape .overlay.land-h.locked .land-top .lock-btn,
 .landscape .overlay.land-h.locked .side.left .lock-btn { display: flex !important; pointer-events: auto; }
+/* V3.5.5：整层处于 .hide 时，锁定态小锁也要保持可点（它是唯一能解锁的入口）。
+   普通控件仍由 .overlay.hide * { pointer-events:none } 拦住，这里只放行锁定态的小锁。 */
+.player-card .overlay.locked.hide .top .acts .lock-btn,
+.landscape .overlay.land-h.locked.hide .land-top .lock-btn { pointer-events: auto !important; }
 /* ⑭ 锁定态把左右侧栏一起隐藏：竖屏小窗的「画中画」按钮在 .vp-side-right 里，
    旧规则只隐藏了 .top/.center/.bottom，没覆盖 .vp-side → 点小锁后画中画按钮仍留在画面上。 */
 .player-card .overlay.locked .vp-side,
@@ -2091,10 +2139,34 @@ body.live-in-room .bottom-nav { display: none; }
 .landscape .overlay.land-h.loading .vp-side { display: none !important; }
 /* T3：缓冲转圈与中央播放键合体时，确保圆圈在居中容器里稳定显示 */
 .player-card .overlay .big-btn .vp-spinner { display: block; }
-/* B8：锁定态小锁高亮（图标已切为闭合锁，这里同步描边与主题色，一眼看出锁没锁） */
+/* B8：锁定态小锁高亮（图标已切为闭合锁，这里同步描边与主题色，一眼看出锁没锁）
+   V3.5.5 修正：原来只有 color:var(--accent)（紫色）+ 半透明白底，
+   压在彩条/浅色画面上对比度极低，用户会误以为「点屏幕锁没出来」。
+   改为深色半透明底 + 白色描边图标，并加投影，保证任何画面下都清晰可见。 */
 .player-card .overlay.locked .top .acts .lock-btn,
+.landscape .overlay.land-h.locked .land-top .lock-btn,
 .landscape .overlay.land-h.locked .side.left .lock-btn,
-.lp-lock.on { color: var(--accent); border-color: var(--accent); }
+.lp-lock.on {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+/* 横屏锁定态：小锁用高对比样式（深底 + 白图标 + 描边光晕），并稍微放大到 42px 更好点 */
+.landscape .overlay.land-h.locked .land-top .lock-btn {
+  width: 42px; height: 42px;
+  background: rgba(0, 0, 0, .62);
+  border: 1.5px solid var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(91, 78, 240, .22), 0 2px 10px rgba(0, 0, 0, .45);
+  backdrop-filter: blur(6px);
+}
+.landscape .overlay.land-h.locked .land-top .lock-btn svg { width: 22px; height: 22px; }
+/* 竖屏锁定态小锁同样提高对比 */
+.player-card .overlay.locked .top .acts .lock-btn {
+  background: rgba(0, 0, 0, .62);
+  border: 1.5px solid var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(91, 78, 240, .22), 0 2px 10px rgba(0, 0, 0, .45);
+}
 
 /* ============ ⑩ 首页加载态（非全屏：仅内容区，保留顶栏与底部 TAB） ============ */
 .home-loading {

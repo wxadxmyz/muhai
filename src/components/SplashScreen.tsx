@@ -4,7 +4,7 @@ import { Icon } from './Icon';
 // 启动页 —— 逐条对齐原型 .splash（原型 161-168 行）：
 //   背景 linear-gradient(135deg,#1a1340,#3b1d6e 50%,#0f2b4d)
 //   logo 96px / radius 26px / 紫青渐变底 / 白色 film 图标 52px / 紫色投影
-//   名称 26px/800/letter-spacing 3px  ·  进度条 160×4   ·  跳过按钮在右上角
+//   名称 26px/800/letter-spacing 3px  ·  进度条 160×4   ·  跳过按钮在底部右下角（V3.5.5 由右上角改）
 type Props = {
   appName: string;
   duration?: number;

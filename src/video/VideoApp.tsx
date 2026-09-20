@@ -353,6 +353,7 @@ export default function VideoApp() {
             <SearchView
               onClose={() => setSearchOpen(false)}
               sources={store.sources}
+              onOpenSources={() => { setSearchOpen(false); setTab('settings'); setSettingsSub('import'); }}
               // V3.3.1 Q4：去掉 V3.3.0 在这里加的 setSearchOpen(false)。
               //   关搜索层确实治好了"点了没反应"，但它顺手把搜索页从返回栈里抹掉了：
               //   播放器一关，底下垫着的是主页而不是搜索结果，系统返回只能一步跳回主页。

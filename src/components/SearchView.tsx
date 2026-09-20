@@ -29,6 +29,7 @@ export function SearchView({
   enableQueue = true,
   initialQuery,
   onClose,
+  onOpenSources,
 }: {
   sources: SourceConfig[];
   onPlay: (item: MediaItem) => void;
@@ -39,6 +40,7 @@ export function SearchView({
   enableQueue?: boolean;
   initialQuery?: string;
   onClose?: () => void;
+  onOpenSources?: () => void;
 }) {
   const [kw, setKw] = useState(initialQuery ?? '');
   const [items, setItems] = useState<MediaItem[]>([]);
@@ -204,7 +206,20 @@ export function SearchView({
         <button className="primary" onClick={() => run()}>搜索</button>
       </div>
 
-      {!showHints && (
+      {/* 无源提示：进入搜索页后若没有任何视频源，正文区给出居中空态（不拦截页面进入）。
+          文案仅描述状态、不引导配置第三方接口，安全合规；「去添加」跳源管理让用户自行配置合法源。 */}
+      {sources.length === 0 && (
+        <div className="search-nosource">
+          <span className="ic"><Icon name="cast" size={44} /></span>
+          <div className="big">当前暂无可用源，无法搜索</div>
+          <div className="sm">点击下方按钮导入你自己的合法源</div>
+          {onOpenSources && (
+            <button className="act" onClick={onOpenSources}>去添加</button>
+          )}
+        </div>
+      )}
+
+      {sources.length > 0 && !showHints && (
         <div className="search-count">
           <span>
             共 <b>{visibleItems.length}</b> 部
@@ -214,7 +229,7 @@ export function SearchView({
         </div>
       )}
 
-      {showHints ? (
+      {sources.length === 0 ? null : showHints ? (
         library.lib.searchHistory.length > 0 ? (
           <div className="search-history">
             <div className="sh-head">

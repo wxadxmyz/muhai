@@ -146,20 +146,38 @@ export function useSources(appKey: string) {
   );
 
   const importSources = useCallback(
-    (json: string): { added: number; errors: string[] } => {
+    (json: string): { added: number; skipped: number; errors: string[] } => {
       try {
         const arr = JSON.parse(json);
-        if (!Array.isArray(arr)) return { added: 0, errors: ['应为源数组 JSON'] };
+        if (!Array.isArray(arr)) return { added: 0, skipped: 0, errors: ['应为源数组 JSON'] };
         const valid = arr.filter((r: any) => r?.type && r?.baseUrl);
         const cur = getStore(appKey).state.sources;
-        commit(appKey, [
-          ...cur,
-          ...valid.map((r: any) => ({ id: uuid(), enabled: true, priority: cur.length, ...r })),
-        ]);
-        const errors = arr.length - valid.length > 0 ? ['已跳过无效条目'] : [];
-        return { added: valid.length, errors };
+        // 本次已导入的 + 仓库已有的，合并为去重基准。
+        // 修复：导入 JSON（导出时必带 id）时，旧写法把 `...r` 放在 `id: uuid()` 之后，
+        //   导致新源沿用旧 id → 与仓库里同 id 的行撞 React key → 只渲染出一行，看起来「加不进去」。
+        //   现在强制用 uuid() 覆盖外部 id，并按 name+baseUrl 与现有源去重，避免堆重复行。
+        const keyOf = (s: any) => `${String(s?.name ?? '').trim()}||${String(s?.baseUrl ?? '').trim()}`;
+        const seen = new Set<string>(cur.map(keyOf));
+        let skipped = 0;
+        const incoming: SourceConfig[] = [];
+        for (const r of valid as any[]) {
+          const k = keyOf(r);
+          if (seen.has(k)) { skipped++; continue; } // 已有同名同地址的源，跳过
+          seen.add(k);
+          incoming.push({
+            ...r,
+            id: uuid(),            // 强制新 id：不信任 JSON 里的 id（否则与现有行撞 key）
+            enabled: r.enabled !== false,
+            priority: cur.length + incoming.length,
+          });
+        }
+        if (incoming.length) commit(appKey, [...cur, ...incoming]);
+        const errors: string[] = [];
+        if (arr.length - valid.length > 0) errors.push('已跳过无效条目');
+        if (skipped > 0) errors.push(`已跳过 ${skipped} 个已存在的源`);
+        return { added: incoming.length, skipped, errors };
       } catch (e: any) {
-        return { added: 0, errors: [e?.message ?? '解析失败'] };
+        return { added: 0, skipped: 0, errors: [e?.message ?? '解析失败'] };
       }
     },
     [appKey]

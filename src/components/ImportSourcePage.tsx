@@ -36,7 +36,11 @@ export function ImportSourcePage({
     );
     const r = store.importSources(text);
     if (r.added > 0) {
-      setStatus({ type: 'ok', msg: `已成功导入 ${r.added} 个源` });
+      // 新增与「已存在被跳过」分开提示，避免用户以为没加上
+      setStatus({
+        type: 'ok',
+        msg: `已成功导入 ${r.added} 个源${r.skipped > 0 ? `，跳过 ${r.skipped} 个已存在的源` : ''}`,
+      });
       onImported?.();
       requestDisclaimerToast();
       // v3.2.2 ⑪：导入成功后清空输入框，避免再点按钮二次导入
@@ -45,7 +49,10 @@ export function ImportSourcePage({
       setPaste('');
       setLinks([]);
     } else {
-      setStatus({ type: 'err', msg: r.errors.join('；') || '导入失败' });
+      setStatus({
+        type: 'err',
+        msg: r.errors.join('；') || '没有可导入的新源（可能都已存在）',
+      });
     }
   };
 

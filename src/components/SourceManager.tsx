@@ -36,7 +36,12 @@ export function SourceManager({
     const text = window.prompt('粘贴音源 JSON 数组：');
     if (!text) return;
     const r = importSources(text);
-    setMsg(`已导入 ${r.added} 个，${r.errors.join('；')}`);
+    // 导入结果里区分「新增」与「已存在被跳过」，否则用户以为导入失败
+    setMsg(
+      r.added > 0
+        ? `已导入 ${r.added} 个${r.skipped > 0 ? `，跳过 ${r.skipped} 个已存在的源` : ''}`
+        : (r.errors[0] || '没有可导入的新源（可能都已存在）')
+    );
   };
 
   const doImportShare = () => {

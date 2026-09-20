@@ -32,6 +32,11 @@
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px; --r-pill: 999px;
   --ease: cubic-bezier(.2, .7, .3, 1);
   --t: .18s var(--ease);
+  /* V3.5.8 #3：横屏浮层统一宽度档位（原先是 74%/76%/78%/auto 四套，视觉不齐）。
+     以弹幕/外挂字幕样式面板的一档为基准，选集 / 设置 / 直播选台全部对齐到它。 */
+  --land-sheet-w: auto;
+  --land-sheet-min-w: 320px;
+  --land-sheet-max-w: 400px;
   --line: color-mix(in srgb, var(--text) 8%, transparent);
   /* V3.5.4：顶栏/底栏不再透出滚动内容。原来 --glass 只有 72% 底色，
      亮色(简洁白)主题下海报/文字透上来发灰、显脏（真机反馈）。提到 94% 近实心，
@@ -775,7 +780,11 @@ button.fav, .fav { color: var(--danger) !important; }
 /* 横屏：弹幕/字幕面板也变右侧全高抽屉，与「设置」完全一致
    （此前误用 .player-card.land 作祖先选择器，但面板是 player-card 的兄弟节点、挂在 player-root 下，导致规则永远不命中） */
 .player-root.landscape .vp-drawer-mask { align-items: stretch; justify-content: flex-end; }
-.player-root.landscape .vp-sub-drawer { width: auto; min-width: 320px; max-width: 400px; height: 100%; max-height: 100%; border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom)); }
+/* V3.5.8 #3：与设置 / 直播选台统一到 --land-sheet-* 同一档（原 min 320 / max 400，保持基准） */
+.player-root.landscape .vp-sub-drawer {
+  width: var(--land-sheet-w); min-width: var(--land-sheet-min-w); max-width: var(--land-sheet-max-w);
+  height: 100%; max-height: 100%; border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+}
 
 /* 横屏：中央三圆（上一集/暂停/下一集） */
 .vp-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 5; display: flex; align-items: center; gap: 22px; }
@@ -1256,7 +1265,8 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
   background: var(--panel);
   border-right: 1px solid var(--border);
   border-bottom: none;
-  padding: 6px 6px;
+  /* V3.5.8 #2：底部留滚动尾巴——原来只 6px，滚到底最后一条贴边像被切一半 */
+  padding: 6px 6px 16px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -1264,6 +1274,8 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .search-source {
   position: relative;
   display: flex; flex-direction: row; align-items: center; gap: 7px;
+  /* V3.5.8 #2：禁 flex 压缩——容器高度非 30px 整数倍时最后一条会被压扁成半个 */
+  flex: 0 0 auto;
   height: 30px; /* V3.4.7 #3：源条压矮 38→30px */
   padding: 0 9px;
   border-radius: 999px;
@@ -1540,7 +1552,15 @@ body.live-in-room .bottom-nav { display: none; }
 /* 选台抽屉：原型 live-land 内联 = left:auto;right:0;width:78%;max-height:100%;border-radius:var(--r-xl) 0 0 var(--r-xl)
    叠在基础 .epsheet{left:0;right:0;bottom:0;max-height:72%} 上 → 右下角、宽 78%、高度随内容。
    这里用 .land-overlay 前缀提高特异度，防止被文件后部的通用 .epsheet 覆盖。 */
-.land-overlay .epsheet.live-pick-sheet { left: auto; right: 0; top: auto; bottom: 0; width: 78%; max-height: 100%; height: auto; border-radius: var(--r-xl, 22px) 0 0 var(--r-xl); display: flex; flex-direction: column; }
+.land-overlay .epsheet.live-pick-sheet {
+  /* V3.5.8 #3：width 78% → 统一档位（原比设置/选集宽，视觉不齐） */
+  left: auto; right: 0; top: auto; bottom: 0;
+  width: var(--land-sheet-w); min-width: var(--land-sheet-min-w); max-width: var(--land-sheet-max-w);
+  max-height: 100%; height: auto; border-radius: var(--r-xl, 22px) 0 0 var(--r-xl);
+  display: flex; flex-direction: column;
+  /* V3.5.8 #4：面板自己消费纵向手势（否则冒泡到 land-overlay 被当成亮度/音量滑动） */
+  touch-action: pan-y;
+}
 .live-pick-sheet .eh .ic-btn { width: 30px; height: 30px; }
 .live-pick-sheet .live-chs { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; scrollbar-width: none; }
 .live-pick-sheet .live-chs::-webkit-scrollbar { display: none; }
@@ -1549,7 +1569,7 @@ body.live-in-room .bottom-nav { display: none; }
 .live-ch.on { background: var(--panel2); }
 /* 换源条：原型 live-land 内联 = left:0;right:0;bottom:64px;border-radius:var(--r-lg);max-height:auto
    → 左右贴边、悬于底部操作栏上方 64px。同样提高特异度。 */
-.land-overlay .epsheet.live-srcbar-sheet { left: 0; right: 0; top: auto; bottom: 64px; max-height: none; height: auto; border-radius: var(--r-lg, 16px); }
+.land-overlay .epsheet.live-srcbar-sheet { left: 0; right: 0; top: auto; bottom: 64px; max-height: none; height: auto; border-radius: var(--r-lg, 16px); touch-action: pan-y; }
 .srcbar-head { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
 .srcbar-head span { font-size: 13px; font-weight: 700; }
 .srcbar-head .ic-btn { width: 28px; height: 28px; margin-left: auto; }
@@ -1990,8 +2010,12 @@ body.live-in-room .bottom-nav { display: none; }
 /* V3.5.7 问题1：直播横屏底部只有 4 个 .bb、无进度条 → 紧凑居中（不再 space-between 撑开两端），对齐旧版图 1 */
 .landscape .land-bottom:not(:has(.land-progress)) { justify-content: center; gap: 26px; padding-left: 16px; padding-right: 16px; }
 /* V3.5.7 F6：直播横屏回看时间轴（在底部 4 键上方，点/拖即回看） */
-.ts-bar { position: absolute; left: 16px; right: 16px; bottom: 70px; height: 4px; background: rgba(255,255,255,.25); border-radius: 999px; z-index: 4; cursor: pointer; }
-.ts-bar .ts-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 999px; transition: width .12s linear; }
+/* V3.5.8 #5：4px 轨道手指按不准 → 容器撑到 20px 做热区，视觉轨道用 ::before 保持 4px。
+   bottom 由 70px 改 62px，使 20px 热区的中心(=72px)与原来的 4px 轨道位置基本重合。
+   touch-action:none —— 横向拖动不能被当成页面滚动或亮度/音量手势。 */
+.ts-bar { position: absolute; left: 16px; right: 16px; bottom: 62px; height: 20px; background: transparent; border-radius: 999px; z-index: 4; cursor: pointer; touch-action: none; }
+.ts-bar::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 4px; background: rgba(255,255,255,.25); border-radius: 999px; }
+.ts-bar .ts-fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 4px; background: var(--accent); border-radius: 999px; transition: width .12s linear; }
 .ts-bar .ts-knob { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0,0,0,.5); pointer-events: none; }
 .ts-bar .ts-live { position: absolute; right: -2px; top: 50%; width: 8px; height: 8px; border-radius: 50%; background: #3ad17a; transform: translate(0, -50%); box-shadow: 0 0 6px #3ad17a; }
 /* 回看态左上标签 + 右上「回到直播」按钮 */
@@ -2236,7 +2260,12 @@ button.on > .skip-num { color: currentColor; }
 /* ============ 横屏选集浮层 ============ */
 /* 旧 .ep-mask/.ep-panel 已废弃，改用原型 #playerLandEp 同款 .epsheet + 专属定位类。
    用 .player-root 前缀提高特异度，防止被文件后部的通用 .epsheet 覆盖（同直播抽屉的坑）。 */
-.player-root .epsheet.land-ep-sheet { left: auto; right: 0; top: auto; bottom: 0; width: 74%; max-height: 100%; height: auto; border-radius: var(--r-xl, 22px) 0 0 var(--r-xl); }
+/* V3.5.8 #3：width 74% → 统一档位 */
+.player-root .epsheet.land-ep-sheet {
+  left: auto; right: 0; top: auto; bottom: 0;
+  width: var(--land-sheet-w); min-width: var(--land-sheet-min-w); max-width: var(--land-sheet-max-w);
+  max-height: 100%; height: auto; border-radius: var(--r-xl, 22px) 0 0 var(--r-xl);
+}
 .player-root .epsheet.land-ep-sheet .ep-eps { align-content: start; }
 
 /* ============ ⑪ 单集/末集播完：重播浮层（B 方案） ============ */
@@ -2256,8 +2285,11 @@ button.on > .skip-num { color: currentColor; }
 .player-root.landscape .drawer-mask { align-items: stretch; justify-content: flex-end; background: rgba(0,0,0,.5); }
 .player-root.landscape .drawer {
   left: auto; top: 0; bottom: 0; height: auto; /* 竖屏基础样式已改为「底部满宽抽屉」，这里复位为右侧全高定宽 */
-  width: 76%; min-width: 300px; max-width: 340px; max-height: 100%;
+  /* V3.5.8 #3：width 76% / min 300 / max 340 → 统一到弹幕面板同一档（用户反馈"太宽"） */
+  width: var(--land-sheet-w); min-width: var(--land-sheet-min-w); max-width: var(--land-sheet-max-w);
+  max-height: 100%;
   border-radius: 0; padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+  touch-action: pan-y;
 }
 
 /* ⑫ 重置 APP 中文确认 Modal —— 逐条对齐原型 .mask .dialog（原型 172-174 行） */

@@ -145,6 +145,8 @@ function qualityFromHeight(h: number): string {
     if (landClickTimer.current) { window.clearTimeout(landClickTimer.current); landClickTimer.current = undefined; }
   }, []);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // V3.5.8 #5：回看时间轴拖动中标记（拖动期间由指针事件驱动 seek，避免与手势/定时器打架）
+  const tsDragRef = useRef(false);
   // 清晰度档位药丸文案（对齐原型「高清」；onLoadedMetadata 里按真实高度刷新）
   const [resolution, setResolution] = useState('高清');
   const [brightness, setBrightness] = useState(1);
@@ -254,20 +256,46 @@ function qualityFromHeight(h: number): string {
     const m = Math.floor(s / 60);
     return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   };
-  const onTsClick = (e: React.MouseEvent) => {
+  // V3.5.8 #5：把「按时间轴比例跳到该时刻」抽成公共函数，点击与拖动共用。
+  // 旧实现只有 onClick，取一次 clientX 就 seek —— 手指按住滑动时不会跟随，表现为「只能点不能滑」。
+  const seekByRatio = (ratio: number): boolean => {
     const el = videoRef.current;
-    if (!el) return;
+    if (!el) return false;
     const sb = el.seekable;
-    if (!sb || sb.length === 0) { toast('当前直播源不支持回看'); return; }
+    if (!sb || sb.length === 0) { toast('当前直播源不支持回看'); return false; }
     const start = sb.start(0);
     const end = sb.end(0);
-    if (end - start < 1) { toast('直播缓冲不足，暂无可回看内容'); return; }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const t = start + ratio * (end - start);
+    if (end - start < 1) { toast('直播缓冲不足，暂无可回看内容'); return false; }
+    const r = Math.max(0, Math.min(1, ratio));
+    const t = start + r * (end - start);
     try { el.currentTime = t; } catch { /* 部分源 seek 受限，静默 */ }
     setIsReplay(true);
     setReplayLabel(fmtReplay(end - t));
+    setReplayPct(r * 100); // 立即跟手，不等 500ms 同步定时器
+    return true;
+  };
+  const tsRatio = (e: { clientX: number }, el: HTMLElement): number => {
+    const rect = el.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  };
+  const onTsDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // 时间轴也在 .land-overlay 内：不拦会被 onStageTouch* 当成亮度/音量手势
+    e.stopPropagation();
+    const el = e.currentTarget;
+    tsDragRef.current = true;
+    try { el.setPointerCapture(e.pointerId); } catch { /* 部分 WebView 不支持，忽略 */ }
+    seekByRatio(tsRatio(e, el));
+  };
+  const onTsMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!tsDragRef.current) return;
+    e.stopPropagation();
+    seekByRatio(tsRatio(e, e.currentTarget));
+  };
+  const onTsUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!tsDragRef.current) return;
+    e.stopPropagation();
+    tsDragRef.current = false;
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
   };
   const backToLive = () => {
     const el = videoRef.current;
@@ -768,8 +796,18 @@ function qualityFromHeight(h: number): string {
               <span className="vp-hud-val">{hud.value}%</span>
             </div>
           )}
-          {/* V3.5.7 F6：直播回看时间轴（点/拖即回看，圆点=当前位置，绿点=直播边缘） */}
-          <div className="ts-bar" onClick={onTsClick}>
+          {/* V3.5.8 #5：点/拖即回看（圆点=当前位置，绿点=直播边缘）。
+              改 pointer 事件支持拖动；热区由 CSS 撑到 20px，视觉仍是 4px。 */}
+          <div
+            className="ts-bar"
+            onPointerDown={onTsDown}
+            onPointerMove={onTsMove}
+            onPointerUp={onTsUp}
+            onPointerCancel={onTsUp}
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+          >
             <div className="ts-fill" style={{ width: replayPct + '%' }} />
             <div className="ts-knob" style={{ left: replayPct + '%' }} />
             <div className="ts-live" title="直播边缘" />
@@ -795,8 +833,17 @@ function qualityFromHeight(h: number): string {
 
           {/* 横屏选台浮层：原型 = 右 78% 抽屉（.epsheet：标题行「选台」+ 单行频道） */}
           {pickSheet && (
-            <div className="drawer-mask open" onClick={() => setPickSheet(false)} onTouchEnd={(e) => e.stopPropagation()}>
-              <div className="epsheet open live-pick-sheet" onClick={(e) => e.stopPropagation()} onTouchEnd={(e) => e.stopPropagation()}>
+            <div
+              className="drawer-mask open"
+              onClick={() => setPickSheet(false)}
+              // V3.5.8 #4：原来只挡 onTouchEnd —— touchstart/touchmove 会冒泡到 .land-overlay，
+              // 被 onStageTouchStart/Move 当成屏幕手势（竖滑=亮度/音量），表现为「在选台面板里上滑，
+              // 亮度音量也跟着滑」，且面板自身无法滚动。这里三个事件全部拦掉。
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+            >
+              <div className="epsheet open live-pick-sheet" onClick={(e) => e.stopPropagation()}>
                 <div className="eh">
                   <h4>选台</h4>
                   <button className="ic-btn" onClick={() => setPickSheet(false)} title="关闭"><Icon name="x" size={16} /></button>
@@ -815,8 +862,15 @@ function qualityFromHeight(h: number): string {
 
           {/* 横屏换源条：原型 = 底部浮条（标题行「切换源」+ .pill-sel 胶囊） */}
           {srcSheet && curChannel && (
-            <div className="drawer-mask open" onClick={() => setSrcSheet(false)} onTouchEnd={(e) => e.stopPropagation()}>
-              <div className="epsheet open live-srcbar-sheet" onClick={(e) => e.stopPropagation()} onTouchEnd={(e) => e.stopPropagation()}>
+            <div
+              className="drawer-mask open"
+              onClick={() => setSrcSheet(false)}
+              // V3.5.8 #4：同上 —— 换源条也要拦掉 touchstart/move，否则滑动会穿透成亮度/音量手势
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
+            >
+              <div className="epsheet open live-srcbar-sheet" onClick={(e) => e.stopPropagation()}>
                 <div className="srcbar-head">
                   <span>切换源</span>
                   <button className="ic-btn" onClick={() => setSrcSheet(false)} title="关闭"><Icon name="x" size={15} /></button>

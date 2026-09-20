@@ -5,6 +5,25 @@
 
 ---
 
+## V3.5.8
+
+本版处理 2026-09-20 反馈的 5 处 UI 问题，并完成点播源仓库瘦身。
+
+### 源仓库（Gitee `xmyzjxn/muhai-vod`）
+- **移除 6 个无搜索能力的子站（22 → 16）**：以「`ac=detail&wd=<关键词>` 能否返回影片」为标准重新实测。
+  - 茅台资源：接口返回 `code:1002 Current API forbids keyword search`（官方禁用关键词搜索）
+  - 索尼资源：搜索请求 403（换 4 种 UA 均 403），列表接口正常 → 服务端只封搜索通道
+  - 闪电 / 鸭鸭 / 牛牛资源：返回纯文本 `暂不支持搜索`
+  - 无尽资源：响应极慢，`ac=list` 读超时，换关键词又超时
+- `sources.json` 与 `README.md` 已同步。
+
+### 修复
+- **搜索源列表后面的「0」胶囊**：由删源解决（无搜索能力的源不再出现），前端 `SearchView.tsx` 按用户要求不改。
+- **左侧子站列表最底下一个显示一半**：`.search-source` 写死 `height:30px` 却未禁 flex 压缩，容器高度非整数倍时最后一条被压扁；补 `flex: 0 0 auto`。同时 `.search-sources` 底部 padding 6px → 16px，留出滚动尾巴。
+- **横屏设置浮窗过宽**：横屏浮层宽度原本是四套数字（弹幕 `auto` / 选集 `74%` / 设置 `76%` / 直播选台 `78%`）。新增 `--land-sheet-w/min-w/max-w` 令牌，四套统一为 `auto / 320px / 400px`。
+- **选台浮窗上滑，亮度/音量跟着滑（手势穿透）**：浮层 DOM 在 `.land-overlay`（绑了 `onStageTouch*`）内部，原先只挡 `onTouchEnd`，`touchstart/touchmove` 冒泡上去被当成屏幕手势。现选台 / 换源条三个 touch 事件全部 `stopPropagation`，并给面板加 `touch-action: pan-y`。连带的「选台面板内部无法滚动」一并解决。
+- **直播回看进度条只能点不能滑**：`.ts-bar` 原先只绑 `onClick`。改 pointer 事件（`pointerdown/move/up` + `setPointerCapture`），抽出 `seekByRatio()` 供点击与拖动共用，拖动即时跟手。热区由 4px 撑到 20px（视觉轨道用 `::before` 保持 4px），`bottom` 由 70px 改 62px 保持视觉位置不变；同时拦掉 touch 冒泡，避免被误判为亮度/音量手势。
+
 ## V3.5.7
 
 本版继续收口 V3.5.6 剩余的 UI 细节,并新增 F6/F7 两项能力。

@@ -1349,6 +1349,17 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
   box-shadow: 0 0 0 2px var(--panel);
   line-height: 1;
 }
+/* V3.6.3：单源搜索失败时低调灰显「暂」，不再红色报警、不暴露技术栈错误 */
+.search-source-off {
+  position: absolute; top: 4px; right: 6px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
+  color: var(--muted);
+  font-size: 10px;
+  display: grid; place-items: center;
+  line-height: 1;
+}
 
 /* 右侧网格区 */
 .search-grid-wrap {

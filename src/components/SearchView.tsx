@@ -273,11 +273,11 @@ export function SearchView({
                   }
                   onClick={() => !isError && setActiveSource(src.id)}
                   role="button"
-                  title={isError ? `该源未连通：${st?.kind === 'error' ? st.message : ''}` : src.name}
+                  title={isError ? '该源暂不可用，可换其它源' : src.name}
                 >
                   <span className="search-source-name">{src.name}</span>
                   {isError ? (
-                    <span className="search-source-warn" aria-label="未连通">!</span>
+                    <span className="search-source-off" aria-label="暂不可用">暂</span>
                   ) : (
                     <span className="search-source-count">{st?.kind === 'ok' ? st.count : 0}</span>
                   )}
@@ -299,11 +299,9 @@ export function SearchView({
             {activeSource !== ALL_KEY &&
               sourceState.get(activeSource)?.kind === 'error' && (
                 <div className="search-grid-error">
-                  <div className="search-grid-error-title">该源未连通</div>
+                  <div className="search-grid-error-title">该源暂不可用</div>
                   <div className="search-grid-error-msg">
-                    {sourceState.get(activeSource)?.kind === 'error'
-                      ? (sourceState.get(activeSource) as { kind: 'error'; message: string }).message
-                      : ''}
+                    该源暂未返回内容，可切换其它源，或在浏览器打开该源站点搜索后回 App 播放。
                   </div>
                 </div>
               )}

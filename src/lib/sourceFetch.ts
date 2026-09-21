@@ -139,6 +139,55 @@ function nameFromUrl(u: string): string {
   return '影视仓聚合';
 }
 
+// V3.6.1：TVBox 配置常把「蜘蛛源」拍平在 sites[] 里。幕海是 Tauri + QuickJS 纯 JS 引擎，
+// 跑不了 csp_* Dex 蜘蛛（那是编译成 Java 原生代码的蜘蛛），但能跑 drpy 规则源
+//（var rule = {...} / export default {meta,rule}），由 Rust 侧 drpy3 引擎承载。
+// 这里把 sites 展开成独立源：drpy 站点 → type:'js'（用规则 URL 当 spiderUrl，框架由引擎自带、忽略 api）；
+// csp_* 站点 → 跳过（确定跑不了）；普通 tvbox 站点不在此展开，交由下方 isTvboxConfig 回退「整体单源」保持兼容。
+function isJsRuleUrl(u: any): boolean {
+  return typeof u === 'string' && /\.js(\?|#|$)/i.test(u);
+}
+
+function expandSites(data: any): any[] {
+  const sites = Array.isArray(data?.sites) ? data.sites : [];
+  const out: any[] = [];
+  for (const s of sites) {
+    if (!s || typeof s !== 'object') continue;
+    const key = s.key || s.id;
+    const name = s.name || key || '未命名';
+    const api = s.api || '';
+    const ext = s.ext || '';
+    const spider = s.spider || '';
+    const spiderUrl = s.spiderUrl || '';
+
+    // csp_* Dex 蜘蛛：幕海跑不了，跳过
+    if (typeof api === 'string' && api.startsWith('csp_')) continue;
+
+    // drpy 规则源判定：内联规则 / 远程 .js 规则 / api 是框架且 ext 是 .js 规则
+    const ruleUrl =
+      (typeof ext === 'string' && isJsRuleUrl(ext)) ? ext :
+      (typeof spiderUrl === 'string' && isJsRuleUrl(spiderUrl)) ? spiderUrl : '';
+    const hasInlineRule = typeof spider === 'string' && spider.trim().length > 0 && !isJsRuleUrl(spider);
+
+    if (hasInlineRule || ruleUrl) {
+      out.push({
+        name,
+        type: 'js',
+        key,
+        spider: hasInlineRule ? spider : undefined,
+        spiderUrl: ruleUrl || undefined,
+        // ext 透传给 drpy3 适配器做 Referer/host 线索；规则 URL 时也一并带上
+        ext: ruleUrl || (typeof ext === 'string' ? ext : undefined),
+        baseUrl: ruleUrl || api || '', // 占位：供 importSources 的 type+baseUrl 过滤与 name+baseUrl 去重
+        searchable: s.searchable,
+        quickSearch: s.quickSearch,
+      });
+    }
+    // 普通 tvbox / 苹果CMS 站点不在此展开，回退「整体单源」处理，保持兼容现有 tvbox 聚合
+  }
+  return out;
+}
+
 function tryDecodeBase64(text: string): string {
   const t = text.trim();
   if (t.length < 16) return text;
@@ -165,9 +214,15 @@ function parseFetched(text: string, url: string): FetchResult {
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     try {
       const data = JSON.parse(stripJsonComments(trimmed));
-      // 影视仓 / TVBox 聚合配置：整体作为「一个」tvbox 源，仓库里只显示你粘贴的这个地址
+      // 影视仓 / TVBox 聚合配置
       if (isTvboxConfig(data)) {
-        // 优先用配置自身的可读名称（如 name 字段），域名仅作兜底，避免显示成 cdn.jsdelivr.net
+        // V3.6.1：优先展开其中的 drpy 规则源为独立 type:'js' 源（csp_* Dex 蜘蛛自动跳过）。
+        // 这样粘贴聚合地址即可直接得到可跑的 drpy 子站，而不是把整份当单一 tvbox 源吞掉。
+        const expanded = expandSites(data);
+        if (expanded.length) {
+          return { kind: 'sources', sources: expanded };
+        }
+        // 无 drpy 站点的纯 tvbox 聚合：整体作为「一个」tvbox 源，保持兼容旧行为
         const cfgName =
           typeof data.name === 'string' && data.name.trim() ? data.name.trim() : nameFromUrl(url);
         return {
@@ -228,6 +283,11 @@ export function parsePasted(text: string): { sources: any[]; error?: string } {
   if (!t) return { sources: [], error: '内容为空' };
   try {
     const data = JSON.parse(stripJsonComments(t));
+    // V3.6.1：含 sites 的 TVBox 配置优先展开其中的 drpy 规则源为独立源
+    if (Array.isArray(data?.sites)) {
+      const expanded = expandSites(data);
+      if (expanded.length) return { sources: expanded };
+    }
     const valid = normalize(toSourceList(data));
     if (valid.length) return { sources: valid };
     return { sources: [], error: '未找到有效源（需包含 type 与 baseUrl）' };

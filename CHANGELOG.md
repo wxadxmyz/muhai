@@ -5,6 +5,23 @@
 
 ---
 
+## V3.6.1
+
+本版修复 **drpy 聚合源无法直接导入** 的问题（P0 收尾），让 V3.6.0 接入的 drpy 引擎真正可被用户用起来。
+
+### 修复
+- **导入订阅时自动展开 drpy 站点**（`src/lib/sourceFetch.ts`）：
+  - 此前 TVBox 聚合配置（含 `sites[]`）被整体当作「一个」tvbox 源，drpy 子站被吞掉；且若 drpy 规则被内联进 JSON，会撞上 App 的注释清洗导致 JSON 解析失败 → 提示「未识别到可用的源配置」。
+  - 新增 `expandSites()`：导入时把 `sites` 里**每个 drpy 规则源（spider / spiderUrl / `api=框架+ext=规则` 指向 `.js`）展开成独立的 `type:'js'` 源**；`csp_*` Dex 蜘蛛确定跑不了，自动跳过；纯 tvbox 聚合仍保持「整体单源」旧行为以兼容。
+  - drpy 站点用 `ext`/远程规则 URL 当 `spiderUrl` 加载（框架由 drpy3 引擎自带，忽略 TVBox 的 `api` 框架字段），不再内联规则，从而避免注释清洗破坏 JSON。
+- **gitee 点播源仓库**：`drpy-sources.json` 改为不内联（芒果TV 规则入库为 `rules/mgtv-dr2.js` 远程加载），并新增虎牙/斗鱼/兔小贝 3 个直播 drpy2 源；当前共 5 源（2 点播 + 3 直播）。
+
+### 验证
+- node 复现 `expandSites`：对 `drpy-sources.json`（5 源）与用户 `ysc.txt`（48 站）分别展开，前者全展开为 5 个 js 源，后者正确展开 3 个 drpy 直播源、跳过 45 个 csp 蜘蛛。
+- gitee raw 链接实测可达：`drpy-sources.json`、`rules/mgtv-dr2.js` 均 `HTTP 200 / text/plain`，App 端 `fetchsource` 代理可拉取。
+
+---
+
 ## V3.6.0
 
 本版接入 **drpy3 / drpy2 蜘蛛源引擎（P0）**——影视仓（TVBox）生态里最有价值的一批源是「JS 规则源」，

@@ -85,12 +85,35 @@ function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
   }));
 }
 
+/**
+ * 从 spider 源码里抽取源「真实 host」。
+ * drpy2：`var rule = { host: 'https://www.360kan.com', ... }`
+ * drpy3：`export default { meta:{host:'...'}, rule:{...} }` 或 `host:'https://...'`
+ * 用作 play 结果的 Referer —— 绝不能用 cfg.baseUrl（那是 gitee 规则文件地址，不是媒体站）。
+ */
+function extractRuleHost(code: string): string {
+  const m = String(code || '').match(/host\s*[:=]\s*['"](https?:\/\/[^'"]+)['"]/i);
+  return m ? m[1].replace(/\/+$/, '') : '';
+}
+
 export function createDrpy3Source(
   cfg: SourceConfig,
   loadCode: () => Promise<string>,
 ): MediaSource {
   const jsCfg = cfg as any;
   let inited = false;
+  // 源真实 host（从规则脚本解析，用于 play 补 Referer），懒加载并缓存一次
+  let ruleHost = '';
+  async function ensureRuleHost(): Promise<string> {
+    if (ruleHost) return ruleHost;
+    try {
+      const code = await loadCode();
+      ruleHost = extractRuleHost(code);
+    } catch {
+      /* 忽略：解析不到就用引擎 play 返回的 header */
+    }
+    return ruleHost;
+  }
 
   async function call(func: string, args: unknown[]): Promise<any> {
     const code = await loadCode();
@@ -160,7 +183,16 @@ export function createDrpy3Source(
     async getDetail(itemId: string): Promise<MediaItem> {
       await ensureInit();
       const r = await call('detail', [itemId]);
-      const items = toItems(r?.list ?? [], cfg);
+      // #4 错误显化：引擎返回的结构化错误必须抛出来，与 search/getPlayUrl 行为一致，
+      // 否则前端拿到空详情还以为是源没数据，定位极难。
+      if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '获取详情失败'));
+      // #3 裸 VOD 兜底：部分 drpy2 源 detail 直接返回裸 VOD 对象（不带 {list:[...]} 包裹），
+      // 此时 r.list 缺失，需把 r 本身当作单条结果处理。
+      let list: any[] = Array.isArray(r?.list) ? r.list : [];
+      if (list.length === 0 && r && (r.vod_id != null || r.vod_name != null || r.vod_play_url != null)) {
+        list = [r];
+      }
+      const items = toItems(list, cfg);
       const it = items[0];
       if (it) {
         const eps = toEpisodesWithFlag(it.raw?.vod_play_url ?? '');
@@ -210,8 +242,12 @@ export function createDrpy3Source(
         if (r.header && typeof r.header === 'object') headers = r.header;
       }
       if (!headers) {
-        const host = String(jsCfg.ext || jsCfg.api || cfg.baseUrl || '').match(/^https?:\/\/[^/]+/i);
-        if (host) headers = { Referer: host[0] + '/' };
+        // #5 Referer 修正：优先用源真实 host（ext/api 是源站接口地址，ruleHost 是从规则脚本解析的媒体站 host）。
+        // 旧逻辑用 cfg.baseUrl —— 那其实是 gitee 规则文件地址，既不是源站也不是媒体站，作为 Referer 会让
+        // 大量需要校验 Referer 的站点（如 360kan / iqiyi）直接拒绝播放。故去掉 cfg.baseUrl 兜底。
+        const extHost = String(jsCfg.ext || jsCfg.api || '').match(/^https?:\/\/[^/]+/i)?.[0];
+        const host = extHost || (await ensureRuleHost());
+        if (host) headers = { Referer: host.replace(/\/+$/, '') + '/' };
       }
       return { url, headers };
     },

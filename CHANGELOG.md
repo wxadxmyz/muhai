@@ -5,6 +5,26 @@
 
 ---
 
+## V3.6.4
+
+本版把 drpy3 引擎真正跑通「影视仓可用源」（搜索 + 播放全链路可用），不做挤牙膏式分版本修补。
+
+### 引擎层（`src-tauri/vendor/drpy3-muhai.bundle.js` 由上游 `hjdhnx/drpy3` 最新 src 重建）
+- **#1 360 点进去没集数**：`defaults.detail` 原把 `fyclass` 占位符替换成空串，导致 360 详情接口缺 `cat` 参数返回 `data:null`。改为当 `fullId` 含 `$` 且确属剥过分类前缀时，用首段回填 `fyclass`。
+- **#9 片段作用域缺口**：`jsFragment` 漏注入 drpy2 经典辅助 `urljoin2` / `buildUrl`，以及一二级片段所需的 `cateObj` / `MY_CATE` / `HOST`。补齐后 s360 详情/播放全通（eps=22，play 返回 iqiyi 真实地址），bili 一级不再 `cateObj is not defined`。
+
+### 外壳层（`src/engine/adapters/drpy3.ts`）
+- **#3 裸 VOD 兜底**：部分 drpy2 源 `detail` 直接返回裸 VOD 对象（不带 `{list:[...]}` 包裹），兜底把 `r` 自身当单条结果，避免详情页凭空为空。
+- **#4 错误显化**：`getDetail` 检查引擎返回的 `__drpy3_error` 并抛出，与 `search` / `getPlayUrl` 行为一致，前端不再把「引擎崩了」误判成「源没数据」。
+- **#5 Referer 修正**：`getPlayUrl` 的 Referer 改用源真实 host（规则脚本里的 `host` / `ext` / `api`），去掉原来误用 `cfg.baseUrl`（那是 gitee 规则文件地址，不是媒体站）导致 360kan / iqiyi 等拒绝播放的 bug。
+- **#7 参数对齐**：`search(keyword, false, page)` 已与上游 `search(wd, quick, pg)` 对齐，复核确认无需改动。
+
+### 源仓库（gitee xmyzjxn/muhai-vod）
+- 保持 7 个搜索型活源（s360 / lzi / rebo / duonao / changzhang / ikanbot / bili），「我的哔哩」经 `ghproxy.net` 直连绕过风控（#6）。
+- 沙箱机房 IP 对 lzi/rebo/duonao 不可达、changzhang/ikanbot 被 Cloudflare 拦属真机环境差异，引擎层已无障碍；真机可正常拉取与播放。
+
+---
+
 ## V3.6.3
 
 本版一次性修好「导入 drpy 源后搜不了影视」：换用国内可达的活源、直播源拆出、单源失败不再报警阻断。

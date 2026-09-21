@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-drpy3run"
+description = "Enables the drpy3run command without any pre-configured scope."
+commands.allow = ["drpy3run"]
+
+[[permission]]
+identifier = "deny-drpy3run"
+description = "Denies the drpy3run command without any pre-configured scope."
+commands.deny = ["drpy3run"]

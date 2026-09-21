@@ -16,6 +16,7 @@
     "allow-fetchimage",
     "allow-fetchmedia",
     "allow-spiderrun",
+    "allow-drpy3run",
     "allow-dlnascan",
     "allow-castvideo",
     "allow-clear-webview-cache"

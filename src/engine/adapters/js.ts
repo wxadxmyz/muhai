@@ -57,6 +57,11 @@ function cachedCatvodize(url: string | undefined, code: string): string {
   return out;
 }
 
+// V3.6.5 #3：原始脚本拉取缓存。跨搜索重复创建源实例时，loadCode 不再每次 invoke('fetchsource')
+// 重拉 gitee 规则（这是搜索慢的主因之一）——命中缓存直接复用。spider 内联脚本不进缓存。
+// 上限 64 个，超出清空重建，避免长期运行内存膨胀。
+const rawCodeCache = new Map<string, string>();
+
 // 从预处理后的代码里检测是否声明了对应的 Content 命名函数
 function detectCaps(code: string) {
   return {
@@ -94,14 +99,22 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
     if (cachedCode) return cachedCode;
     let raw: string;
     let cacheKey: string | undefined;
-    if (jsCfg.spider) raw = jsCfg.spider;
-    else if (jsCfg.spiderUrl) {
-      cacheKey = jsCfg.spiderUrl;
-      raw = await invoke<string>('fetchsource', { url: jsCfg.spiderUrl });
-    } else if (jsCfg.api) {
-      cacheKey = jsCfg.api;
-      raw = await invoke<string>('fetchsource', { url: jsCfg.api });
-    } else throw new Error('JS 源缺少 spider 脚本（需提供 spider / spiderUrl / api 之一）');
+    if (jsCfg.spider) {
+      raw = jsCfg.spider; // 内联脚本：无需 fetch，也不进缓存
+    } else {
+      // V3.6.5 #3：命中原始脚本缓存则直接复用，跳过 gitee 重拉（跨搜索重复建实例时的主要开销）
+      const key: string | undefined = jsCfg.spiderUrl ?? jsCfg.api;
+      if (!key) throw new Error('JS 源缺少 spider 脚本（需提供 spider / spiderUrl / api 之一）');
+      cacheKey = key;
+      const hit = rawCodeCache.get(key);
+      if (hit != null) {
+        raw = hit;
+      } else {
+        raw = await invoke<string>('fetchsource', { url: key });
+        if (rawCodeCache.size > 64) rawCodeCache.clear();
+        rawCodeCache.set(key, raw);
+      }
+    }
     cachedCode = cachedCatvodize(cacheKey, raw);
     caps = detectCaps(cachedCode);
     return cachedCode;

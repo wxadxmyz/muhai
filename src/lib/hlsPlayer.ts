@@ -12,8 +12,42 @@ type HlsOpts = {
   onError?: (fatal: boolean) => void;
 };
 
+// ===== V3.6.5：本地流式媒体代理 =====
+// 点播/直播的所有媒体请求经 127.0.0.1 临时端口的 Rust 流式代理（见 lib.rs media_proxy_port /
+// serve_proxy），彻底去掉旧 fetchmedia 的 base64 全量过桥。hls.js 可边下边播、正常预取，
+// mp4 支持 Range 拖动；防盗链头由 proxy 的 query 参数携带。
+let proxyPort: number | null = null;
+let proxyPortResolving: Promise<number | null> | null = null;
+
+export async function ensureProxyPort(): Promise<number | null> {
+  if (proxyPort !== null) return proxyPort;
+  if (!isTauri()) return null;
+  if (!proxyPortResolving) {
+    proxyPortResolving = invoke<number>('media_proxy_port')
+      .then((p) => {
+        proxyPort = p;
+        return p;
+      })
+      .catch(() => {
+        proxyPort = null;
+        return null;
+      });
+  }
+  return proxyPortResolving;
+}
+
+// 把真实媒体 URL 改写为本地代理地址；代理不可用（非 Tauri / 端口未就绪）时原样返回。
+export function buildProxyUrl(url: string, headers?: Record<string, string> | null): string {
+  if (!isTauri() || proxyPort == null) return url;
+  const u = new URL(`http://127.0.0.1:${proxyPort}/proxy`);
+  u.searchParams.set('url', url);
+  if (headers?.Referer) u.searchParams.set('referer', headers.Referer);
+  if (headers?.['User-Agent']) u.searchParams.set('ua', headers['User-Agent']);
+  return u.toString();
+}
+
 // ===== 后端代理 Loader（点播/直播共用，V3.5.1 从 Live.tsx 抽取）=====
-// 让 m3u8 主/子清单与 ts 分片都经 Rust 后端 fetchmedia 拉流，
+// 让 m3u8 主/子清单与 ts 分片都经 Rust 本地流式代理拉流，
 // 既能带上防盗链/自定义头（User-Agent/Referer），又不受 WebView CORS 限制。
 
 export function streamHeaders(url: string, extra?: Record<string, string> | null): Record<string, string> {
@@ -80,20 +114,36 @@ export function createBackendLoader(extraHeaders: Record<string, string> | null 
         return;
       }
       try {
-        const raw = await invoke<string>('fetchmedia', { url, headers });
+        // V3.6.5：改为走本地流式代理 —— 不再 invoke('fetchmedia') 做 base64 全量过桥，
+        // 直接 fetch 127.0.0.1 代理地址，hls.js 可边下边播、预取下一分片。
+        await ensureProxyPort();
+        const headers = streamHeaders(url, extraHeaders);
+        // hls.js 的 byte-range 请求（分段预取）透传 Range 给代理
+        const rangeStart = (context as any)?.rangeStart;
+        if (rangeStart != null) {
+          const rangeEnd = (context as any)?.rangeEnd != null ? (context as any).rangeEnd : '';
+          headers.Range = `bytes=${rangeStart}-${rangeEnd}`;
+        }
+        const proxied = buildProxyUrl(url, headers);
+        const fetchHeaders: Record<string, string> = {};
+        if (headers.Range) fetchHeaders.Range = headers.Range;
+        const res = await fetch(proxied, Object.keys(fetchHeaders).length ? { headers: fetchHeaders } : undefined);
         if (this.stats.aborted) return;
-        const json = JSON.parse(raw) as { data: string; url: string };
-        const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const buf = await res.arrayBuffer();
         // hls.js 解析 m3u8 manifest 时要求 response.data 为 string，分片才用 ArrayBuffer
         const isText = context.responseType === 'text' || context.responseType === '';
-        const data = isText ? new TextDecoder('utf-8').decode(bytes) : bytes.buffer;
+        const data = isText ? new TextDecoder('utf-8').decode(buf) : buf;
+        // 用代理回传的真实最终 URL（跟随重定向后）作为成功 URL，
+        // 保证 master 里相对路径 variant 能被 hls.js 正确解析。
+        const finalUrl = res.headers.get('x-proxy-final-url') || url;
         const t1 = performance.now();
         this.stats.loading.first = t1;
         this.stats.loading.end = t1;
-        this.stats.loaded = bytes.length;
-        this.stats.total = bytes.length;
+        this.stats.loaded = buf.byteLength;
+        this.stats.total = buf.byteLength;
         this.stats.bwEstimate = (this.stats.total * 8000) / Math.max(1, t1 - t0);
-        callbacks.onSuccess({ url: json.url || url, data, code: 200 }, this.stats, context, null);
+        callbacks.onSuccess({ url: finalUrl, data, code: res.status }, this.stats, context, null);
       } catch (e: any) {
         if (this.stats.aborted) return;
         const text = String(e?.message ?? e);
@@ -118,10 +168,13 @@ export async function peekIsHls(url: string, extra?: Record<string, string> | nu
       if (!res.ok) return false;
       head = (await res.text()).slice(0, 512);
     } else {
-      const raw = await invoke<string>('fetchmedia', { url, headers });
-      const json = JSON.parse(raw) as { data: string; url?: string };
-      const bytes = Uint8Array.from(atob(json.data), (c) => c.charCodeAt(0));
-      head = new TextDecoder('utf-8').decode(bytes.slice(0, 512));
+      // V3.6.5：经本地流式代理试探，避免 base64 全量过桥
+      await ensureProxyPort();
+      const proxied = buildProxyUrl(url, headers);
+      const res = await fetch(proxied);
+      if (!res.ok) return false;
+      const buf = await res.arrayBuffer();
+      head = new TextDecoder('utf-8').decode(buf.slice(0, 512));
     }
     return /#EXTM3U/i.test(head);
   } catch (e: any) {
@@ -140,15 +193,24 @@ export async function attachHlsWithBackend(
   detachHls(video);
   if (!url) return;
   const Hls = await loadHls();
-  if (!Hls || !Hls.isSupported()) {
-    video.src = url; // 后端不可用 / 不支持 hls.js 时回退原生尝试
+  // V3.6.5：mp4 直链直接走本地流式代理（支持 Range 拖动，且不踩 CORS），不塞给 hls.js
+  if (/\.mp4(\?|$)/i.test(url) && video.canPlayType('video/mp4')) {
+    await ensureProxyPort();
+    video.src = proxyPort != null ? buildProxyUrl(url, opts.headers ?? null) : url;
     return;
   }
+  if (!Hls || !Hls.isSupported()) {
+    await ensureProxyPort();
+    video.src = proxyPort != null ? buildProxyUrl(url, opts.headers ?? null) : url; // 后端不可用 / 不支持 hls.js 时回退原生尝试
+    return;
+  }
+  await ensureProxyPort();
+  const proxiedUrl = buildProxyUrl(url, opts.headers ?? null);
   const loader = createBackendLoader(opts.headers ?? null);
   const hls = new Hls({ loader, pLoader: loader });
   (video as any).__hls = hls;
   INSTANCES.set(video, hls);
-  hls.loadSource(url);
+  hls.loadSource(proxiedUrl);
   hls.attachMedia(video);
   // Q6：fatal 错误自动恢复，但限次——避免 NETWORK_ERROR/MEDIA_ERROR 无限 startLoad/recover
   // 造成「转圈→失败→又转圈」死循环；次数耗尽后把后端错误文本交给 opts.onError，由播放页

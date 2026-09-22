@@ -505,6 +505,44 @@ jobs:
           print("Patched manifest for PiP: android:supportsPictureInPicture=true")
           PYEOF
 
+      - name: Patch network security config for local proxy (127.0.0.1 cleartext)
+        run: |
+          # V3.6.5：Rust 流式媒体代理监听 127.0.0.1:<port>，WebView 需以 http 明文回环访问。
+          # Android 9+ 默认禁止明文流量，需显式声明对 localhost 放行，否则播放器 fetch 代理会直接失败。
+          MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)
+          if [ -z "$MANIFEST" ]; then echo "::error::AndroidManifest not found — 代理明文配置无法应用"; exit 1; fi
+          RES_DIR=$(dirname "$MANIFEST")/res/xml
+          mkdir -p "$RES_DIR"
+          cat > "$RES_DIR/network_security_config.xml" << 'XMLEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <domain-config cleartextTrafficPermitted="true">
+                  <domain includeSubdomains="false">127.0.0.1</domain>
+                  <domain includeSubdomains="false">localhost</domain>
+              </domain-config>
+          </network-security-config>
+          XMLEOF
+          python3 - "$MANIFEST" << 'PYEOF'
+          import sys, re
+          path = sys.argv[1]
+          src = open(path, encoding="utf-8").read()
+          if "@xml/network_security_config" in src:
+              print("networkSecurityConfig already set, skip")
+              sys.exit(0)
+          m = re.search(r'<application\b[^>]*>', src, re.S)
+          if not m:
+              print("::error::<application> not found in " + path)
+              sys.exit(1)
+          tag = m.group(0)
+          new = tag[:-1].rstrip('>') + ' android:networkSecurityConfig="@xml/network_security_config">'
+          src = src[:m.start()] + new + src[m.end():]
+          open(path, "w", encoding="utf-8").write(src)
+          if "@xml/network_security_config" not in src:
+              print("::error::networkSecurityConfig patch applied but still missing — abort")
+              sys.exit(1)
+          print("Patched manifest: android:networkSecurityConfig=@xml/network_security_config")
+          PYEOF
+
       - name: Sync Android launcher icon
         run: |
           python3 -m pip install --quiet pillow

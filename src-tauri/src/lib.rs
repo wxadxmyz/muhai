@@ -20,6 +20,20 @@ mod drpy3;
 // 这里改成进程内单例：连接常驻复用，超时改为按请求单独设置（各自业务需要不同时长）。
 use std::sync::OnceLock;
 
+// V3.6.5：本地流式媒体代理所需依赖（根治播放卡顿/转圈，替代 fetchmedia 的 base64 全量过桥）
+use std::convert::Infallible;
+use std::net::TcpListener as StdTcpListener;
+use bytes::Bytes;
+use futures_util::StreamExt;
+use http_body::Frame;
+use http_body_util::{BodyExt, Empty, Full, StreamBody};
+use http_body_util::combinators::BoxBody;
+use hyper::service::service_fn;
+use hyper::body::Incoming;
+use hyper::{Method, Request, Response};
+use hyper_util::rt::TokioIo;
+use tokio::net::TcpListener as TokioTcpListener;
+
 fn http_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -64,6 +78,7 @@ pub fn run() {
             fetchsource,
             fetchimage,
             fetchmedia,
+            media_proxy_port,
             spiderrun,
             drpy3run,
             dlnascan,
@@ -419,6 +434,164 @@ async fn fetchmedia(url: String, headers: Option<std::collections::HashMap<Strin
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(serde_json::json!({ "data": b64, "url": final_url }).to_string())
+}
+
+// ─────────────────────────────────────────────────────────────
+// V3.6.5：本地流式媒体代理（根治播放卡顿 / 转圈）
+// ─────────────────────────────────────────────────────────────
+// 旧 fetchmedia 把整段响应（m3u8 主/子清单、ts 分片、甚至 mp4 直链）完整读进内存、base64
+// 编码、再整段 JSON 回传前端，前端再 atob 解码交给 hls.js。HLS 每播一个分片都走一遍这个完整
+// 往返，hls.js 没法高效预取。表现：master playlist 到了但首片迟迟不回 → loadedmetadata 不触发 →
+// 画面一直转圈；苹果源高码率分片（1~4MB）播完缓冲里那 2 秒、下一片还在过桥 → 「播 2 秒卡好久」。
+//
+// 新方案：在 127.0.0.1 临时端口起一个轻量 HTTP server，承接 WebView 的媒体请求，向真实源
+// 「流式」拉取并直接 pipe 回 <video>/hls.js，支持 HTTP Range（mp4 拖动 / 分片续传）。
+// 这样 hls.js 可边下边播、正常预取；mp4 支持 range seek；防盗链头照样能带。
+
+static PROXY_PORT: OnceLock<u16> = OnceLock::new();
+
+/// 返回本地流式代理监听端口（首次调用时启动 server）。前端拿到端口后把所有媒体 URL 改写为
+/// `http://127.0.0.1:<port>/proxy?url=<真实地址>&referer=&ua=` 再交给 <video>/hls.js。
+#[tauri::command]
+fn media_proxy_port() -> u16 {
+    *PROXY_PORT.get_or_init(|| {
+        let listener = StdTcpListener::bind("127.0.0.1:0").expect("bind media proxy port");
+        listener.set_nonblocking(true).ok();
+        let port = listener.local_addr().unwrap().port();
+        tauri::async_runtime::spawn(serve_proxy(listener));
+        port
+    })
+}
+
+async fn serve_proxy(std_listener: StdTcpListener) {
+    let listener = match TokioTcpListener::from_std(std_listener) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("media proxy listener init failed: {e}");
+            return;
+        }
+    };
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                let io = TokioIo::new(stream);
+                tokio::spawn(async move {
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, service_fn(proxy_handler))
+                        .await;
+                });
+            }
+            Err(_) => break,
+        }
+    }
+}
+
+// 代理统一响应体类型：流式 / 空 / 小文本都用 BoxBody 统一，便于函数返回单一类型
+type ProxyBody = BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
+
+fn empty_proxy_body() -> ProxyBody {
+    Empty::<Bytes>::new()
+        .map_err(|e: Infallible| -> Box<dyn std::error::Error + Send + Sync> { e.into() })
+        .boxed()
+}
+fn text_proxy_body(s: String) -> ProxyBody {
+    Full::new(Bytes::from(s))
+        .map_err(|e: Infallible| -> Box<dyn std::error::Error + Send + Sync> { e.into() })
+        .boxed()
+}
+
+async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, Infallible> {
+    // url 只来自 query（App 自己拼），避免外部注入任意目标
+    let q = req.uri().query().unwrap_or("");
+    let params: std::collections::HashMap<String, String> =
+        url::form_urlencoded::parse(q.as_bytes()).into_owned().collect();
+    let target = match params.get("url") {
+        Some(u) if !u.is_empty() => u.clone(),
+        _ => return Ok(Response::builder().status(400).body(empty_proxy_body()).unwrap()),
+    };
+    if !(target.starts_with("http://") || target.starts_with("https://")) {
+        return Ok(Response::builder().status(400).body(empty_proxy_body()).unwrap());
+    }
+
+    // 预检：放开跨域（部分 WebView / Safari 会先发 OPTIONS）
+    if req.method() == Method::OPTIONS {
+        return Ok(Response::builder()
+            .status(204)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+            .header("Access-Control-Allow-Headers", "*")
+            .body(empty_proxy_body())
+            .unwrap());
+    }
+
+    // V3.6.5：透传 Range（hls.js 分片预取 / mp4 拖动），并带上防盗链头
+    let mut builder = http_client().get(&target);
+    if let Some(rg) = req.headers().get(hyper::header::RANGE).cloned() {
+        builder = builder.header(hyper::header::RANGE, rg);
+    } else if let Some(rg) = params.get("range") {
+        if !rg.is_empty() {
+            builder = builder.header(hyper::header::RANGE, rg.clone());
+        }
+    }
+    if let Some(r) = params.get("referer") {
+        if !r.is_empty() {
+            builder = builder.header("Referer", r.as_str());
+        }
+    }
+    if let Some(ua) = params.get("ua") {
+        if !ua.is_empty() {
+            builder = builder.header("User-Agent", ua.as_str());
+        }
+    } else {
+        builder = builder.header("User-Agent", "okhttp/4.10.0");
+    }
+    builder = builder.header("Accept", "*/*");
+
+    let resp = match builder.timeout(std::time::Duration::from_secs(300)).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(502)
+                .header("Access-Control-Allow-Origin", "*")
+                .body(text_proxy_body(format!("代理上游请求失败：{}", e)))
+                .unwrap());
+        }
+    };
+    let status = resp.status();
+    let upstream = resp.headers().clone();
+    // bytes_stream 会 move 掉 resp，先把需要的最终 URL 取出来（跟随重定向后的真实地址）
+    let final_url = resp.url().to_string();
+    // 流式转发：不再把整段响应读进内存 + base64，直接把上游字节流逐帧 pipe 回 WebView
+    let stream = resp.bytes_stream();
+    let framed = stream.map(|res| {
+        res
+            .map(|b| Frame::<Bytes>::data(b))
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })
+    });
+    let body: ProxyBody = BodyExt::boxed(StreamBody::new(framed));
+
+    let mut rb = Response::builder().status(status);
+    // 透传关键响应头，保证 Range / 长度 / 类型正确（缺了 hls.js 会解析失败）
+    for name in [
+        "content-type",
+        "content-length",
+        "content-range",
+        "accept-ranges",
+        "cache-control",
+        "etag",
+        "last-modified",
+    ] {
+        if let Some(v) = upstream.get(name) {
+            rb = rb.header(name, v);
+        }
+    }
+    // 回传真实最终 URL（跟随重定向后的），供前端 hls.js 解析相对路径 variant
+    rb = rb
+        .header("X-Proxy-Final-Url", final_url)
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+        .header("Access-Control-Allow-Headers", "*");
+    Ok(rb.body(body).unwrap())
 }
 
 // 清除 WebView 全部浏览数据（HTTP 缓存 / 本地存储 / 应用缓存等）。

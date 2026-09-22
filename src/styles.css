@@ -309,8 +309,11 @@ button.fav, .fav { color: var(--danger) !important; }
 /* V3.5.5：与原型 .settings-groups / .set-group / .set-row 1:1 对齐——
    组间距 14px、组内 padding 14px、行 padding 14px 16px、标签 14px/600。 */
 .settings-scroll { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
-/* v3.2.1 ⑩：播放设置子页（SubPage 内）顶部去空白，首个开关贴近标题 */
-.fullpage-body .settings-scroll { padding-top: 4px; }
+/* v3.2.1 ⑩：播放设置子页（SubPage 内）顶部去空白，首个开关贴近标题。
+   V3.6.5：设置页卡片到屏幕边原是 .fullpage-body(14px) + .settings-scroll(14px) 双层叠加 = 28px，
+   与「仓库管理」页（仅 .fullpage-body 的 14px）不一致。这里把左右/底部 padding 关掉、只留顶部 4px，
+   让设置卡片紧贴 .fullpage-body 的 14px 边界，两边距完全一致。 */
+.fullpage-body .settings-scroll { padding: 4px 0 0; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 0; padding: 14px 16px; border-bottom: 1px solid var(--border); }
@@ -1178,6 +1181,12 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .searchview .search-nosource .sm{font-size:12px;color:var(--muted);line-height:1.6;}
 .searchview .search-nosource .act{margin-top:14px;height:38px;padding:0 22px;border:none;border-radius:19px;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:14px;font-weight:600;font-family:inherit;}
 .searchview .search-nosource .act:active{opacity:.88;}
+
+/* V3.6.5 #2 搜索分页：「加载更多」按钮（居中，与无源提示按钮同款胶囊造型） */
+.searchview .search-loadmore{display:flex;justify-content:center;padding:14px 0 4px;}
+.searchview .search-loadmore .act{height:38px;padding:0 22px;border:none;border-radius:19px;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:14px;font-weight:600;font-family:inherit;}
+.searchview .search-loadmore .act:active{opacity:.88;}
+.searchview .search-loadmore .act:disabled{opacity:.6;cursor:default;}
 
 /* ============ 启动屏 Splash（律云 / 幕海 共用）============ */
 /* ===== 启动页 —— 1:1 对齐原型 .splash（原型 161-168 行） ===== */

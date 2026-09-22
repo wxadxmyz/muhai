@@ -5,6 +5,35 @@
 
 ---
 
+## V3.6.5
+
+本版根治「播放卡顿 / 转圈」（架构级），并把搜索体感、drpy 适配器 4 项缺口、下载持久化、设置页 UI 一致性**一并修完**，不做挤牙膏式分版本。
+
+### 播放根治：Rust 本地流式 HTTP 代理（替换 base64 全量过桥）
+- **根因**：所有走后端代理的播放（drpy / 苹果 / 直播）都经 `fetchmedia`——把整段响应读进内存 → base64 编码 → JSON 过桥 → 前端 atob 解码。hls.js 无法边下边播、无法预取下一分片，也不支持 HTTP Range。表现：drpy 一直转圈、苹果源「播 2 秒卡好久」、mp4 无法拖动。
+- **改法**：`src-tauri/src/lib.rs` 新增 `127.0.0.1` 临时端口流式代理（`media_proxy_port` / `serve_proxy` / `proxy_handler`），透传 Range / Referer / UA，响应以 `bytes_stream()` 逐帧 pipe 回 WebView，并回传 `X-Proxy-Final-Url`（跟随重定向后的真实地址）。旧 `fetchmedia` 保留作图片 / 兜底。
+- `src/lib/hlsPlayer.ts`：`ensureProxyPort()` + `buildProxyUrl()` 改写媒体 URL；`createBackendLoader` / `peekIsHls` / `attachHlsWithBackend` 全部改走本地回环，mp4 直链支持 Range 拖动。
+- 安卓：`android.yml` 注入 `network_security_config.xml` 并在 `<application>` 引用，放行 `127.0.0.1` / `localhost` 明文回环（Android 9+ 默认禁明文）。
+
+### 搜索体感
+- 单源超时 `10s → 6s`（`engine/index.ts` / `SearchView.tsx`）。
+- **进度文案**：`aggregateSearch` 新增 `onProgress(done, total)`，spinner 显示「已返回 N 个源，仍有 M 个搜索中…」，替换恒定的「跨源搜索中…」。
+- **源健康记忆**：localStorage `muhai_src_health` 记录每个源连续失败次数；≥3 次的死源直接跳过、失败过的源降到 3s 超时，重复搜索秒出。
+
+### drpy 适配器 4 项缺口全补
+- **#1 jx/parse 二次解析**：`getPlayUrl` 识别 `r.jx` / `r.parse`，为真时把中间地址经本地代理 fetch，用 `x-proxy-final-url` 取真直链（覆盖绝大多数"jx 重定向到真实 CDN"的源）。旧实现只取 `r.url` 直接返回，拿到的是中间页。
+- **#2 搜索分页**：`aggregateSearch` 接收 `page` 并透传 `search(keyword, page)`；搜索页加「加载更多」按钮（按 `id|sourceName` 去重追加）。
+- **#3 规则缓存复用**：`js.ts` 加模块级 `rawCodeCache`，跨搜索重建实例时不再每次 `invoke('fetchsource')` 重拉 gitee 规则。
+- **#4 播放去重详情**：`drpy3.ts` 加首集映射 `firstEpMap`；`toItems` 就地解析列表里的 `vod_play_url`（列表卡片可直接显示集数），播放时复用首集，省掉每次播放多出的一次 `detail` 往返。
+
+### 其它
+- **下载任务持久化**（C 项）：`downloads.ts` 任务列表（含进度）落盘 localStorage，进行中节流落盘、终态立即落盘；启动恢复，退出时仍在进行的任务如实标记为「已中断」而非假装在下载；已中断任务可重新下载。
+- **设置页边距对齐仓库管理页**：`.fullpage-body .settings-scroll { padding: 4px 0 0 }`，去掉双层叠加的 28px，与仓库管理页一致为 14px。
+
+> A（源管理文案）/ B（更新检查跳转）/ D（统一错误边界）/ E（安全区）经评估本版暂缓，留待后续版本。
+
+---
+
 ## V3.6.4
 
 本版把 drpy3 引擎真正跑通「影视仓可用源」（搜索 + 播放全链路可用），不做挤牙膏式分版本修补。

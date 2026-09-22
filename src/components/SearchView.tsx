@@ -51,6 +51,10 @@ export function SearchView({
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
   // V3.3.8 Bug 3/4：主源封面加载失败时，回退到豆瓣同名封面 / 其它源同名封面（按 key 局部回填）
   const [cross, setCross] = useState<Record<string, string>>({});
+  // V3.6.5 搜索分页 + 进度文案
+  const [page, setPage] = useState(1);
+  const [progressText, setProgressText] = useState('');
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // #8：中文输入法组字中（拼音还没上屏）——此时按搜索键不能拿拼音去搜
   const composingRef = useRef(false);
@@ -114,6 +118,8 @@ export function SearchView({
     setLoading(true);
     setSearched(true);
     setActiveSource(ALL_KEY);
+    setPage(1); // V3.6.5：新搜索回到第 1 页
+    setProgressText('跨源搜索中…');
     library.addSearch(query);
     // 展开 tvbox 子站（左侧源栏用）
     try {
@@ -124,8 +130,17 @@ export function SearchView({
     }
     try {
       const r = await aggregateSearch(sources, query, {
-        timeout: 10000,
+        timeout: 6000, // V3.6.5：单源超时 10s → 6s，死源更快让位
+        page: 1,
         mediaType,
+        // V3.6.5：进度文案——已返回 N 个源 / 仍有 M 个搜索中
+        onProgress: (done, total) => {
+          if (mySeq !== searchSeqRef.current) return;
+          const remain = Math.max(0, total - done);
+          setProgressText(
+            remain > 0 ? `已返回 ${done} 个源，仍有 ${remain} 个搜索中…` : `已搜完 ${total} 个源`
+          );
+        },
         // #5：哪个源先回来就把它的结果先显示出来，不再干等最慢的源
         // V3.3.4：过期搜索的增量回调直接丢弃，不再覆盖最新结果
         onPartial: (partial) => { if (mySeq === searchSeqRef.current) setItems(partial); },
@@ -133,14 +148,45 @@ export function SearchView({
       if (mySeq !== searchSeqRef.current) return; // 已被更新的搜索取代：整体丢弃过期结果
       setItems(r.items);
       setErrors(r.errors);
+      setProgressText('');
     } catch (e: any) {
       if (mySeq !== searchSeqRef.current) return;
       // v2.5.2 防御：聚合失败不抛未捕获异常（避免搜索页白屏），仅记录错误
       setErrors([{ sourceId: '', sourceName: '', message: e?.message ?? '搜索失败' }]);
       devLog(`[spider] ${query} 搜索失败:`, e?.message ?? e);
+      setProgressText('');
     } finally {
       // V3.3.4：只有最新一次搜索才能关 loading，防止旧搜索把新搜索的加载态错关
       if (mySeq === searchSeqRef.current) setLoading(false);
+    }
+  };
+
+  // V3.6.5 #2 搜索分页：加载下一页并追加结果（按 id 去重，避免重复）
+  const loadMore = async () => {
+    const query = kw.trim();
+    if (!query || loadingMore) return;
+    const next = page + 1;
+    const mySeq = searchSeqRef.current;
+    setLoadingMore(true);
+    try {
+      const r = await aggregateSearch(sources, query, {
+        timeout: 6000,
+        page: next,
+        mediaType,
+        onPartial: () => {},
+      });
+      if (mySeq !== searchSeqRef.current) return;
+      setItems((prev) => {
+        const seen = new Set(prev.map((it) => `${it.id}|${it.sourceName}`));
+        const added = r.items.filter((it) => !seen.has(`${it.id}|${it.sourceName}`));
+        return [...prev, ...added];
+      });
+      setErrors(r.errors);
+      setPage(next);
+    } catch (e: any) {
+      devLog(`[spider] ${query} 第 ${next} 页加载失败:`, e?.message ?? e);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -225,7 +271,7 @@ export function SearchView({
             共 <b>{visibleItems.length}</b> 部
             {activeSource === ALL_KEY ? <> · 来自 <b>{okSourceCount}</b> 个源</> : null}
           </span>
-          {loading && <span className="search-count-tip">跨源搜索中…</span>}
+          {loading && <span className="search-count-tip">{progressText || '跨源搜索中…'}</span>}
         </div>
       )}
 
@@ -366,6 +412,15 @@ export function SearchView({
                   </div>
                 )
               ))}
+
+            {/* V3.6.5 #2 搜索分页：有结果且非加载态时提供「加载更多」 */}
+            {visibleItems.length > 0 && !loading && (
+              <div className="search-loadmore">
+                <button className="act" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? '加载中…' : '加载更多'}
+                </button>
+              </div>
+            )}
           </main>
         </div>
         )}

@@ -83,7 +83,45 @@ export interface DownloadTask {
   error?: string;
 }
 
+// V3.6.5：下载任务持久化。旧实现 tasks 纯内存，App 被杀/重启后进度与记录全丢。
+// 这里把任务列表（含进度）落盘到 localStorage：进行中任务实时保存，
+// 启动时恢复；退出时仍在进行的任务标记为「已中断」（真实下载流已随进程结束，
+// 不能假装还在下载中），进度保留供用户看到断点并重新下载。
+const STORE_KEY = 'muhai_downloads_v1';
+let lastPersist = 0;
+
+function persist(force = false) {
+  // 进度每来一个分片就 setState 一次，落盘需节流，避免高频写 localStorage 拖慢下载
+  const now = Date.now();
+  if (!force && now - lastPersist < 1000) return;
+  lastPersist = now;
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(tasks));
+  } catch {
+    /* 配额不足等：忽略，不影响下载本身 */
+  }
+}
+
+function hydrate() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw) as DownloadTask[];
+    if (!Array.isArray(saved)) return;
+    tasks = saved.map((t) => {
+      if (t.status === 'downloading' || t.status === 'pending') {
+        return { ...t, status: 'error' as const, error: '已中断（App 退出），可重新下载' };
+      }
+      return t;
+    });
+  } catch {
+    tasks = [];
+  }
+}
+
 let tasks: DownloadTask[] = [];
+// 必须在 tasks 声明之后调用：hydrate 会写 tasks，提前调用会落入 let 的暂时性死区（TDZ）
+hydrate();
 const listeners = new Set<() => void>();
 let opts = { notifyDownload: true };
 function emit() {
@@ -92,6 +130,8 @@ function emit() {
 function setState(patch: Partial<DownloadTask>, id: string) {
   tasks = tasks.map((t) => (t.id === id ? { ...t, ...patch } : t));
   emit();
+  // 终态立即落盘；进行中按节流落盘
+  persist(patch.status === 'done' || patch.status === 'error');
 }
 // 由设置页注入「下载完成是否系统通知」等偏好
 export function setDownloadOptions(o: Partial<typeof opts>) {
@@ -167,9 +207,13 @@ export const downloadStore = {
   },
   start(item: MediaItem) {
     const id = item.id + (item.playUrl || 'local');
-    if (tasks.some((t) => t.id === id)) return;
-    tasks = [{ id, item, progress: 0, status: 'downloading' }, ...tasks];
+    // V3.6.5：恢复后的「已中断」任务允许重新下载（id 相同但状态为 error），
+    // 否则会被下面的"已存在"判定挡住，用户点了没反应。
+    const existing = tasks.find((t) => t.id === id);
+    if (existing && existing.status !== 'error') return;
+    tasks = [{ id, item, progress: 0, status: 'downloading' }, ...tasks.filter((t) => t.id !== id)];
     emit();
+    persist(true);
     realDownload(item)
       .then(() => {
         setState({ progress: 100, status: 'done' }, id);
@@ -186,11 +230,13 @@ export const downloadStore = {
   remove(id: string) {
     tasks = tasks.filter((t) => t.id !== id);
     emit();
+    persist(true);
   },
   // 清除已完成与失败的任务（isDir 假完成逻辑已移除）
   clearDone() {
     tasks = tasks.filter((t) => t.status !== 'done' && t.status !== 'error');
     emit();
+    persist(true);
   },
 };
 

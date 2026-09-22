@@ -10,6 +10,45 @@ import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } fr
 
 export * from './types';
 
+// ===== V3.6.5 源健康记忆（搜索体感 #149）=====
+// 用 localStorage 记每个源的「连续失败次数」，让反复验证不可达的死源在后续搜索里
+// 拿更短超时甚至直接跳过，重复搜索秒出、不再每个源都吃满超时。
+const HEALTH_KEY = 'muhai_src_health';
+type HealthMap = Record<string, number>;
+
+function readHealth(): HealthMap {
+  try {
+    return JSON.parse(localStorage.getItem(HEALTH_KEY) || '{}') as HealthMap;
+  } catch {
+    return {};
+  }
+}
+function writeHealth(m: HealthMap) {
+  try {
+    localStorage.setItem(HEALTH_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+}
+/** 取源连续失败次数（0 = 从未失败/已恢复） */
+export function getSourceFailCount(id: string): number {
+  return readHealth()[id] ?? 0;
+}
+/** 源搜索成功 → 清零连续失败计数 */
+export function markSourceOk(id: string) {
+  const m = readHealth();
+  if (m[id]) {
+    m[id] = 0;
+    writeHealth(m);
+  }
+}
+/** 源搜索失败 → 连续失败计数 +1 */
+export function markSourceFail(id: string) {
+  const m = readHealth();
+  m[id] = (m[id] ?? 0) + 1;
+  writeHealth(m);
+}
+
 export function createSource(cfg: SourceConfig): MediaSource {
   switch (cfg.type) {
     case 'music-json':
@@ -80,7 +119,13 @@ function dedupe(items: MediaItem[]): MediaItem[] {
 export async function aggregateSearch(
   sources: SourceConfig[],
   keyword: string,
-  opts: { timeout?: number; mediaType?: MediaType; onPartial?: (items: MediaItem[]) => void } = {}
+  opts: {
+    timeout?: number;
+    page?: number;
+    mediaType?: MediaType;
+    onPartial?: (items: MediaItem[]) => void;
+    onProgress?: (done: number, total: number) => void;
+  } = {}
 ): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
   const active = sources
     .filter((s) => s.enabled)
@@ -98,14 +143,38 @@ export async function aggregateSearch(
     opts.onPartial(dedupe(shown));
   };
 
+  // V3.6.5：进度回调——done = 已 settle 的源数；total = 启用源总数
+  let settled = 0;
+  const total = active.length;
+  const progress = () => opts.onProgress?.(settled, total);
+  progress();
+
   await Promise.all(
     active.map(async (s, i) => {
       try {
-        const items = await withTimeout(createSource(s).search(keyword, 1), opts.timeout ?? 10000);
+        // V3.6.5 源健康记忆：连续失败 ≥3 次的死源直接跳过；失败过的源给更短超时，
+        // 让死源不再拖满整次搜索。首次/健康的源用默认 6s 超时。
+        const fails = getSourceFailCount(s.id);
+        let perTimeout = opts.timeout ?? 6000;
+        if (fails >= 3) {
+          return; // 跳过死源（settled 由下面的 finally 统一累加，避免重复计数）
+        } else if (fails > 0) {
+          perTimeout = Math.min(perTimeout, 3000);
+        }
+        // V3.6.5 #2 搜索分页：把 page 透传给 search(keyword, page)（drpy/tvbox 等支持分页的源生效）
+        const items = await withTimeout(
+          createSource(s).search(keyword, opts.page ?? 1),
+          perTimeout
+        );
         buckets[i] = items;
+        markSourceOk(s.id); // 成功 → 重置连续失败计数
         emit(); // 这个源一回来就先把它的结果显示出去
       } catch (e: any) {
+        markSourceFail(s.id); // 失败 → 连续失败计数 +1
         errors.push({ sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' });
+      } finally {
+        settled += 1;
+        progress();
       }
     })
   );

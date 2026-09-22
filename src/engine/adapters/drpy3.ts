@@ -1,6 +1,27 @@
 import { invoke } from '@tauri-apps/api/core';
 import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { devLog } from '../../lib/log';
+import { ensureProxyPort, buildProxyUrl } from '../../lib/hlsPlayer';
+import { isTauri } from '../../lib/tauriBridge';
+
+// V3.6.5 #1：jx/parse 二次解析助手。把中间地址经本地流式代理 fetch（代理跟随上游重定向），
+// 用回传的 x-proxy-final-url 作为真直链。代理不可用时返回 null（调用方回退原始中间地址）。
+async function resolveViaProxy(
+  url: string,
+  headers?: Record<string, string>
+): Promise<string | null> {
+  if (!isTauri()) return null;
+  const proxied = buildProxyUrl(url, headers ?? null);
+  try {
+    const res = await fetch(proxied, { method: 'GET' });
+    if (!res.ok) return null;
+    const finalUrl = res.headers.get('x-proxy-final-url');
+    if (finalUrl && finalUrl !== url) return finalUrl;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // V3.6.0 drpy3 / drpy2 规则源适配器
 //
@@ -38,6 +59,16 @@ function rememberFlag(sourceId: string, url: string, flag: string) {
   flagMap.set(`${sourceId}|${url}`, flag);
 }
 
+// V3.6.5 #4：首集映射。key = `${sourceId}|${vod_id}`，value = 该剧首集的 {flag, url}。
+// 场景：详情页/列表已经拿到过集数，播放器再按 vod_id 调 getPlayUrl 时，直接取这里记录的首集，
+// 不再重复 call('detail') 拉一次详情（旧实现每次播放都要多一次往返，慢且浪费源站请求）。
+const firstEpMap = new Map<string, { flag: string; url: string }>();
+function rememberFirstEp(sourceId: string, vodId: string, eps: EpisodeWithFlag[]) {
+  if (!vodId || !eps.length) return;
+  if (firstEpMap.size > 2000) firstEpMap.clear();
+  firstEpMap.set(`${sourceId}|${vodId}`, { flag: eps[0].flag, url: eps[0].url });
+}
+
 export interface EpisodeWithFlag {
   name: string;
   url: string;
@@ -71,18 +102,27 @@ export function toEpisodesWithFlag(playUrl: string): EpisodeWithFlag[] {
 
 function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
   if (!Array.isArray(list)) return [];
-  return list.map((v: any) => ({
-    id: String(v.vod_id ?? v.id ?? ''),
-    sourceId: cfg.id,
-    sourceName: cfg.name,
-    title: v.vod_name ?? v.name ?? '未命名',
-    artist: v.vod_remarks ?? v.type_name ?? '',
-    cover: v.vod_pic ?? v.pic ?? '',
-    desc: v.vod_content ?? v.vod_blurb ?? '',
-    year: v.vod_year ?? '',
-    mediaType: 'video' as const,
-    raw: v,
-  }));
+  return list.map((v: any) => {
+    const id = String(v.vod_id ?? v.id ?? '');
+    // V3.6.5 #4：搜索/分类列表里若已带 vod_play_url，就地解析出集数并记住 flag 与首集。
+    // 这样①列表卡片能直接显示「更新至 N 集」，②播放时可复用首集，省掉一次 detail 往返。
+    const eps = toEpisodesWithFlag(v?.vod_play_url ?? '');
+    for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
+    if (eps.length) rememberFirstEp(cfg.id, id, eps);
+    return {
+      id,
+      sourceId: cfg.id,
+      sourceName: cfg.name,
+      title: v.vod_name ?? v.name ?? '未命名',
+      artist: v.vod_remarks ?? v.type_name ?? '',
+      cover: v.vod_pic ?? v.pic ?? '',
+      desc: v.vod_content ?? v.vod_blurb ?? '',
+      year: v.vod_year ?? '',
+      mediaType: 'video' as const,
+      episodes: eps.length ? eps.map((e) => ({ name: e.name, url: e.url })) : undefined,
+      raw: v,
+    };
+  });
 }
 
 /**
@@ -197,6 +237,7 @@ export function createDrpy3Source(
       if (it) {
         const eps = toEpisodesWithFlag(it.raw?.vod_play_url ?? '');
         for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
+        rememberFirstEp(cfg.id, itemId, eps); // #4：记住首集，播放时无需再拉详情
         it.episodes = eps.map((e) => ({ name: e.name, url: e.url }));
       }
       return (
@@ -214,7 +255,16 @@ export function createDrpy3Source(
       await ensureInit();
       let flag = flagMap.get(`${cfg.id}|${itemId}`) ?? '';
       let playId = itemId;
-      // itemId 是 vod_id（而非集数 url）时，先拉详情取首集
+      // V3.6.5 #4：先查首集映射（详情页/列表已拉过集数时命中），命中即直接用，
+      // 跳过下面那次 detail 往返。这是「播放慢」的一个隐性开销：每次播放都多拉一次详情。
+      if (!flag) {
+        const first = firstEpMap.get(`${cfg.id}|${itemId}`);
+        if (first?.url) {
+          flag = first.flag;
+          playId = first.url;
+        }
+      }
+      // itemId 是 vod_id（而非集数 url）且首集映射也没命中时，才兜底拉一次详情取首集
       if (!flag) {
         try {
           const r = await call('detail', [itemId]);
@@ -248,6 +298,24 @@ export function createDrpy3Source(
         const extHost = String(jsCfg.ext || jsCfg.api || '').match(/^https?:\/\/[^/]+/i)?.[0];
         const host = extHost || (await ensureRuleHost());
         if (host) headers = { Referer: host.replace(/\/+$/, '') + '/' };
+      }
+      // V3.6.5 #1：jx/parse 二次解析。defaults.play 对需嗅探/回解的源会返回
+      // { jx:1, parse:1, url:<中间地址> }；旧实现只取 r.url 直接返回，没走真解析，
+      // 导致这类源拿到的是中间页而非可播放真直链。这里：r.jx/r.parse 为真时，
+      // 把 r.url 经本地流式代理 fetch（代理会跟随重定向），用回传的 x-proxy-final-url
+      // 作为真直链；覆盖绝大多数「jx 重定向到真实 CDN」的影视仓源。
+      const needJx = Boolean((r as any)?.jx) || Boolean((r as any)?.parse);
+      if (needJx && url && /^https?:\/\//i.test(url)) {
+        try {
+          await ensureProxyPort();
+          const real = await resolveViaProxy(url, headers);
+          if (real) {
+            devLog(`[drpy3] jx/parse 解析中间地址 ${url} → 真直链 ${real}`);
+            url = real;
+          }
+        } catch (e: any) {
+          devLog(`[drpy3] jx/parse 解析失败，回退中间地址:`, e?.message ?? e);
+        }
       }
       return { url, headers };
     },

@@ -12,7 +12,9 @@ import {
   takePendingDisclaimer,
 } from '../../lib/disclaimer';
 import { useSettings } from '../../lib/settings';
-import { fetchHot, type HotData, type HotItem } from '../../lib/hot';
+import { fetchHot, cacheReadStale, type HotData, type HotItem } from '../../lib/hot';
+// V3.6.6 B：首页加载动画（扩散涟漪）——热榜数据到达前不再白屏
+import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { invoke } from '@tauri-apps/api/core';
 import { useCardGrid } from '../../lib/useCardGrid';
 
@@ -226,7 +228,9 @@ export function Home({
 
   // A12：豆瓣热门推荐（顶部 Banner + 四板块），与源站聚合相互独立
   // V3.3.0 #6：useState 惰性初始化——重挂时直接命中模块级缓存，首帧即完整内容
-  const [hotData, setHotData] = useState<HotData | null>(() => hotCache);
+  // V3.6.6 B3：模块缓存未命中时再退一层读 localStorage 过期缓存（忽略 TTL）——
+  //   冷启动首帧就能渲染上次的热榜，不白屏；TTL 过期由下面的 effect 静默刷新。
+  const [hotData, setHotData] = useState<HotData | null>(() => hotCache ?? cacheReadStale());
   const [bannerIdx, setBannerIdx] = useState(0);
   // banner 图预加载缓存（base64）——显示层任意时刻都有一张实心图，杜绝切换空窗闪黑
   const [bannerImgs, setBannerImgs] = useState<Record<string, string>>(() => bannerImgCache);
@@ -310,14 +314,26 @@ export function Home({
 
   useEffect(() => {
     let alive = true;
-    // V3.3.0 #6：缓存命中就不再整页重拉（回主页不再闪"从空到有"）
+    // V3.3.0 #6：模块缓存命中就不再整页重拉（回主页不再闪"从空到有"）。
+    // 模块缓存只在新拉取成功时写入，故命中即代表本次进程内数据是新鲜的；
+    // 若首帧数据来自 localStorage 过期缓存（hotCache 为空），则必须继续走一次刷新。
     if (hotCache) return;
-    fetchHot().then((d) => {
-      if (alive && d) {
-        hotCache = d;
-        setHotData(d);
-      }
-    }).catch(() => {});
+    // V3.6.6 B4：最小显示时长 300ms —— 数据秒回时不让加载动画"闪一下就没"（比慢更显廉价）。
+    // 用 Promise.all 与动画节拍对齐：至少完整播一个循环再切内容。
+    const started = Date.now();
+    fetchHot()
+      .then(async (d) => {
+        const rest = 300 - (Date.now() - started);
+        if (rest > 0) await new Promise((r) => window.setTimeout(r, rest));
+        return d;
+      })
+      .then((d) => {
+        if (alive && d) {
+          hotCache = d;
+          setHotData(d);
+        }
+      })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -381,7 +397,8 @@ export function Home({
       {homeTop}
 
       {/* A12：豆瓣热门推荐（顶部 Banner 轮播 + 四行热门） */}
-      {hotData && (
+      {/* V3.6.6 B：三态——有数据渲染内容；无数据显示加载动画（取代原来的整块空白） */}
+      {hotData ? (
         <>
           <BannerBlock
             list={hotData.banner}
@@ -395,6 +412,8 @@ export function Home({
           <HotRow title="热门综艺" items={hotData.categories.variety} onMore={() => setMoreView({ cat: 'variety', title: '热门综艺' })} onSearch={onSearch} />
           <HotRow title="热门动漫" items={hotData.categories.anime} onMore={() => setMoreView({ cat: 'anime', title: '热门动漫' })} onSearch={onSearch} />
         </>
+      ) : (
+        <LoadingSpinner label="正在加载内容…" minHeight={320} />
       )}
 
       {disclaimerOn && (

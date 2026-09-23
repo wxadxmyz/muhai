@@ -46,6 +46,22 @@ function cacheRead(): HotData | null {
   }
   return null;
 }
+
+// V3.6.6 B3：读「过期缓存」——忽略 TTL，只要有历史数据就返回。
+// 配合 stale-while-revalidate：首帧先用旧数据渲染（不白屏），后台再静默刷新。
+// 宁可显示 12 小时前的热榜，也好过让用户对着空白等 4 秒。
+export function cacheReadStale(): HotData | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (obj?.data) return obj.data as HotData;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 function cacheWrite(data: HotData) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
@@ -54,27 +70,56 @@ function cacheWrite(data: HotData) {
   }
 }
 
+// V3.6.6 B2：单链拉取（带超时）。抽出便于主备链并行竞速。
+// 超时 8s → 4s：主链「慢但不失败」时不再白等满 8 秒才轮到备链。
+function fetchOne(url: string, timeoutMs = 4000): Promise<HotData> {
+  return new Promise<HotData>((resolve, reject) => {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
+    fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } })
+      .then((res) => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then((data: HotData) => {
+        if (!data?.categories) throw new Error('bad payload');
+        resolve(data);
+      })
+      .catch(reject)
+      .finally(() => window.clearTimeout(timer));
+  });
+}
+
+// V3.6.6 B2：主备链并行竞速——两条同时发，谁先成功用谁（慢的那条自然被忽略）。
+// 最坏耗时由「8s + 8s 串行 ≈ 16s」降到「≈ 4s（单链超时）」。
+// Promise.any 在 Android WebView(Chrome 85+)/现代浏览器可用；不支持时回退手写竞速。
+function anyOf<T>(ps: Promise<T>[]): Promise<T> {
+  const P: any = Promise;
+  if (typeof P.any === 'function') return P.any(ps);
+  return new Promise<T>((resolve, reject) => {
+    let failed = 0;
+    for (const p of ps) {
+      p.then(resolve).catch(() => {
+        if (++failed === ps.length) reject(new Error('all failed'));
+      });
+    }
+  });
+}
+
 /** 拉取首页推荐数据。force=true 跳过本地缓存直接联网。失败返回 null（调用方兜底用聚合首页）。 */
-export async function fetchHot(force = false, url = DEFAULT_HOT_URL): Promise<HotData | null> {
+export async function fetchHot(force = false): Promise<HotData | null> {
   if (!force) {
     const cached = cacheRead();
-    if (cached) return cached;
+    if (cached) return cached; // TTL 内：直接用，不联网
   }
   try {
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
-    window.clearTimeout(timer);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = (await res.json()) as HotData;
-    if (!data || !data.categories) return null;
+    // 主备链并行竞速；任一条成功即返回。默认链与备链都不可用时才落到下面的兜底。
+    const data = await anyOf([fetchOne(DEFAULT_HOT_URL), fetchOne(FALLBACK_HOT_URL)]);
     cacheWrite(data);
     return data;
   } catch {
-    // 主链（Cloudflare）失败 → 试备链（gitee raw）
-    if (url === DEFAULT_HOT_URL) return fetchHot(force, FALLBACK_HOT_URL);
-    // 都失败 → 回退到任何已有缓存
-    return cacheRead();
+    // 两条都失败 → 回退到任何已有缓存（含过期），保证有内容可显示
+    return cacheRead() ?? cacheReadStale();
   }
 }
 

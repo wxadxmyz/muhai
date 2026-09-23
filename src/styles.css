@@ -307,13 +307,12 @@ button.fav, .fav { color: var(--danger) !important; }
 /* ⑭ 同上：拆开写，避免 max() 失效时把左右/底部 padding 一起拖没 */
 /* V3.4.4 #7：设置页非 sticky，直接去掉多算的那一层 --sat 即可 */
 /* V3.5.5：与原型 .settings-groups / .set-group / .set-row 1:1 对齐——
-   组间距 14px、组内 padding 14px、行 padding 14px 16px、标签 14px/600。 */
+   组间距 14px、组内 padding 14px、行 padding 14px 16px、标签 14px/600。
+   v3.2.1 ⑩：子页内顶部去空白，首个开关贴近标题。
+   注：V3.6.5 曾另写 `.fullpage-body .settings-scroll { padding: 4px 0 0 }` 想收窄边距，
+   该选择器**不匹配**——设置页 DOM 里没有 `.fullpage-body`（那是 SubPage 内部结构，
+   仅仓库管理页等子页有），规则从未生效。真正的修正见文件末尾移动端媒体查询。 */
 .settings-scroll { display: flex; flex-direction: column; gap: 14px; padding: 14px; }
-/* v3.2.1 ⑩：播放设置子页（SubPage 内）顶部去空白，首个开关贴近标题。
-   V3.6.5：设置页卡片到屏幕边原是 .fullpage-body(14px) + .settings-scroll(14px) 双层叠加 = 28px，
-   与「仓库管理」页（仅 .fullpage-body 的 14px）不一致。这里把左右/底部 padding 关掉、只留顶部 4px，
-   让设置卡片紧贴 .fullpage-body 的 14px 边界，两边距完全一致。 */
-.fullpage-body .settings-scroll { padding: 4px 0 0; }
 .settings-group-title { font-size: 12px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 2px 6px 8px; }
 .settings-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); }
 .settings-row { display: flex; align-items: center; gap: 12px; min-height: 0; padding: 14px 16px; border-bottom: 1px solid var(--border); }
@@ -895,6 +894,13 @@ button.fav, .fav { color: var(--danger) !important; }
   .app .main:not(.main-live) { padding: calc(var(--sat) - 7px) 14px calc(50px + var(--sab) + 80px); }
   /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
   .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
+  /* V3.6.6 C：设置页左右边距对齐仓库管理页。
+     设置页直接挂在 .main 下（**无** .fullpage-body），上面 .app .main 已给左右 14px，
+     .settings-scroll 自身又给 14px → 叠加成 28px；而仓库管理页走 SubPage 的
+     .fullpage-body，左右只有 14px。这里把 .settings-scroll 的左右去掉，两边即一致。
+     只动左右、不动上下：顶部位置由 .home-top/.tabs/.settings-scroll 共用容器统一上移算出
+     （见上方 893 注释），改 top 会连带改设置页标题的垂直位置。 */
+  .settings-scroll { padding-left: 0; padding-right: 0; }
   /* A8（v3.1.12 重做）：不再用 sticky::before 挡板（会留 14px 缝隙、且把 home-top 双重下推成「太靠下」）。
      滚动容器 .main 的 padding-top(14px+var(--sat)) 本身就是「天花板」——内容无法滚过容器顶部。
      移动端另加下方 .app::before 固定遮罩，罩住状态栏那条区域（含点播竖屏页），上滑时被它挡住。 */
@@ -2673,3 +2679,44 @@ button.primary.block.add-source-btn {
 }
 button.primary.block.add-source-btn:active { background: var(--panel3); transform: scale(.98); }
 button.primary.block.add-source-btn svg { flex: 0 0 auto; margin: 0 !important; }
+/* ============ V3.6.6 B：通用加载动画（扩散涟漪）============ */
+/* 用户从 4 个方案中选定「扩散涟漪」：3 环依次扩散 + 中心光点呼吸，品牌感最强。
+   颜色全走 --accent / --accent2，深浅色主题自动跟随；全 CSS 动画（合成层，不占主线程）。 */
+.loading-ripple-wrap {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; padding: 40px 0;
+}
+.loading-ripple { position: relative; flex: none; }
+.loading-ripple span {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--accent); opacity: 0;
+  animation: lr-rip 1.9s cubic-bezier(.24, .6, .35, 1) infinite;
+}
+.loading-ripple span:nth-child(2) { animation-delay: .55s; }
+.loading-ripple span:nth-child(3) { animation-delay: 1.1s; }
+.loading-ripple .core {
+  position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 0 14px var(--accent);
+  animation: lr-breathe 1.9s ease-in-out infinite;
+}
+@keyframes lr-rip {
+  0%   { transform: scale(.32); opacity: 0; }
+  22%  { opacity: .85; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@keyframes lr-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50%      { transform: translate(-50%, -50%) scale(1.26); }
+}
+/* 标签文案：单点定义，避免与其它小节重复声明（V3.6.6 合并） */
+.loading-ripple-wrap .loading-ripple-label {
+  font-size: 12px; color: var(--muted); letter-spacing: .04em; margin-top: -4px;
+}
+
+/* 尊重系统「减少动态效果」偏好：关掉扩散与呼吸，改为静态呈现，避免前庭不适 */
+@media (prefers-reduced-motion: reduce) {
+  .loading-ripple span { animation: none; opacity: .35; transform: scale(1); }
+  .loading-ripple .core { animation: none; }
+}

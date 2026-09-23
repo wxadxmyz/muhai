@@ -227,7 +227,18 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
       const first = lineGroups[0]?.[0];
       if (!first?.url) return { url: '' };
       const resolved = await resolvePlayUrl(first.url);
-      return { url: resolved || first.url, headers: { Referer: endpoint + '/' } };
+      // V3.6.6 A1（致命）：Referer 必须按「播放地址自身的 origin」推导，不能用 API 域名。
+      // 例：API 是 hhzyapi.com，但真实播放域名是 play.hhuus.com / hn.bfvvs.com / v.gsuus.com。
+      // 拿 API 域名当 Referer 与播放域名不同源 → 防盗链校验拒绝 → 永远取不到流 → 永久「加载中」。
+      // 源地址（first.url）与解析后地址（resolved）同域时都指向播放站；解析后地址优先（更接近真实资源）。
+      const referer = (() => {
+        try {
+          return new URL(resolved || first.url).origin + '/';
+        } catch {
+          return endpoint + '/'; // 兜底：极少数 first.url 非绝对 URL
+        }
+      })();
+      return { url: resolved || first.url, headers: { Referer: referer } };
     },
 
     async test() {

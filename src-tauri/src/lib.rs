@@ -499,6 +499,90 @@ fn text_proxy_body(s: String) -> ProxyBody {
         .map_err(|e: Infallible| -> Box<dyn std::error::Error + Send + Sync> { e.into() })
         .boxed()
 }
+fn full_proxy_body(b: Bytes) -> ProxyBody {
+    Full::new(b)
+        .map_err(|e: Infallible| -> Box<dyn std::error::Error + Send + Sync> { e.into() })
+        .boxed()
+}
+
+/// V3.6.6 A2：把 m3u8 文本里的**相对路径**补全为上游绝对地址。
+///
+/// 需要处理两类：
+///   1. 标签属性里的 URI —— `#EXT-X-KEY:...URI="enc.key"`、`#EXT-X-MAP:URI="init.mp4"`
+///   2. 纯路径行 —— 分片地址（ts/m4s/aac 等），以及 master playlist 的变体地址
+///
+/// base 取「跟随重定向后的最终 URL」，保证 `new URL(rel, base)` 的目录语义正确
+/// （如 base = `https://h/play/xxx/index.m3u8` → `enc.key` 解析为 `https://h/play/xxx/enc.key`）。
+/// 已经是绝对地址（http/https）或 data:/blob: 的保持不变。
+fn rewrite_m3u8_paths(text: &str, base: &str) -> String {
+    // 手工按 base 的目录部分拼接，避免依赖额外 crate；query/锚点保留
+    let base_dir = match base.rfind('/') {
+        Some(i) => &base[..=i],
+        None => base,
+    };
+    let absolutize = |rel: &str| -> String {
+        let r = rel.trim();
+        if r.is_empty()
+            || r.starts_with("http://")
+            || r.starts_with("https://")
+            || r.starts_with("data:")
+            || r.starts_with("blob:")
+            || r.starts_with("//")
+        {
+            return rel.to_string(); // 绝对地址 / 协议相对 / 内联数据，原样返回
+        }
+        if let Some(stripped) = r.strip_prefix('/') {
+            // 站点绝对路径：接在 scheme://host 之后
+            if let Some(scheme_end) = base.find("://") {
+                let host_end = base[scheme_end + 3..]
+                    .find('/')
+                    .map(|i| scheme_end + 3 + i)
+                    .unwrap_or(base.len());
+                return format!("{}/{}", &base[..host_end], stripped);
+            }
+        }
+        format!("{}{}", base_dir, r)
+    };
+
+    let mut out = String::with_capacity(text.len() + 64);
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        let newline = &line[trimmed.len()..];
+        let t = trimmed.trim_start();
+        // 1) 标签里的 URI="..."
+        if t.starts_with('#') {
+            if let Some(pos) = t.find("URI=\"") {
+                let head = &t[..pos + 5];
+                let rest = &t[pos + 5..];
+                if let Some(end) = rest.find('"') {
+                    let rel = &rest[..end];
+                    let abs = absolutize(rel);
+                    out.push_str(head);
+                    out.push_str(&abs);
+                    out.push_str(&rest[end..]);
+                    out.push_str(newline);
+                    continue;
+                }
+            }
+            // 其它注释行原样保留
+            out.push_str(trimmed);
+            out.push_str(newline);
+            continue;
+        }
+        // 2) 纯路径行（跳过空行）
+        if t.is_empty() {
+            out.push_str(trimmed);
+            out.push_str(newline);
+            continue;
+        }
+        // 保留缩进，只替换路径本体
+        let indent_len = trimmed.len() - t.len();
+        out.push_str(&trimmed[..indent_len]);
+        out.push_str(&absolutize(t));
+        out.push_str(newline);
+    }
+    out
+}
 
 async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, Infallible> {
     // url 只来自 query（App 自己拼），避免外部注入任意目标
@@ -561,6 +645,54 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
     let upstream = resp.headers().clone();
     // bytes_stream 会 move 掉 resp，先把需要的最终 URL 取出来（跟随重定向后的真实地址）
     let final_url = resp.url().to_string();
+
+    // ── V3.6.6 A2：m3u8 相对路径重写 ──────────────────────────────────────────
+    // 根因：分享页源（豪华/红牛/光速…）的 m3u8 里密钥是相对路径 `URI="enc.key"`，
+    // hls.js 会以「它拿到的 m3u8 URL」为基准解析。但该 URL 已被本代理改写成
+    // `http://127.0.0.1:<port>/proxy?url=...`，于是相对路径被拼成不存在的本地地址
+    // → 密钥 404 → AES 解密失败 → 画面永远不出。
+    // 解决：代理是唯一同时知道「原始 URL」与「改写后 URL」的一方，在此把 m3u8 内
+    // 相对路径统一补全为上游绝对地址，再回传（m3u8 仅 KB 级，不影响流式收益）。
+    let ctype = upstream
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let looks_m3u8 = ctype.contains("mpegurl")
+        || ctype.contains("x-mpegurl")
+        || final_url.contains(".m3u8")
+        || target.contains(".m3u8");
+
+    if looks_m3u8 {
+        // m3u8 体积小（几 KB ~ 几十 KB），整体读入做文本重写是可接受的
+        match resp.text().await {
+            Ok(text) => {
+                let rewritten = rewrite_m3u8_paths(&text, &final_url);
+                let body_bytes = Bytes::from(rewritten);
+                let mut rb = Response::builder().status(status);
+                // 不沿用上游 content-length（文本长度已变，用错会截断/挂起）
+                rb = rb
+                    .header("Content-Type", "application/vnd.apple.mpegurl")
+                    .header("Content-Length", body_bytes.len().to_string())
+                    .header("Accept-Ranges", "bytes")
+                    .header("X-Proxy-Final-Url", final_url)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                    .header("Access-Control-Allow-Headers", "*");
+                return Ok(rb.body(full_proxy_body(body_bytes)).unwrap());
+            }
+            Err(e) => {
+                // 读取失败：无法回退到流式（resp 已被 text() 消费），如实返回 502 供前端提示
+                eprintln!("m3u8 rewrite: read body failed: {e}");
+                return Ok(Response::builder()
+                    .status(502)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(text_proxy_body(format!("m3u8 读取失败：{}", e)))
+                    .unwrap());
+            }
+        }
+    }
+
     // 流式转发：不再把整段响应读进内存 + base64，直接把上游字节流逐帧 pipe 回 WebView
     let stream = resp.bytes_stream();
     let framed = stream.map(|res| {

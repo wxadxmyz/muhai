@@ -5,6 +5,64 @@
 
 ---
 
+## V3.6.6
+
+本版修「**播放加载 10 秒不出片**」（四个真 BUG 中的两个致命项）、首页**冷启动白屏**、设置页边距不一致，并整理 gitee 三仓库结构。四项一次性做完。
+
+### A. 播放卡死根治（A1 / A2 两个致命 BUG）
+
+现象：搜到影片后，用三个不同子站（豪华 / 红牛 / 光速）点播放，都停在「加载中」10 秒以上不出画面。服务端实测三源的 API、分享页、真实 m3u8、AES 密钥**全部 HTTP 200 正常**——所以不是源的问题，是客户端取流方式错。
+
+- **A1 · Referer 用了 API 域名（致命）**：`adapters/normal.ts` 的 `getPlayUrl` 原来把 `Referer` 固定设成苹果CMS **API 域名**（如 `hhzyapi.com/`）。但真实播放地址在**另一个域名**（如 `play.hhuus.com`），而这类源普遍开了防盗链校验。Referer 与播放域名不同源 → CDN 直接拒绝 → hls.js 永远拿不到第一个分片 → 永远「加载中」。
+  - 改为**从最终播放地址推导 `origin`** 作 Referer；解析失败才退回 API 域名。
+- **A2 · m3u8 内相对路径经代理后解析错（致命）**：番剧普遍是 **AES-128 加密 HLS**，m3u8 里写着 `#EXT-X-KEY:METHOD=AES-128,URI="enc.key"` —— 这是**相对路径**，hls.js 会相对 m3u8 自身 URL 解析。而 V3.6.5 的本地流式代理把 m3u8 转发给前端时，**没有改写这些相对路径**，hls.js 便按 `127.0.0.1:临时端口/enc.key` 去取密钥 → 404 → 无法解密 → 卡死。
+  - `src-tauri/src/lib.rs` 新增 `rewrite_m3u8_paths(text, base)`：逐行处理，把标签内 `URI="..."` 与纯路径行补成**基于 m3u8 真实地址（跟随重定向后的 `X-Proxy-Final-Url`）的绝对地址**；`//`、`data:`、`blob:` 与已是绝对地址的保持不变。
+  - `proxy_handler` 新增 m3u8 分支：`Content-Type` 含 `mpegurl` 或 URL 含 `.m3u8` 时走「读文本 → 重写 → 返回整包」；其余（ts/mp4）仍走流式，Range 拖动不受影响。
+  - 已用真实数据验证：豪华源 `URI="enc.key"` → `https://play.hhuus.com/play/e3191Jrb/enc.key` ✅；光速源 `/play/hls/eZ6W6Xve/index.m3u8` → `https://v.gsuus.com/play/hls/eZ6W6Xve/index.m3u8` ✅。
+
+> 说明：三个源是**同一套 CMS 模板**（分享页 / AES 加密 / 防盗链逻辑完全一致），所以「换源」根本无效——换哪个都撞同两个 BUG。
+
+### B. 首页冷启动白屏 → 扩散涟漪加载动画
+
+- **根因 1**：`Home.tsx` 是 `{hotData && (...)}`——数据未到时**整块不渲染**，首页只剩顶栏 + 大片空白。冷启动 `hotCache` 为空，必然走网络。
+- **根因 2**：主备链**串行**尝试，最坏 ≈ 8s + 8s = 16s 白屏。
+- 改法：
+  - 新增 `components/LoadingSpinner.tsx`：3 环依次扩散 + 中心光点呼吸，全 CSS 动画（合成层，不卡主线程）、颜色走 `--accent/--accent2` 自动跟随主题，并尊重 `prefers-reduced-motion`。
+  - `hotData` 为 null 时渲染该动画（`LoadingSpinner label="正在加载内容…"`），不再留白。
+  - **最小显示时长 300ms**：数据秒回时不让动画「闪一下就没」（比慢更显廉价）。
+  - **SWR 首帧**：`useState(() => hotCache ?? cacheReadStale())`——模块缓存未命中时读 localStorage 里的过期缓存先渲染，后台再静默刷新。宁可显示 12 小时前的热榜，也好过对着空白等 4 秒。
+  - **主备链并行竞速**：`fetchOne` 超时 `8s → 4s`，两条链同时发、谁先成功用谁（`Promise.any` + 手写兜底），最坏耗时由 ~16s 降到 ~4s；两条都失败再回退任何已有缓存。
+
+### C. 设置页左右边距与仓库管理页对齐
+
+- **上次改错的两点**：① 选择器 `.fullpage-body .settings-scroll` **根本不匹配**——设置页 DOM 里没有 `.fullpage-body`（那是 SubPage 的内部结构）；② 注释把方向写反了。
+- **真实根因**：移动端 `.app .main:not(.main-live)` 给了左右 14px，`.settings-scroll` 自己又 `padding: 14px` → 叠加 **28px**，而仓库管理页走 `.fullpage-body` 路径只有 14px。
+- 改法：删掉那条无效规则，在 `@media (max-width: 820px)` 内补 `.settings-scroll { padding-left: 0; padding-right: 0; }`，由外层统一给 14px。
+
+### D. gitee 三仓库结构整理
+
+目标结构（已用令牌执行完毕）：
+
+| 仓库 | 内容 |
+|---|---|
+| **muhai-vod**（幕海点播） | `sources.json`（16 站苹果CMS点播源）、`drpy-sources.json` + `rules/`（7 个 drpy 规则源，搜索主力）、`hot.json`（APP 自动拉取首页热门）、README |
+| **muhai-live**（幕海直播） | `lives.json` + `tv.m3u`（静态 m3u 源，自动加载）、`drpy-live-sources.json` + `lib/`（虎牙/斗鱼/兔小贝 明文规则，需手动订阅）|
+| **lvyun-sources**（律云音源） | 未改动 |
+
+具体动作：
+- **合并** `acms-all.json` → `sources.json`（并集去重，剔除实测不稳的 `wujin`），统一为唯一点播入口。
+- **迁出直播**：`drpy-live-sources.json` 与 `live/`（huya/douyu/tuxiaobei）→ muhai-live。
+- **删除无引用遗留**：`lib/`（5 个）、`cms.js`、`xb6v.js`、`xb6v_v3.js`、`rules/lizi.js`、`changelog-v3.2.4.md`、`v3.2.4-改动清单.md`。
+- muhai-live 侧：用**明文** `huya.js` 替换引擎无法解析的 `**<base64>` 加密版 `huya2.js`；删除与 `douyu.js` 完全相同的 `斗鱼直播.js`；删除无引用的 `backup-20250425.m3u`。
+- 两仓 README 重写，与整理后的文件结构完全对齐（含「两类加载方式不同」的明确提醒）。
+- 验证：4 个订阅地址全为合法 JSON，10 个 `spiderUrl` 全部 HTTP 200 可达。
+
+### 改动文件
+
+`src-tauri/src/lib.rs`、`src/engine/adapters/normal.ts`、`src/styles.css`、`src/lib/hot.ts`、`src/video/views/Home.tsx`、`src/components/LoadingSpinner.tsx`（新增）
+
+---
+
 ## V3.6.5
 
 本版根治「播放卡顿 / 转圈」（架构级），并把搜索体感、drpy 适配器 4 项缺口、下载持久化、设置页 UI 一致性**一并修完**，不做挤牙膏式分版本。

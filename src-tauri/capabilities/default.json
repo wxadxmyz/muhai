@@ -2,8 +2,13 @@
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "default",
   "description": "幕海移动端（安卓/iOS）默认权限：放行核心能力与自定义命令",
-  "platforms": ["android", "iOS"],
-  "windows": ["main"],
+  "platforms": [
+    "android",
+    "iOS"
+  ],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -16,6 +21,10 @@
     "allow-drpy3run",
     "allow-dlnascan",
     "allow-castvideo",
-    "allow-clear-webview-cache"
+    "allow-clear-webview-cache",
+    "allow-media-proxy-port",
+    "allow-proxy-probe-snapshot",
+    "allow-proxy-probe-clear",
+    "allow-proxy-probe-set-recording"
   ]
 }

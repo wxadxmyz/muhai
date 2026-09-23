@@ -2,8 +2,14 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-capability",
   "description": "幕海桌面端（Windows/macOS/Linux）默认权限：在移动端基础上追加自启/全局快捷键/更新",
-  "platforms": ["linux", "macOS", "windows"],
-  "windows": ["main"],
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -19,6 +25,10 @@
     "allow-drpy3run",
     "allow-dlnascan",
     "allow-castvideo",
-    "allow-clear-webview-cache"
+    "allow-clear-webview-cache",
+    "allow-media-proxy-port",
+    "allow-proxy-probe-snapshot",
+    "allow-proxy-probe-clear",
+    "allow-proxy-probe-set-recording"
   ]
 }

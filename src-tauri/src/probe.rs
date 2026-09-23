@@ -98,8 +98,12 @@ pub fn record(mut ev: ProxyEvent) {
     }
 }
 
-/// 记录「Range 被丢弃」这一独立事实（它正是 V3.6.7 想修的坑，需要单独可观测）。
-pub fn note_range_dropped() {
+/// 记录「Range 头未被透传」这一独立事实。V3.6.9 语义扩展：既包括非法格式，
+/// 也包括「畸形探测头 bytes=0-0（已按全量 200 返回）」。计数统一放进 RANGE_DROPPED，
+/// 供诊断报告区分「有多少请求本可以带 Range 但被拦下」。
+///
+/// `raw` 仅用于结构化日志/调试打印，不影响计数。
+pub fn note_range_dropped(_raw: &str) {
     RANGE_DROPPED.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -261,8 +265,8 @@ mod tests {
     fn range_dropped_counter() {
         let _g = lock();
         clear();
-        note_range_dropped();
-        note_range_dropped();
+        note_range_dropped("bytes=0-0");
+        note_range_dropped("bytes=abc");
         let (_, c) = snapshot(10);
         assert_eq!(c.range_dropped, 2);
     }

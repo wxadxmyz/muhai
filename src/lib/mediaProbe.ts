@@ -149,7 +149,7 @@ export async function buildMediaReport(extra?: Record<string, string>): Promise<
     lines.push('\n--- 媒体代理累计计数 ---');
     lines.push(`代理收到请求总数：${c.total}`);
     lines.push(`上游 2xx 成功：${c.upstream_ok}　失败：${c.upstream_fail}`);
-    lines.push(`Range 探测被丢弃：${c.range_dropped}`);
+    lines.push(`Range 探测/畸形头 已转全量 200：${c.range_dropped}`);
     lines.push(`事件记录开关：${c.recording ? '开' : '关'}`);
     if (c.total === 0) {
       lines.push('⚠️ 代理一次请求都没收到 —— 说明 WebView 根本没连上 127.0.0.1 代理。');
@@ -170,7 +170,7 @@ export async function buildMediaReport(extra?: Record<string, string>): Promise<
           `HTTP ${e.status}`,
           fmtSize(e.body_len),
         ];
-        if (e.range) parts.push(`range=${e.range}${e.fwd_range ? ` → 转发 ${e.fwd_range}` : ' → 已丢弃'}`);
+        if (e.range) parts.push(`range=${e.range}${e.fwd_range ? ` → 转发 ${e.fwd_range}` : ' → 转全量 200'}`);
         if (e.m3u8) parts.push('[m3u8]');
         if (e.note) parts.push(e.note);
         lines.push(parts.join(' | '));

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-proxy-probe-clear"
+description = "Enables the proxy_probe_clear command without any pre-configured scope."
+commands.allow = ["proxy_probe_clear"]
+
+[[permission]]
+identifier = "deny-proxy-probe-clear"
+description = "Denies the proxy_probe_clear command without any pre-configured scope."
+commands.deny = ["proxy_probe_clear"]

@@ -12,7 +12,7 @@
 //   链路      当前走代理还是 fetchmedia 过桥，端口是多少
 //   鉴权      Referer / UA 实际发出的值（首帧 Referer 污染会在这里现形）
 //   播放器    readyState / 已缓冲秒数 / 分辨率（判断「数据到没到」）
-//   代理      累计请求数、上游成败数、Range 丢弃数（判断「WebView 连没连上」）
+//   代理      累计请求数、上游成败数、畸形 Range 转全量数（判断「WebView 连没连上」）
 //   指纹      最近一条分片加载 + 最近一条致命错误（判断「网络错还是解码错」）
 //
 // 刻意不显示「字节/秒」这类噪声，用户看不过来，截图也不清楚。
@@ -80,7 +80,7 @@ export function MediaProbeOverlay({ playUrl, headers, video }: MediaProbeInfo) {
         const c = JSON.parse(raw).counters;
         if (!alive) return;
         setCounters(
-          `代理请求 ${c.total}｜上游 成功 ${c.upstream_ok} / 失败 ${c.upstream_fail}｜丢弃探测 Range ${c.range_dropped}`
+          `代理请求 ${c.total}｜上游 成功 ${c.upstream_ok} / 失败 ${c.upstream_fail}｜畸形 Range 转全量 ${c.range_dropped}`
         );
       } catch (e: any) {
         if (alive) setCounters('读取失败：' + (e?.message ?? e));

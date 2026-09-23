@@ -603,40 +603,113 @@ fn rewrite_m3u8_paths(text: &str, base: &str) -> String {
     out
 }
 
-/// V3.6.7：Range 请求归一化判定。
+/// V3.6.9（二修）：Range 请求分类。
 ///
-/// hls.js 在请求 HLS 分片前会发 `Range: bytes=0-0` 探测可寻址性，部分 CDN 会如实返回
-/// 1 字节。该探测请求**不能**原样透传，否则 hls.js 拿到 1 字节 TS 直接解析失败。
+/// ## 逐版演进与真机证据
 ///
-/// 策略：
-///   · `bytes=N-`（开放区间）          → 透传（mp4 拖动 / 断点续传）
-///   · `bytes=N-M` 且 M-N+1 >= 1KB     → 透传（真实分片预取，hls.js 默认 64KB 起）
-///   · 其余（bytes=0-0、bytes=100-200、多区间、非法格式）→ 丢弃，让上游回完整资源
-fn should_forward_range(raw: &str) -> bool {
-    /// 小于该字节数的窗口视为「探测请求」。真实分片预取远大于 1KB，不会误伤。
-    const PREFETCH_MIN: u64 = 1024;
+/// **v3.6.7**：把 `Range` 头一律丢掉 → hls.js 收不到它「预期」的响应，反复重发。
+///
+/// **v3.6.8**（**错误方案，已被证伪**）：把 `bytes=0-0` 判为「探测」，由代理自己回
+/// 一个 1 字节的 206。真机 + 沙箱抓包（`verify206.js`）实测结论：
+///
+///   · 同一分片仍被重复请求 5 次（`eb56…fa.ts × 5`）；
+///   · 出现 `mediaError / fragParsingError × 7` —— hls.js 把回给它的那 1 字节
+///     **当成 TS 分片数据去解析**，解析失败 → 重试 → 再失败，死循环；
+///   · 播放器 `readyState=0 / currentTime=0.00`。
+///   · `Content-Range=null`（验证服务侧 bug，但足以说明链路没接通）。
+///
+/// 结论：**「回 1 字节 / 回一小段 206」不是正解**。读 hls.js 源码（`hls.js:31917`）确认：
+///
+/// ```js
+/// initParams.headers.set('Range', 'bytes=' + context.rangeStart + '-' + String(context.rangeEnd - 1));
+/// ```
+///
+/// 而 `context.rangeStart/rangeEnd` 默认是 `0/0`（`createLoaderContext` 里赋值），
+/// 只有 `segment.byteRangeStartOffset/EndOffset` **是有限数**时才会被覆盖。
+/// 抓包实测这两个字段**都是 `undefined`** —— 也就是说：
+///
+///   `bytes=0-0` 是 `'bytes=' + 0 + '-' + String(0 - 1)` 拼出来的**畸形头**，
+///   它不代表「我要第 0 个字节」，而是 hls.js 在「没有 byteRange 信息」时发出的
+///   一个语义未定义的请求。
+///
+/// ## 正解
+///
+/// **对这种畸形头（`start == 0 && end <= start`）不做任何特殊处理，当它不存在**，
+/// 让代理照常返回 **200 + 完整分片体**。hls.js 拿到完整数据后不会再重试。
+/// 真正需要透传的只有「前进型的大窗口」（拖动、`rangeStart>0` 的预取）。
+///
+/// ## 分类
+///
+///   · [`RangeKind::None`]         —— 无 Range / 畸形探测头（`bytes=0-0`），**回全量 200**
+///   · [`RangeKind::Forward`]      —— 真实预取 / 拖动。原样透传给上游
+///   · [`RangeKind::Invalid`]      —— 多区间或非法格式。不透传，退回完整资源（最安全）
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum RangeKind {
+    None,
+    Forward,
+    Invalid,
+}
 
-    let Some(spec) = raw.trim().strip_prefix("bytes=") else {
-        return false;
+/// 小于该字节数、且 `start == 0` 的窗口，视为「畸形探测头」，按无 Range 处理。
+/// 真实分片预取远大于 1KB（几百 KB ~ 1MB），不会误伤。
+const PREFETCH_MIN: u64 = 1024;
+
+/// 解析 Range 头，返回 (分类, 起, 止)。
+fn parse_range(raw: &str) -> (RangeKind, Option<u64>, Option<u64>) {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return (RangeKind::None, None, None);
+    }
+    let Some(spec) = raw.strip_prefix("bytes=") else {
+        return (RangeKind::Invalid, None, None);
     };
-    // 多区间（bytes=0-1,5-6）一律不透传，规避上游 416 / 实现差异
+    let spec = spec.trim();
+    // 多区间（bytes=0-1,5-6）一律不透传：上游对多区间的回应是 multipart，hls.js 处理不了
     if spec.contains(',') {
-        return false;
+        return (RangeKind::Invalid, None, None);
     }
     let Some((s, e)) = spec.split_once('-') else {
-        return false;
+        return (RangeKind::Invalid, None, None);
     };
     let Ok(start) = s.trim().parse::<u64>() else {
-        return false;
+        return (RangeKind::Invalid, None, None);
     };
     let end_str = e.trim();
     if end_str.is_empty() {
-        return true; // bytes=N- 开放区间
+        // bytes=N- 开放区间：N==0 时等价于「整个资源」，按无 Range 处理；
+        // N>0 才是真正的前进型预取/拖动，透传。
+        return if start == 0 {
+            (RangeKind::None, None, None)
+        } else {
+            (RangeKind::Forward, Some(start), None)
+        };
     }
     let Ok(end) = end_str.parse::<u64>() else {
-        return false;
+        return (RangeKind::Invalid, None, None);
     };
-    end >= start && end - start + 1 >= PREFETCH_MIN
+    // ── 核心修复（V3.6.9 二修）───────────────────────────────────────────
+    // `bytes=0-0`（start==0 且 end<=start）是 hls.js 在缺少 byteRange 信息时
+    // 拼出的畸形头，语义未定义。**当作无 Range 处理，回全量 200**，
+    // 否则会把 1 字节当分片数据喂给 hls.js，触发 fragParsingError。
+    if start == 0 && end <= start {
+        return (RangeKind::None, None, None);
+    }
+    if end < start {
+        return (RangeKind::Invalid, None, None);
+    }
+    let len = end - start + 1;
+    if len >= PREFETCH_MIN {
+        (RangeKind::Forward, Some(start), Some(end))
+    } else {
+        // start>0 的小窗口（罕见）：既不透传也不自回 206，按全量处理最安全。
+        (RangeKind::None, None, None)
+    }
+}
+
+/// V3.6.7 兼容包装：仅判断是否需要透传给上游。
+/// V3.6.9 起只有 Forward（前进型大窗口）才透传。
+fn should_forward_range(raw: &str) -> bool {
+    matches!(parse_range(raw).0, RangeKind::Forward)
 }
 
 async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, Infallible> {
@@ -710,14 +783,17 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
     }
 
     // V3.6.5：透传 Range（hls.js 分片预取 / mp4 拖动），并带上防盗链头
-    // V3.6.7 修复：Range 必须先归一化，否则 hls.js 的长度探测请求会把播放打死。
-    //   hls.js 对每个 HLS 分片会先发 `Range: bytes=0-0` 探测可寻址性；原样透传后上游
-    //   只回 1 字节，hls.js 拿这 1 字节去解 TS → fragParsingError → 反复重试 → 用户看到
-    //   「一直转圈」。V3.6.4 走 invoke('fetchmedia') 不带 Range，所以没这个问题。
     //
-    // V3.6.8 诊断：同时记录「原始 Range」与「实际转发 Range」。若真机上看到
-    //   range=bytes=0-0 而 fwd_range 为空，说明归一化生效（这是预期）；若 range 为空
-    //   而 body_len 仍为 1，那才是真的上游/端侧问题——两类症状必须能区分开。
+    // ── Range 处理的三代演进（别再把前两代的做法改回去）──────────────────────
+    //   V3.6.4 走 invoke('fetchmedia')，压根不带 Range，所以没事。
+    //   V3.6.5 上代理后开始透传 Range。
+    //   V3.6.7 发现「原样透传探测请求 → 上游回 1 字节 → hls.js 拿来解 TS 失败」，
+    //          改成**丢弃**探测 Range，让上游回完整资源。
+    //   V3.6.9 真机报告证明「丢弃」也不对：hls.js 期望一个 206 短响应，得到 200 完整响应
+    //          后判定不符预期 → 重发探测 → 被丢弃 → 再重发……形成循环，表现仍是转圈，
+    //          且白白整段拉取分片。
+    //          正解：**代理自己如实回应探测**——它要 1 字节就给 1 字节合法 206。
+    // ──────────────────────────────────────────────────────────────────────
     let mut builder = http_client().get(&target);
     let req_range = req
         .headers()
@@ -726,22 +802,36 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
         .unwrap_or("")
         .to_string();
     let mut fwd_range = String::new();
-    if let Some(rg) = req.headers().get(hyper::header::RANGE).cloned() {
-        let rg_str = rg.to_str().unwrap_or("");
-        if should_forward_range(rg_str) {
-            fwd_range = rg_str.to_string();
-            builder = builder.header(hyper::header::RANGE, rg);
-        } else {
-            probe::note_range_dropped();
-            eprintln!("media proxy: 丢弃探测 Range {rg_str:?}，改取完整资源");
+    // query 里的 range（前端显式传的 mp4 拖动）优先于请求头
+    let effective_range = if !req_range.is_empty() {
+        req_range.clone()
+    } else {
+        params.get("range").cloned().unwrap_or_default()
+    };
+    let (kind, r_start, r_end) = parse_range(&effective_range);
+    // V3.6.9 二修：畸形探测头（bytes=0-0）归为 None，这里不再需要 start/end，
+    // 但仍然接收以免后续签名变化；仅用于诊断日志。
+    let _ = (r_start, r_end);
+    match kind {
+        RangeKind::Forward => {
+            fwd_range = effective_range.clone();
+            builder = builder.header(hyper::header::RANGE, effective_range.clone());
         }
-    } else if let Some(rg) = params.get("range") {
-        if !rg.is_empty() && should_forward_range(rg) {
-            fwd_range = rg.clone();
-            builder = builder.header(hyper::header::RANGE, rg.clone());
-        } else if !rg.is_empty() {
-            probe::note_range_dropped();
-            eprintln!("media proxy: 丢弃探测 query range {rg}，改取完整资源");
+        RangeKind::Invalid => {
+            if !effective_range.is_empty() {
+                probe::note_range_dropped(&effective_range);
+                eprintln!("media proxy: 丢弃非法 Range {effective_range:?}，改取完整资源");
+            }
+        }
+        // None 包含「无 Range」与「畸形 bytes=0-0」两种情况：都不设上游 Range，
+        // 上游会返回 200 + 完整资源。hls.js 拿到完整分片后不会再重发。
+        RangeKind::None => {
+            if !effective_range.is_empty() {
+                probe::note_range_dropped(&effective_range);
+                eprintln!(
+                    "media proxy: 畸形 Range {effective_range:?} 已按全量返回（200，避免 fragParsingError）"
+                );
+            }
         }
     }
     if let Some(r) = params.get("referer") {
@@ -805,6 +895,11 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
         || ctype.contains("x-mpegurl")
         || final_url.contains(".m3u8")
         || target.contains(".m3u8");
+
+    // ── V3.6.9 二修：删除了「探测 Range 回 206 切片」分支 ──────────────────────
+    // 该分支在 v3.6.8 尝试「如实回应 1 字节 206」，但真机 + 抓包证明它会导致
+    // `fragParsingError`（hls.js 把 1 字节当 TS 分片解析失败）→ 反复重发 → 转圈。
+    // 现改为：畸形 Range 归为 None，上游直接返回 200 全量，见上面 parse_range 的注释。
 
     if looks_m3u8 {
         // m3u8 体积小（几 KB ~ 几十 KB），整体读入做文本重写是可接受的
@@ -1024,4 +1119,91 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         })
         .build(app)?;
     Ok(())
+}
+#[cfg(test)]
+mod range_tests {
+    use super::{parse_range, RangeKind};
+
+    /// 无 Range 头 → 原样透传，不做任何处理
+    #[test]
+    fn no_range_header() {
+        assert_eq!(parse_range("").0, RangeKind::None);
+        assert_eq!(parse_range("   ").0, RangeKind::None);
+    }
+
+    /// `bytes=0-0` 是 hls.js 在缺少 byteRange 信息时拼出的**畸形头**。
+    /// V3.6.9 二修：不再「回 1 字节 206」（那会导致 fragParsingError），
+    /// 而是归为 None → 回全量 200。
+    #[test]
+    fn zero_zero_is_none_not_probe() {
+        let (k, s, e) = parse_range("bytes=0-0");
+        assert_eq!(k, RangeKind::None, "bytes=0-0 应判为 None（回全量 200）");
+        assert_eq!((s, e), (None, None));
+        assert!(!super::should_forward_range("bytes=0-0"), "畸形头不应转发给上游");
+    }
+
+    /// start==0 的小窗口同样是畸形头 → None，不回 206 切片
+    #[test]
+    fn zero_start_small_window_is_none() {
+        assert_eq!(parse_range("bytes=0-100").0, RangeKind::None);
+        assert_eq!(parse_range("bytes=0-1022").0, RangeKind::None);
+    }
+
+    /// start>0 的小窗口（罕见）也按全量处理，避免误判
+    #[test]
+    fn nonzero_start_small_window_is_none() {
+        assert_eq!(parse_range("bytes=100-200").0, RangeKind::None);
+    }
+
+    /// 大窗口（>=1KB）是真实预取 / mp4 拖动，必须原样转发
+    #[test]
+    fn large_window_is_forward() {
+        assert_eq!(parse_range("bytes=0-1023").0, RangeKind::Forward, "恰好 1KB 算预取");
+        assert_eq!(parse_range("bytes=0-65535").0, RangeKind::Forward);
+        assert_eq!(parse_range("bytes=1000000-1999999").0, RangeKind::Forward);
+        assert!(super::should_forward_range("bytes=0-65535"));
+    }
+
+    /// 开放区间 `bytes=N-`：N>0 是 mp4 拖动/断点续传，必须转发；N==0 等价全量 → None
+    #[test]
+    fn open_ended_is_forward() {
+        let (k, s, e) = parse_range("bytes=500-");
+        assert_eq!(k, RangeKind::Forward);
+        assert_eq!((s, e), (Some(500), None));
+        assert_eq!(parse_range("bytes=0-").0, RangeKind::None, "bytes=0- 等价整个资源");
+    }
+
+    /// 多区间：上游会回 multipart，hls.js 处理不了 → 判非法，退回完整资源
+    #[test]
+    fn multi_range_is_invalid() {
+        assert_eq!(parse_range("bytes=0-1,5-6").0, RangeKind::Invalid);
+        assert!(!super::should_forward_range("bytes=0-1,5-6"));
+    }
+
+    /// 非法输入不能让代理 panic，也不能瞎转发
+    #[test]
+    fn malformed_is_invalid() {
+        for bad in [
+            "bytes=abc-5",
+            "bytes=10-5",   // end < start
+            "bytes=-",      // 无起止
+            "bytes=5",      // 无连字符
+            "bytes=x-y",
+            "chars=0-9",    // 非 bytes 单位
+            "0-9",          // 缺单位
+        ] {
+            let k = parse_range(bad).0;
+            assert_eq!(k, RangeKind::Invalid, "{bad:?} 应判为非法");
+            assert!(!super::should_forward_range(bad), "{bad:?} 不应被转发");
+        }
+    }
+
+    /// 边界：与 PREFETCH_MIN 的分界必须精确
+    #[test]
+    fn prefetch_min_boundary_is_exact() {
+        // start==0 且窗口 <1KB → None（畸形头，回全量）
+        assert_eq!(parse_range("bytes=0-1022").0, RangeKind::None);
+        // start==0 且窗口 >=1KB → Forward（真实预取，透传）
+        assert_eq!(parse_range("bytes=0-1023").0, RangeKind::Forward);
+    }
 }

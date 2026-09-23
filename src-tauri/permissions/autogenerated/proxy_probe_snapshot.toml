@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-proxy-probe-snapshot"
+description = "Enables the proxy_probe_snapshot command without any pre-configured scope."
+commands.allow = ["proxy_probe_snapshot"]
+
+[[permission]]
+identifier = "deny-proxy-probe-snapshot"
+description = "Denies the proxy_probe_snapshot command without any pre-configured scope."
+commands.deny = ["proxy_probe_snapshot"]

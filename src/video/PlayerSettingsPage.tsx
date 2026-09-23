@@ -1,5 +1,6 @@
 import { SubPage } from '../components/SubPage';
 import { useSettings } from '../lib/settings';
+import { resetProxyPort } from '../lib/hlsPlayer';
 
 /** 单行：左「标题 + 说明」、右控件。版式对齐原型 .set-line（无行图标、下划线分隔）。 */
 function Line({
@@ -93,6 +94,24 @@ export function PlayerSettingsPage({ onBack }: { onBack: () => void }) {
         </Line>
         <Line label="画中画 / 后台播放">
           <Switch on={settings.pipEnabled} onChange={(v) => update({ pipEnabled: v })} />
+        </Line>
+
+        {/* ===== V3.6.8：播放链路排查（用户可自救 + 出问题时的取证入口） =====
+            这两项是给「播放转圈 / 解码错误」这类只能真机复现的问题准备的：
+            · 开关一：链路可切换。关掉本地代理即回退到 V3.6.4 的全量过桥实现。
+            · 开关二：诊断浮层。打开后播放器左下角显示链路事实，截图即可定位。 */}
+        <Line label="使用本地流式代理" desc="关掉则回退到旧版全量过桥（部分手机上后者更稳）">
+          <Switch
+            on={settings.useMediaProxy !== false}
+            onChange={(v) => {
+              update({ useMediaProxy: v });
+              // 端口缓存必须一起清，否则开关切了但本次播放仍用旧链路
+              resetProxyPort();
+            }}
+          />
+        </Line>
+        <Line label="显示媒体链路诊断" desc="播放器左下角浮层 · 排查播放问题时打开">
+          <Switch on={!!settings.showMediaProbe} onChange={(v) => update({ showMediaProbe: v })} />
         </Line>
       </div>
     </SubPage>

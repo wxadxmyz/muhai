@@ -12,6 +12,8 @@ use tauri::tray::TrayIconBuilder;
 mod js_engine;
 // V3.6.0 drpy3 / drpy2 蜘蛛源引擎（影视仓生态的 JS 规则源）
 mod drpy3;
+// V3.6.8：本地流式媒体代理的运行时诊断（真机排障用，环形缓冲 + 累计计数）
+mod probe;
 
 // V3.3.1 #5：全局复用的 HTTP 客户端（连接池）。
 // 旧实现里 fetchsource / fetchimage 每次调用都 Client::builder().build() 新建一个客户端，
@@ -79,6 +81,10 @@ pub fn run() {
             fetchimage,
             fetchmedia,
             media_proxy_port,
+            // V3.6.8：媒体代理运行时诊断（真机排障，设置 → 开发者调试）
+            proxy_probe_snapshot,
+            proxy_probe_clear,
+            proxy_probe_set_recording,
             spiderrun,
             drpy3run,
             dlnascan,
@@ -634,20 +640,66 @@ fn should_forward_range(raw: &str) -> bool {
 }
 
 async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, Infallible> {
+    // V3.6.8：诊断信息从请求头里先取出来（req 后续会被 builder.send() 消费掉）。
+    // 注：hyper 1.x 的 service_fn 拿不到 TCP peer 地址（需要自定义 MakeService 注入），
+    // 而「WebView 有没有连上代理」已由 probe 的累计计数 TOTAL 回答，故此处不再尝试取 client IP。
+    let probe_method = req.method().to_string();
+
     // url 只来自 query（App 自己拼），避免外部注入任意目标
     let q = req.uri().query().unwrap_or("");
     let params: std::collections::HashMap<String, String> =
         url::form_urlencoded::parse(q.as_bytes()).into_owned().collect();
     let target = match params.get("url") {
         Some(u) if !u.is_empty() => u.clone(),
-        _ => return Ok(Response::builder().status(400).body(empty_proxy_body()).unwrap()),
+        _ => {
+            probe::record(probe::ProxyEvent {
+                seq: 0,
+                ts: 0,
+                url: String::new(),
+                method: probe_method.clone(),
+                client: String::new(),
+                status: 400,
+                range: String::new(),
+                fwd_range: String::new(),
+                body_len: 0,
+                m3u8: false,
+                note: "缺少 url 参数".into(),
+            });
+            return Ok(Response::builder().status(400).body(empty_proxy_body()).unwrap());
+        }
     };
     if !(target.starts_with("http://") || target.starts_with("https://")) {
+        probe::record(probe::ProxyEvent {
+            seq: 0,
+            ts: 0,
+            url: probe::truncate_url(&target),
+            method: probe_method.clone(),
+            client: String::new(),
+            status: 400,
+            range: String::new(),
+            fwd_range: String::new(),
+            body_len: 0,
+            m3u8: false,
+            note: "目标非 http(s)".into(),
+        });
         return Ok(Response::builder().status(400).body(empty_proxy_body()).unwrap());
     }
 
     // 预检：放开跨域（部分 WebView / Safari 会先发 OPTIONS）
     if req.method() == Method::OPTIONS {
+        probe::record(probe::ProxyEvent {
+            seq: 0,
+            ts: 0,
+            url: probe::truncate_url(&target),
+            method: "OPTIONS".into(),
+            client: String::new(),
+            status: 204,
+            range: String::new(),
+            fwd_range: String::new(),
+            body_len: 0,
+            m3u8: false,
+            note: "CORS 预检".into(),
+        });
         return Ok(Response::builder()
             .status(204)
             .header("Access-Control-Allow-Origin", "*")
@@ -662,18 +714,33 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
     //   hls.js 对每个 HLS 分片会先发 `Range: bytes=0-0` 探测可寻址性；原样透传后上游
     //   只回 1 字节，hls.js 拿这 1 字节去解 TS → fragParsingError → 反复重试 → 用户看到
     //   「一直转圈」。V3.6.4 走 invoke('fetchmedia') 不带 Range，所以没这个问题。
+    //
+    // V3.6.8 诊断：同时记录「原始 Range」与「实际转发 Range」。若真机上看到
+    //   range=bytes=0-0 而 fwd_range 为空，说明归一化生效（这是预期）；若 range 为空
+    //   而 body_len 仍为 1，那才是真的上游/端侧问题——两类症状必须能区分开。
     let mut builder = http_client().get(&target);
+    let req_range = req
+        .headers()
+        .get(hyper::header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let mut fwd_range = String::new();
     if let Some(rg) = req.headers().get(hyper::header::RANGE).cloned() {
         let rg_str = rg.to_str().unwrap_or("");
         if should_forward_range(rg_str) {
+            fwd_range = rg_str.to_string();
             builder = builder.header(hyper::header::RANGE, rg);
         } else {
+            probe::note_range_dropped();
             eprintln!("media proxy: 丢弃探测 Range {rg_str:?}，改取完整资源");
         }
     } else if let Some(rg) = params.get("range") {
         if !rg.is_empty() && should_forward_range(rg) {
+            fwd_range = rg.clone();
             builder = builder.header(hyper::header::RANGE, rg.clone());
         } else if !rg.is_empty() {
+            probe::note_range_dropped();
             eprintln!("media proxy: 丢弃探测 query range {rg}，改取完整资源");
         }
     }
@@ -691,9 +758,25 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
     }
     builder = builder.header("Accept", "*/*");
 
+    // 诊断事件模板：上面已解析完所需字段，这里只等 status / body_len 补齐后落盘。
+    let mk_event = |status: u16, body_len: i64, m3u8: bool, note: String| probe::ProxyEvent {
+        seq: 0,
+        ts: 0,
+        url: probe::truncate_url(&target),
+        method: probe_method.clone(),
+        client: String::new(),
+        status,
+        range: req_range.clone(),
+        fwd_range: fwd_range.clone(),
+        body_len,
+        m3u8,
+        note,
+    };
+
     let resp = match builder.timeout(std::time::Duration::from_secs(300)).send().await {
         Ok(r) => r,
         Err(e) => {
+            probe::record(mk_event(502, 0, false, format!("上游请求失败：{e}")));
             return Ok(Response::builder()
                 .status(502)
                 .header("Access-Control-Allow-Origin", "*")
@@ -729,6 +812,14 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
             Ok(text) => {
                 let rewritten = rewrite_m3u8_paths(&text, &final_url);
                 let body_bytes = Bytes::from(rewritten);
+                // V3.6.8 诊断：记下重写后的清单大小。若清单是 0 字节或只有几十字节，
+                // 说明上游返回了空/占位清单（防盗链/签名过期），而不是播放器的锅。
+                probe::record(mk_event(
+                    status.as_u16(),
+                    body_bytes.len() as i64,
+                    true,
+                    format!("m3u8 重写 {}({} 字节)", final_url, body_bytes.len()),
+                ));
                 let mut rb = Response::builder().status(status);
                 // 不沿用上游 content-length（文本长度已变，用错会截断/挂起）
                 rb = rb
@@ -744,6 +835,7 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
             Err(e) => {
                 // 读取失败：无法回退到流式（resp 已被 text() 消费），如实返回 502 供前端提示
                 eprintln!("m3u8 rewrite: read body failed: {e}");
+                probe::record(mk_event(502, 0, true, format!("m3u8 读取失败：{e}")));
                 return Ok(Response::builder()
                     .status(502)
                     .header("Access-Control-Allow-Origin", "*")
@@ -761,6 +853,25 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
             .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() })
     });
     let body: ProxyBody = BodyExt::boxed(StreamBody::new(framed));
+
+    // V3.6.8 诊断：分片流式转发。content-length 是上游声明的完整大小（206 时为分片长度），
+    // 记成负数表示「流式、长度以响应头为准」，与 m3u8 的正数长度区分开。
+    let stream_len = upstream
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok())
+        .map(|n| -n)
+        .unwrap_or(-1);
+    probe::record(mk_event(
+        status.as_u16(),
+        stream_len,
+        false,
+        if stream_len < -1 {
+            format!("分片流式转发（声明 {} 字节）", -stream_len)
+        } else {
+            "分片流式转发（无 content-length）".into()
+        },
+    ));
 
     let mut rb = Response::builder().status(status);
     // 透传关键响应头，保证 Range / 长度 / 类型正确（缺了 hls.js 会解析失败）
@@ -784,6 +895,34 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
         .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
         .header("Access-Control-Allow-Headers", "*");
     Ok(rb.body(body).unwrap())
+}
+
+// ─────────────────────────────────────────────────────────────
+// V3.6.8：媒体代理运行时诊断命令
+// ─────────────────────────────────────────────────────────────
+// 真机排障用。三个命令都极轻量：snapshot 只拷最近 N 条 + 读几个原子计数，
+// clear / set_recording 是 O(1)。前端「设置 → 开发者调试」调用它们，
+// 把结果拼成可复制的文本报告，用户截图或粘贴给开发者即可定位播放链路断点。
+
+/// 取最近 `limit` 条媒体代理事件（时间正序）+ 累计计数。
+/// 返回 JSON 字符串，字段见 [`probe::ProxyEvent`] / [`probe::Counters`]。
+#[tauri::command]
+fn proxy_probe_snapshot(limit: Option<usize>) -> String {
+    let n = limit.unwrap_or(200).min(probe::MAX_EVENTS);
+    let (events, counters) = probe::snapshot(n);
+    serde_json::json!({ "events": events, "counters": counters }).to_string()
+}
+
+/// 清空事件与计数器，便于「复现一次 → 抓一次」的干净对照。
+#[tauri::command]
+fn proxy_probe_clear() {
+    probe::clear();
+}
+
+/// 开关事件记录（计数器始终保留）。
+#[tauri::command]
+fn proxy_probe_set_recording(on: bool) {
+    probe::set_recording(on);
 }
 
 // 清除 WebView 全部浏览数据（HTTP 缓存 / 本地存储 / 应用缓存等）。

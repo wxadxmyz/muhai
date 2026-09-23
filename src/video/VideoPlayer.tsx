@@ -12,6 +12,7 @@ import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
+import { MediaProbeOverlay } from '../components/MediaProbe';
 import { toast } from '../lib/toast';
 import { useSources } from '../store';
 import { crossSourceCover, cachedCrossCover, tryCoverFallback } from '../lib/crossCover';
@@ -1435,6 +1436,15 @@ export function VideoPlayer({
               <div className="vp-hud-bar"><div style={{ width: hud.value + '%' }} /></div>
               <span className="vp-hud-val">{hud.value}%</span>
             </div>
+          )}
+
+          {/* ============ V3.6.8：媒体链路诊断浮层（默认关，设置 → 播放里开） ============ */}
+          {settings.showMediaProbe && (
+            <MediaProbeOverlay
+              playUrl={state.current?.playUrl ?? ''}
+              headers={state.current?.raw?.headers as Record<string, string> | undefined}
+              video={videoRef.current}
+            />
           )}
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}

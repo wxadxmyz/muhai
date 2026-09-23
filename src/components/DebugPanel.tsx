@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSyncExternalStore } from 'react';
 import { debugLog, DebugEntry } from '../lib/debug';
 import { getAllSpiderRaw } from '../engine/adapters/js';
+import { buildMediaReport, clearMediaProbe, markMedia } from '../lib/mediaProbe';
 
 function fmtTime(ts: number) {
   const d = new Date(ts);
@@ -17,6 +18,32 @@ export function DebugPanel() {
   const entries = useSyncExternalStore(debugLog.subscribe, debugLog.get);
   const [showPreview, setShowPreview] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [mediaCopied, setMediaCopied] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
+
+  // V3.6.8：复制「媒体链路诊断报告」。
+  // 与上面的引擎日志互补——引擎日志只看得到搜索/详情，播放器的问题出在 Rust 侧代理，
+  // 这份报告把「前端观察到的事件 + 代理侧的真实请求记录 + 累计计数」合在一起。
+  const copyMediaReport = async () => {
+    setMediaBusy(true);
+    try {
+      const text = await buildMediaReport();
+      try {
+        await navigator.clipboard.writeText(text);
+        setMediaCopied(true);
+        setTimeout(() => setMediaCopied(false), 1500);
+      } catch {
+        alert(text); // 剪贴板不可用（部分 WebView）→ 弹窗展示，用户长按复制
+      }
+    } finally {
+      setMediaBusy(false);
+    }
+  };
+
+  const clearMedia = async () => {
+    await clearMediaProbe();
+    markMedia('info', '已清空', '媒体链路记录已清空，复现一次后再复制报告');
+  };
 
   // 一键复制 spider 报错日志（绕开 ADB/鸿蒙无法直接 logcat 的限制）
   const copySpiderLog = async () => {
@@ -58,6 +85,23 @@ export function DebugPanel() {
         <button className="btn sm" onClick={copySpiderLog}>{copied ? '已复制' : '复制报错日志'}</button>
         <button className="btn sm" onClick={() => setShowPreview((v) => !v)}>{showPreview ? '隐藏响应' : '显示响应'}</button>
         <button className="btn sm" onClick={() => debugLog.clear()}>清空</button>
+      </div>
+
+      {/* V3.6.8：播放链路诊断。播放器转圈/解码错误时点这里，把整份报告复制给开发者。 */}
+      <div className="set-line" style={{ padding: '10px 0 4px', borderBottom: 'none' }}>
+        <div>
+          <div className="lbl">播放链路诊断</div>
+          <div className="desc">
+            点「复制诊断报告」，把「前端事件 + 本地代理真实请求记录 + 累计计数」一起复制出来。
+            排查播放转圈 / 解码错误必用（先点「清空」，复现一次，再复制）。
+          </div>
+        </div>
+      </div>
+      <div className="debug-tools">
+        <button className="btn sm" disabled={mediaBusy} onClick={copyMediaReport}>
+          {mediaBusy ? '生成中…' : mediaCopied ? '已复制' : '复制诊断报告'}
+        </button>
+        <button className="btn sm" onClick={clearMedia}>清空链路记录</button>
       </div>
 
       <div className="set-list debug-list">

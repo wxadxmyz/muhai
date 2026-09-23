@@ -30,6 +30,13 @@ export interface AppSettings {
   pipEnabled: boolean; // 画中画（后台播放）开关（v3.2.1⑪）
   // ⑬ 首页国产过滤黑名单：标题含这些词的影视视为「非国产内地」予以屏蔽（可在设置里增删）
   blocklist: string[];
+  // V3.6.8：播放链路（走本地流式代理）开关。默认 true。
+  // 关闭后媒体请求不再经 127.0.0.1 代理，改回 V3.6.4 的 invoke('fetchmedia') 全量过桥。
+  // 保留此开关有两个用途：① 真机上若代理链路在部分 ROM/WebView 上不通，用户可一键自救；
+  // ② 排查「同一部剧两种链路表现不同」时做 A/B 对照，不必重装 APK。
+  useMediaProxy: boolean;
+  // V3.6.8：播放器左下角显示媒体链路诊断浮层（中文）。默认 false，日常不干扰画面。
+  showMediaProbe: boolean;
 }
 
 const KEY = 'mps_settings';
@@ -68,6 +75,8 @@ const DEFAULTS: AppSettings = {
   videoScale: 'contain',
   pipEnabled: true,
   blocklist: [...DEFAULT_BLOCKLIST],
+  useMediaProxy: true,
+  showMediaProbe: false,
 };
 
 /* ⑭ 全局单例 store（关键修复）

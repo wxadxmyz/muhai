@@ -2720,3 +2720,39 @@ button.primary.block.add-source-btn svg { flex: 0 0 auto; margin: 0 !important; 
   .loading-ripple span { animation: none; opacity: .35; transform: scale(1); }
   .loading-ripple .core { animation: none; }
 }
+
+/* ===== V3.6.8：播放器媒体链路诊断浮层 =====
+   真机排障专用（设置 → 播放 → 显示媒体链路诊断）。
+   定位在画面左下角、等宽小字、半透明黑底，确保：
+   ① 不遮挡播放控制条与中央按钮；② 截图后文字仍清晰可读。 */
+.media-probe {
+  position: absolute; left: 8px; bottom: 8px; z-index: 21;
+  max-width: min(78%, 560px); max-height: 62%;
+  overflow: hidden; display: flex; flex-direction: column;
+  padding: 7px 9px; border-radius: 8px;
+  background: rgba(0, 0, 0, .74); backdrop-filter: blur(3px);
+  color: #eaeaea;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px; line-height: 1.45;
+  pointer-events: none; /* 不吃手势：播放器的手势操作必须照常可用 */
+}
+.media-probe .mp-head {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 11px; font-weight: 700; color: #fff; margin-bottom: 4px;
+}
+.media-probe .mp-hint { font-weight: 400; font-size: 10px; color: #ffcf5c; }
+.media-probe .mp-line { margin-bottom: 1px; }
+.media-probe .mp-line b { color: #9fb4d8; font-weight: 600; margin-right: 3px; }
+/* 允许长内容换行（URL / Referer / 错误详情），不省略——省略掉就白截了 */
+.media-probe .mp-break { word-break: break-all; }
+.media-probe .mp-list {
+  margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, .18);
+  overflow: hidden; display: flex; flex-direction: column; gap: 1px;
+}
+.media-probe .mp-ev { display: flex; gap: 5px; }
+.media-probe .mp-ts { color: #8899aa; flex: none; }
+.media-probe .mp-tag { flex: none; font-weight: 600; }
+.media-probe .mp-txt { color: #d8d8d8; word-break: break-all; }
+.media-probe .mp-empty { color: #8899aa; }
+/* 横屏时画面更宽，允许浮层更宽一点，并避开底部控制条 */
+.player-root.landscape .media-probe { max-width: min(62%, 720px); bottom: 62px; }

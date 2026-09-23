@@ -147,10 +147,25 @@ export async function drpy3Call(key, method, argsJson) {
     }
     try {
         const out = await src[method](...args);
-        return JSON.stringify(out === undefined ? null : out);
+        return safeStringify(out === undefined ? null : out);
     } catch (e) {
         const detail = e && typeof e.toJSON === 'function' ? e.toJSON() : {stage: method, error: String((e && e.message) || e)};
-        return JSON.stringify({__drpy3_error: detail});
+        return safeStringify({__drpy3_error: detail});
+    }
+}
+
+/** V3.6.7 修复③：安全序列化。
+ *  引擎原实现对返回值直接 JSON.stringify，一旦结果含循环引用（cheerio DOM 节点自带
+ *  parent/next/prev 指针等），就抛 "Converting circular structure to JSON5"，
+ *  导致 search/detail 整条链路失败（表现：drpy 源搜不到影视）。
+ *  这里做「剪环 + 剔除运行时内部字段」的降级序列化，保证拿到可用数据。 */
+function safeStringify(v) {
+    const helper = globalThis.__mhSafeStringify;
+    if (typeof helper === 'function') return helper(v);
+    try {
+        return JSON.stringify(v);
+    } catch {
+        return JSON.stringify({__drpy3_error: {stage: 'serialize', error: 'Converting circular structure to JSON'}});
     }
 }
 

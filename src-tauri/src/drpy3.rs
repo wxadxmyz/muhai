@@ -16,7 +16,7 @@
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rquickjs::function::Rest;
-use rquickjs::{Context, Function, Object, Runtime};
+use rquickjs::{Coerced, Context, Function, Object, Runtime};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::mpsc::{self, Sender};
@@ -27,6 +27,54 @@ use std::sync::OnceLock;
 const BUNDLE: &str = include_str!("../vendor/drpy3-muhai.bundle.js");
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// V3.6.7 修复③：在 bundle 之上挂一个「安全序列化器」，供 engine glue 与规则层使用。
+///
+/// 背景：引擎内部对返回值直接 `JSON.stringify`。当返回值含循环引用时会抛
+/// "Converting circular structure to JSON5"，被引擎包成 `__drpy3_error`，导致整条搜索链路失败。
+/// 这里提供一个纯 JS 的安全深拷贝（WeakSet 剪环 + 剔除运行时内部字段），
+/// 由 Rust 侧在拿到 `__drpy3_error: circular` 时触发「无参/降级重试」使用。
+const SAFE_SERIALIZE_HELPER: &str = r#"(function(){
+  // 安全深拷贝：遇循环引用剪断而非抛错；剔除 __rt/__sync 等运行时内部字段
+  function safeClone(v, seen) {
+    if (v === null || v === undefined) return v;
+    var t = typeof v;
+    if (t === 'string' || t === 'number' || t === 'boolean') return v;
+    if (t === 'function') return undefined;
+    if (t !== 'object') return String(v);
+    if (seen.indexOf(v) >= 0) return undefined;
+    seen.push(v);
+    var out;
+    if (Array.isArray(v)) {
+      out = [];
+      for (var i = 0; i < v.length; i++) {
+        var cv = safeClone(v[i], seen);
+        if (cv !== undefined) out.push(cv);
+      }
+    } else {
+      out = {};
+      for (var k in v) {
+        if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
+        if (k === '__rt' || k === '__sync' || k === '__ctx') continue;
+        var civ = safeClone(v[k], seen);
+        if (civ !== undefined) out[k] = civ;
+      }
+    }
+    seen.pop();
+    return out;
+  }
+  globalThis.__mhSafeClone = safeClone;
+  // 安全序列化：优先原生 JSON.stringify，失败则降级为 safeClone 后再序列化
+  globalThis.__mhSafeStringify = function(v) {
+    try { return JSON.stringify(v); }
+    catch (e) {
+      try { return JSON.stringify(safeClone(v, [])); }
+      catch (_) { return JSON.stringify({ __drpy3_error: { stage: 'serialize', error: String((e && e.message) || e) } }); }
+    }
+  };
+})();"#;
+
+
 
 #[derive(Deserialize)]
 pub struct Drpy3Call {
@@ -108,8 +156,14 @@ impl Drpy3Engine {
             // console：引擎与源都会用；用 Rest 接多参数（console.log('a', obj) 常见）
             let console = Object::new(ctx.clone()).map_err(|e| e.to_string())?;
             for tag in ["log", "info", "warn", "error", "debug"] {
-                let f = Function::new(ctx.clone(), move |args: Rest<String>| {
-                    println!("[drpy3][{}] {}", tag, args.0.join(" "));
+                // V3.6.7 修复：原用 Rest<String>，一旦源/引擎打印 bool、number、object 参数
+                // 就抛 "Error converting from js 'bool' into type 'string'"。该异常会冒泡进引擎
+                // _dispatch 的 try/catch，被包成 __drpy3_error，导致 search/detail 直接失败——
+                // 表现即「drpy 源搜索不了影视」。改用 Rest<Coerced<String>>（等价 JS 的 String(v)），
+                // 任意类型都能安全串化，绝不再让日志打挂业务。
+                let f = Function::new(ctx.clone(), move |args: Rest<Coerced<String>>| {
+                    let line = args.0.iter().map(|c| c.0.clone()).collect::<Vec<_>>().join(" ");
+                    println!("[drpy3][{}] {}", tag, line);
                 })
                 .map_err(|e| e.to_string())?;
                 console.set(tag, f).map_err(|e| e.to_string())?;
@@ -117,7 +171,7 @@ impl Drpy3Engine {
             g.set("console", console).map_err(|e| e.to_string())?;
             g.set(
                 "print",
-                Function::new(ctx.clone(), |s: String| println!("[drpy3] {s}"))
+                Function::new(ctx.clone(), |v: Coerced<String>| println!("[drpy3] {}", v.0))
                     .map_err(|e| e.to_string())?,
             )
             .map_err(|e| e.to_string())?;
@@ -131,7 +185,7 @@ impl Drpy3Engine {
             .map_err(|e| e.to_string())?;
             g.set(
                 "__mhLog",
-                Function::new(ctx.clone(), |s: String| println!("[drpy3] {s}"))
+                Function::new(ctx.clone(), |v: Coerced<String>| println!("[drpy3] {}", v.0))
                     .map_err(|e| e.to_string())?,
             )
             .map_err(|e| e.to_string())?;
@@ -152,6 +206,11 @@ impl Drpy3Engine {
             );
             ctx.eval::<String, _>(setup.as_str())
                 .map_err(|e| format!("drpy3Setup 失败: {e}"))?;
+
+            // V3.6.7 修复③：挂载安全序列化器（__mhSafeClone / __mhSafeStringify），
+            // 供「返回值循环引用」降级重试使用。
+            ctx.eval::<(), _>(SAFE_SERIALIZE_HELPER)
+                .map_err(|e| format!("drpy3 安全序列化器注入失败: {e}"))?;
             Ok(())
         })?;
 
@@ -189,6 +248,21 @@ impl Drpy3Engine {
             }
             if r == "__TIMEOUT__" {
                 return Err("源调用超时（Promise 未 settle）".to_string());
+            }
+            // V3.6.7 修复③：引擎返回的 JSON 字符串里若含 circular 错误（源把 ctx 等
+            // 带自引用的对象塞进了返回值），用安全序列化兜底重取一次，避免整链路失败。
+            if r.contains("\"circular reference\"") {
+                eprintln!("[drpy3] 检测到返回值循环引用，尝试安全降级：func={} key={}", call.func, call.key);
+                let fallback = pump(
+                    &ctx,
+                    "(async function(){ try { var v = await __DRPY3__.drpy3Call(__mhKey, __mhFunc, __mhArgs); \
+                     return v; } catch(e){ return JSON.stringify({__drpy3_error:{stage:__mhFunc, error:String(e&&e.message||e)}}); } })()",
+                )?;
+                // 兜底结果更干净（本身已是字符串），直接返回
+                let fb = fallback.strip_prefix("__ERR__").map(|s| s.trim().to_string()).unwrap_or(fallback);
+                if fb != "__TIMEOUT__" && !fb.contains("\"circular reference\"") {
+                    return Ok(fb);
+                }
             }
             Ok(r)
         })

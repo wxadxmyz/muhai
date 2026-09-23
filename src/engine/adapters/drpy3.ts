@@ -193,6 +193,42 @@ export function createDrpy3Source(
     inited = true;
   }
 
+  /**
+   * V3.6.7 修复④：单集片播放地址兜底。
+   *
+   * 场景：电影 / 动漫剧场版等单片，源在 detail 阶段往往**不返回 vod_play_url**
+   * （地址要到 play 阶段才现算）。旧实现据此返回空 episodes，前端 openDetail 又只认
+   * episodes（列表项同样无地址），于是「能搜到、点进去没集数」。
+   *
+   * 做法：detail 无地址时，用 vod_id 直接调一次 play 取真地址，返回可播放的单集。
+   * 注意与 getPlayUrl 的区别——这里只负责「拿到地址 + 构造 1 集」，不做 jx 二次解析
+   * （那一步在真正播放时由 getPlayUrl 统一处理，避免详情阶段多耗一次网络往返）。
+   */
+  async function fetchSinglePlayable(vodId: string, raw: any): Promise<EpisodeWithFlag | null> {
+    if (!vodId) return null;
+    // 线路 flag：优先源在 detail/列表里给的 vod_play_from（如 lzm3u8）；
+    // 部分源不给 from，此时留空由源自行决定（drpy 引擎的 play 对空 flag 也能处理）。
+    const fromStr = String(raw?.vod_play_from ?? '');
+    const flag = fromStr.split('$$$')[0] ?? '';
+    try {
+      const r = await call('play', [flag, vodId, []]);
+      if (r && r.__drpy3_error) return null;
+      let url = '';
+      if (typeof r === 'string') url = r;
+      else if (r && typeof r === 'object') {
+        if (typeof r.url === 'string' && r.url) url = r.url;
+        else if (Array.isArray(r.urls) && typeof r.urls[1] === 'string') url = r.urls[1];
+      }
+      // 必须是可播放地址才认（排除中间页/空值；jx 类型保留 url，由 getPlayUrl 再解析）
+      if (!url || !/^https?:\/\//i.test(url)) return null;
+      // 单片命名：剧场版/电影统一显示「正片」；若源给了集名则尊重源
+      const name = String(raw?.vod_remarks ?? '').trim() || '正片';
+      return { name, url, flag };
+    } catch {
+      return null;
+    }
+  }
+
   return {
     async search(keyword: string, page?: number): Promise<MediaItem[]> {
       await ensureInit();
@@ -239,6 +275,21 @@ export function createDrpy3Source(
         for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
         rememberFirstEp(cfg.id, itemId, eps); // #4：记住首集，播放时无需再拉详情
         it.episodes = eps.map((e) => ({ name: e.name, url: e.url }));
+      }
+      // V3.6.7 修复④：电影 / 动漫剧场版等「单集片」在 detail 阶段常常不给 vod_play_url
+      // （地址要到 play 阶段才现算）。旧实现在这里直接返回空 episodes，前端 openDetail 又
+      // 只信 episodes（列表项同样没有地址），于是「能搜到、点进去没集数」。
+      // 这里补一条兜底：detail 无播放地址时，直接用 vod_id 调一次 play 取真地址，
+      // 构造出「1 集」结构，让播放器能正常起播与显示。
+      if (it && (it.episodes?.length ?? 0) === 0) {
+        const fallback = await fetchSinglePlayable(itemId, it.raw);
+        if (fallback) {
+          it.episodes = [{ name: fallback.name, url: fallback.url }];
+          rememberFlag(cfg.id, fallback.url, fallback.flag);
+          rememberFirstEp(cfg.id, itemId, [fallback]);
+          // 同步写回 raw，供 lineGroups 消费方（VideoApp.playEpisode）读取
+          it.raw = { ...(it.raw ?? {}), vod_play_url: `${fallback.name}$${fallback.url}`, vod_play_from: fallback.flag };
+        }
       }
       return (
         it ?? {

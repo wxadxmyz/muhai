@@ -152,10 +152,13 @@ export async function aggregateSearch(
   await Promise.all(
     active.map(async (s, i) => {
       try {
+        // V3.7.0 A2：单源超时上限由 6s 提到 18s。注意这是「上限」不是「等待」——
+        // 快源（如 360≈2s）经 onPartial 秒出，慢源最多用到 18s，不会拖慢快源。
+        // 配合 A1（drpy 引擎并发）后，7 个串行 drpy 源总耗时 ≤ ~14s，全部能在此窗口内返回。
         // V3.6.5 源健康记忆：连续失败 ≥3 次的死源直接跳过；失败过的源给更短超时，
-        // 让死源不再拖满整次搜索。首次/健康的源用默认 6s 超时。
+        // 让死源不再拖满整次搜索。首次/健康的源用默认 18s 超时。
         const fails = getSourceFailCount(s.id);
-        let perTimeout = opts.timeout ?? 6000;
+        let perTimeout = opts.timeout ?? 18000;
         if (fails >= 3) {
           return; // 跳过死源（settled 由下面的 finally 统一累加，避免重复计数）
         } else if (fails > 0) {
@@ -170,7 +173,12 @@ export async function aggregateSearch(
         markSourceOk(s.id); // 成功 → 重置连续失败计数
         emit(); // 这个源一回来就先把它的结果显示出去
       } catch (e: any) {
-        markSourceFail(s.id); // 失败 → 连续失败计数 +1
+        // V3.7.0 A3：区分「超时」与「真死」。withTimeout 抛 Error('timeout') 表示源只是慢/
+        // 被引擎串行排队饿死，不应累计成死源——否则快源修好后，慢源会被永久跳过（旧实现
+        // 把超时与 404/域名失败一视同仁 +1，≥3 次即死，正是「搜几次后源越来越少」的根因）。
+        // 只有网络错误/404/域名失联等「真死」才计入连续失败。
+        const isTimeout = e?.message === 'timeout';
+        if (!isTimeout) markSourceFail(s.id);
         errors.push({ sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' });
       } finally {
         settled += 1;

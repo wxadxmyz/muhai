@@ -19,6 +19,7 @@ use rquickjs::function::Rest;
 use rquickjs::{Coerced, Context, Function, Object, Runtime};
 use serde::Deserialize;
 use serde_json::Value;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::OnceLock;
 
@@ -94,40 +95,57 @@ struct Job {
     tx: mpsc::Sender<Result<String, String>>,
 }
 
-static WORKER: OnceLock<Sender<Job>> = OnceLock::new();
+// V3.7.0 A1：并发 worker 池。QuickJS 的 Runtime/Context 不是 Send/Sync，不能跨线程共享，
+// 故每个 worker 线程独占一个 Drpy3Engine（独立 Runtime+Context）。前端 7 个 drpy 源的
+// search/detail/play 全部投递到这个池，由 round-robin 分发，彻底消除旧「单 worker 串行」
+// 导致的排队饿死（这正是「只有 360 能搜出、其余超时」的根因）。源按 key 在各自线程的
+// context 内缓存，跨线程重复装载代价极低。
+static POOL: OnceLock<Vec<Sender<Job>>> = OnceLock::new();
+static DISPATCH: OnceLock<AtomicUsize> = OnceLock::new();
 
-fn worker() -> &'static Sender<Job> {
-    WORKER.get_or_init(|| {
-        let (tx, rx) = mpsc::channel::<Job>();
-        std::thread::Builder::new()
-            .name("drpy3-engine".into())
-            // QuickJS + cheerio 解析深层 HTML 递归较深，主线程栈不够用，这里给足 16MB
-            .stack_size(16 * 1024 * 1024)
-            .spawn(move || {
-                let mut engine = match Drpy3Engine::boot() {
-                    Ok(e) => e,
-                    Err(e) => {
-                        eprintln!("[drpy3] 引擎启动失败: {e}");
-                        // 引擎起不来也要把 job 消费掉，否则前端请求会永久挂住
-                        while let Ok(j) = rx.recv() {
-                            let _ = j.tx.send(Err(format!("drpy3 引擎启动失败：{e}")));
+// 并发度：每 worker 独立 QuickJS Runtime（内存上限 384MB 为 CAP，非预分配，实测常驻很低）。
+// 移动端取 4 即可让 7 个 drpy 源近似并发；如需更激进可调大，但注意内存水位。
+const POOL_SIZE: usize = 4;
+
+fn pool() -> &'static Vec<Sender<Job>> {
+    POOL.get_or_init(|| {
+        let mut v = Vec::with_capacity(POOL_SIZE);
+        for i in 0..POOL_SIZE {
+            let (tx, rx) = mpsc::channel::<Job>();
+            std::thread::Builder::new()
+                .name(format!("drpy3-engine-{i}"))
+                // QuickJS + cheerio 解析深层 HTML 递归较深，主线程栈不够用，这里给足 16MB
+                .stack_size(16 * 1024 * 1024)
+                .spawn(move || {
+                    let mut engine = match Drpy3Engine::boot() {
+                        Ok(e) => e,
+                        Err(e) => {
+                            eprintln!("[drpy3] 引擎#{i} 启动失败: {e}");
+                            // 引擎起不来也要把 job 消费掉，否则前端请求会永久挂住
+                            while let Ok(j) = rx.recv() {
+                                let _ = j.tx.send(Err(format!("drpy3 引擎启动失败：{e}")));
+                            }
+                            return;
                         }
-                        return;
+                    };
+                    for j in rx {
+                        let r = engine.run(&j.call);
+                        let _ = j.tx.send(r);
                     }
-                };
-                for j in rx {
-                    let r = engine.run(&j.call);
-                    let _ = j.tx.send(r);
-                }
-            })
-            .expect("启动 drpy3 引擎线程失败");
-        tx
+                })
+                .expect("启动 drpy3 引擎线程失败");
+            v.push(tx);
+        }
+        v
     })
 }
 
 /// 前端/上层调用入口（同步阻塞；由 lib.rs 的 drpy3run 命令包在 spawn_blocking 里）
 pub fn drpy3run(payload: Drpy3Call) -> Result<String, String> {
-    let tx = worker();
+    let pool = pool();
+    let counter = DISPATCH.get_or_init(|| AtomicUsize::new(0));
+    let idx = counter.fetch_add(1, Ordering::Relaxed) % pool.len();
+    let tx = &pool[idx];
     let (rtx, rrx) = mpsc::channel();
     tx.send(Job { call: payload, tx: rtx })
         .map_err(|_| "drpy3 引擎线程已退出".to_string())?;

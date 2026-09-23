@@ -23,6 +23,45 @@ async function resolveViaProxy(
   }
 }
 
+// V3.7.0 B1：播放地址可播性校验——彻底杜绝「规则 play() 返回网页 HTML 被 hls.js 当 m3u8
+// 解析 → manifestParsingError → 永久转圈」。典型场景：360kan 等聚合索引源把播放地址指向
+// bilibili/爱奇艺/芒果 等外站播放页，这些站根本不提供 m3u8 直链，规则层也提取不出真直链。
+// 判定优先级：① 已知「只返回播放页、不直供媒体」的视频平台域名 → 直接报错（零网络开销）；
+//            ② 媒体扩展名（.m3u8/.mp4…）→ 信任，交给 hls.js；
+//            ③ 其余 http(s) → 经本地代理做 1 字节探测读 Content-Type，命中 HTML 即报错。
+// 返回非空字符串 = 明确的不可播原因（调用方应 throw，而非让它转圈）；返回 null = 放行。
+const WEB_PLAYER_HOSTS = [
+  'bilibili.com', 'bilibili.cn', 'iqiyi.com', 'iqiyi.cn', 'mgtv.com',
+  'v.qq.com', 'youku.com', 'v.youku.com', 'le.com', 'letv.com',
+  'sohu.com', 'tudou.com', 'acfun.cn',
+];
+const MEDIA_EXT_RE = /\.(m3u8|m3u|mp4|ts|flv|webm|mov|m4v|m4a)(\?|#|$)/i;
+
+async function guardPlayable(
+  url: string,
+  headers?: Record<string, string>
+): Promise<string | null> {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (WEB_PLAYER_HOSTS.some((h) => host === h || host.endsWith('.' + h))) {
+      return '该播放地址是视频平台网页，源不提供可直链播放的视频（360kan 等聚合索引站无 m3u8 直链，请换用可直链源）';
+    }
+    if (MEDIA_EXT_RE.test(url)) return null; // 有媒体扩展名 → 信任，交给 hls.js
+    // 其余：经本地代理轻量探测 Content-Type（Range 只取 1 字节，避免拉整段 mp4）
+    if (isTauri()) {
+      const proxied = buildProxyUrl(url, headers ?? null);
+      const res = await fetch(proxied, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.includes('text/html') || ct.includes('application/xhtml')) {
+        return '播放地址返回的是网页而非视频流（源未提供可直链 m3u8/mp4），无法播放';
+      }
+    }
+  } catch {
+    /* 探测失败不阻断播放，交由 hls.js 兜底报错 */
+  }
+  return null;
+}
+
 // V3.6.0 drpy3 / drpy2 规则源适配器
 //
 // 影视仓（TVBox）生态里真正好用的源大多是「蜘蛛源」：源本身是一段 JS 规则，
@@ -367,6 +406,12 @@ export function createDrpy3Source(
         } catch (e: any) {
           devLog(`[drpy3] jx/parse 解析失败，回退中间地址:`, e?.message ?? e);
         }
+      }
+      // V3.7.0 B1：最终地址可播性校验（见 guardPlayable）——网页/非媒体一律明确报错，
+      // 不再把 HTML 喂给 hls.js 导致永久转圈。
+      if (url && /^https?:\/\//i.test(url)) {
+        const guardErr = await guardPlayable(url, headers);
+        if (guardErr) throw new Error(guardErr);
       }
       return { url, headers };
     },

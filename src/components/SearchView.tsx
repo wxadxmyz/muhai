@@ -130,7 +130,7 @@ export function SearchView({
     }
     try {
       const r = await aggregateSearch(sources, query, {
-        timeout: 6000, // V3.6.5：单源超时 10s → 6s，死源更快让位
+        timeout: 18000, // V3.7.0 A2：单源超时 6s → 18s（上限非等待；快源经 onPartial 秒出）
         page: 1,
         mediaType,
         // V3.6.5：进度文案——已返回 N 个源 / 仍有 M 个搜索中
@@ -170,7 +170,7 @@ export function SearchView({
     setLoadingMore(true);
     try {
       const r = await aggregateSearch(sources, query, {
-        timeout: 6000,
+        timeout: 18000, // V3.7.0 A2：加载更多同样放宽到 18s
         page: next,
         mediaType,
         onPartial: () => {},

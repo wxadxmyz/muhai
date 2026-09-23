@@ -481,7 +481,20 @@ async fn serve_proxy(std_listener: StdTcpListener) {
                         .await;
                 });
             }
-            Err(_) => break,
+            // V3.6.7 修复：原来这里是 break —— 单次 accept 错误（客户端刚连上就断开、
+            // 连接数瞬时打满等）会让整个代理循环退出，而 PROXY_PORT 是 OnceLock 不会重置，
+            // 前端继续拿这个死端口请求 → 表现为「一直转圈」且无法自愈。
+            // 改为：短暂退避后继续循环。EMFILE（句柄耗尽）退避久一点，给系统回收时间。
+            Err(e) => {
+                let backoff = if e.raw_os_error() == Some(24) {
+                    // EMFILE: Too many open files
+                    std::time::Duration::from_millis(500)
+                } else {
+                    std::time::Duration::from_millis(50)
+                };
+                eprintln!("media proxy: accept 失败({e})，{backoff:?} 后继续");
+                tokio::time::sleep(backoff).await;
+            }
         }
     }
 }
@@ -584,6 +597,42 @@ fn rewrite_m3u8_paths(text: &str, base: &str) -> String {
     out
 }
 
+/// V3.6.7：Range 请求归一化判定。
+///
+/// hls.js 在请求 HLS 分片前会发 `Range: bytes=0-0` 探测可寻址性，部分 CDN 会如实返回
+/// 1 字节。该探测请求**不能**原样透传，否则 hls.js 拿到 1 字节 TS 直接解析失败。
+///
+/// 策略：
+///   · `bytes=N-`（开放区间）          → 透传（mp4 拖动 / 断点续传）
+///   · `bytes=N-M` 且 M-N+1 >= 1KB     → 透传（真实分片预取，hls.js 默认 64KB 起）
+///   · 其余（bytes=0-0、bytes=100-200、多区间、非法格式）→ 丢弃，让上游回完整资源
+fn should_forward_range(raw: &str) -> bool {
+    /// 小于该字节数的窗口视为「探测请求」。真实分片预取远大于 1KB，不会误伤。
+    const PREFETCH_MIN: u64 = 1024;
+
+    let Some(spec) = raw.trim().strip_prefix("bytes=") else {
+        return false;
+    };
+    // 多区间（bytes=0-1,5-6）一律不透传，规避上游 416 / 实现差异
+    if spec.contains(',') {
+        return false;
+    }
+    let Some((s, e)) = spec.split_once('-') else {
+        return false;
+    };
+    let Ok(start) = s.trim().parse::<u64>() else {
+        return false;
+    };
+    let end_str = e.trim();
+    if end_str.is_empty() {
+        return true; // bytes=N- 开放区间
+    }
+    let Ok(end) = end_str.parse::<u64>() else {
+        return false;
+    };
+    end >= start && end - start + 1 >= PREFETCH_MIN
+}
+
 async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, Infallible> {
     // url 只来自 query（App 自己拼），避免外部注入任意目标
     let q = req.uri().query().unwrap_or("");
@@ -609,12 +658,23 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
     }
 
     // V3.6.5：透传 Range（hls.js 分片预取 / mp4 拖动），并带上防盗链头
+    // V3.6.7 修复：Range 必须先归一化，否则 hls.js 的长度探测请求会把播放打死。
+    //   hls.js 对每个 HLS 分片会先发 `Range: bytes=0-0` 探测可寻址性；原样透传后上游
+    //   只回 1 字节，hls.js 拿这 1 字节去解 TS → fragParsingError → 反复重试 → 用户看到
+    //   「一直转圈」。V3.6.4 走 invoke('fetchmedia') 不带 Range，所以没这个问题。
     let mut builder = http_client().get(&target);
     if let Some(rg) = req.headers().get(hyper::header::RANGE).cloned() {
-        builder = builder.header(hyper::header::RANGE, rg);
+        let rg_str = rg.to_str().unwrap_or("");
+        if should_forward_range(rg_str) {
+            builder = builder.header(hyper::header::RANGE, rg);
+        } else {
+            eprintln!("media proxy: 丢弃探测 Range {rg_str:?}，改取完整资源");
+        }
     } else if let Some(rg) = params.get("range") {
-        if !rg.is_empty() {
+        if !rg.is_empty() && should_forward_range(rg) {
             builder = builder.header(hyper::header::RANGE, rg.clone());
+        } else if !rg.is_empty() {
+            eprintln!("media proxy: 丢弃探测 query range {rg}，改取完整资源");
         }
     }
     if let Some(r) = params.get("referer") {

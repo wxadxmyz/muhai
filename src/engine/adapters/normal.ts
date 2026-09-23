@@ -123,6 +123,17 @@ function toDetail(raw: any, cfg: SourceConfig): MediaItem {
 // 现在按线路分组：lineGroups = [[{name,url}...], [...]]（消费端 raw.lineGroups[line] 取第 line 条线路），
 // lineNames = ['liangzi','lzm3u8'] 供线路栏显示真实名称。
 // 直链线路（m3u8/mp4）排在前面：分享页线路要二次解析、起播慢，默认走直链。
+// V3.6.7 修复：旧实现只看 `eps[0]`（第一集）。LZ 这类源**两条线路都是 38 集**，
+// 首集一个是 share/xxx（分享页）、一个是 index.m3u8（直链），本该直链优先；但若某集
+// 顺序错位（首集恰好是分享页而次集是直链），只看 eps[0] 就会把分享页线路排到前面，
+// 用户每次点开都要多等一次分享页抓取、且分享页挂掉就整条线路不可用。
+// 改为「整条线路中直链占比」评分：占比高的排前面，平局时再看首集。
+function lineDirectScore(eps: { name: string; url: string }[]): number {
+  if (!eps.length) return 0;
+  const direct = eps.filter((e) => /\.(m3u8|mp4)(\?|$)/i.test(e.url)).length;
+  return direct / eps.length;
+}
+
 function toLineGroups(raw: any): { lineGroups: { name: string; url: string }[][]; lineNames: string[] } {
   const urlStr = String(raw?.vod_play_url || raw?.vod_url || raw?.play_url || '');
   const fromStr = String(raw?.vod_play_from || '');
@@ -133,6 +144,10 @@ function toLineGroups(raw: any): { lineGroups: { name: string; url: string }[][]
     .map((g, i) => ({ name: names[i] || `线路${i + 1}`, eps: parseEpisodes(g) }))
     .filter((g) => g.eps.length > 0);
   parsed.sort((a, b) => {
+    const sa = lineDirectScore(a.eps);
+    const sb = lineDirectScore(b.eps);
+    if (sa !== sb) return sb - sa; // 直链占比高的优先
+    // 占比相同：首条是直链的优先（保持旧行为，如「线路A 全直链 vs 线路B 全直链」时顺序稳定）
     const aDirect = /\.(m3u8|mp4)(\?|$)/i.test(a.eps[0]?.url ?? '') ? 0 : 1;
     const bDirect = /\.(m3u8|mp4)(\?|$)/i.test(b.eps[0]?.url ?? '') ? 0 : 1;
     return aDirect - bDirect;
@@ -166,16 +181,27 @@ export async function resolvePlayUrl(url: string): Promise<string> {
     if (!text) return url;
     const t = text.trimStart();
     if (t.startsWith('#EXTM3U')) return url; // 已经是 m3u8 文本
+    // V3.6.7：注意用 text（未 trim 的原串）匹配，避免 BOM / 前导空白影响 ^ 锚定类模板
     // 常见分享页变量名：main / url / m3u8 / play_url / video_url（支持 var / const / let）
+    // V3.6.7 补充：LZ 用 `var main=...`、非凡用 `const url=\"/path/index.m3u8?sign=...\"`，
+    //   两家都给**相对路径**（靠分享页自身 origin 拼接）。下面的 new URL(m[1], url) 已覆盖。
+    //   新增 `player` 配置对象内嵌写法（`"url":"..."` 出现在 JSON 里）。
     const m =
       text.match(/(?:var|const|let)\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
-      text.match(/(?:var|const|let)\s+(?:url|m3u8|play_url|video_url)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      text.match(/(?:var|const|let)\s+(?:url|m3u8|play_url|video_url|videoUrl|source)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
+      text.match(/["'](?:url|src|file|source)["']\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/src\s*[:=]\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       // V3.3.1 Q3：更宽的兜底——不管变量名叫什么，页面里只要出现引号包裹的 m3u8 路径就取它。
       // 各家分享页模板的赋值名千奇百怪（已见过 main / playurl / data-url / 直接写在
       // player 配置对象里），按名匹配漏一个就等于整条线路播不了。
       text.match(/["']([^"'\s]*\.m3u8[^"'\s]*)["']/i);
-    if (m) return new URL(m[1], url).href;
+    if (m) {
+      const abs = new URL(m[1].replace(/\\\//g, '/'), url).href;
+      // V3.6.7 校验：解析结果必须仍是 http(s)。个别分享页里有 m3u8 字样的静态资源
+      // （播放器 JS 路径、预加载提示图），命中会拿到 .js/.jpg 之类，直接交给播放器必失败。
+      if (/^https?:/i.test(abs)) return abs;
+      return url;
+    }
     return url; // 解析不出，原样返回给播放器去尝试
   } catch {
     return url;
@@ -226,19 +252,49 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
       const { lineGroups } = toLineGroups(v);
       const first = lineGroups[0]?.[0];
       if (!first?.url) return { url: '' };
-      const resolved = await resolvePlayUrl(first.url);
+
+      // V3.6.7：先看首线路首集是否本就是直链——是则直接用，不必多打一次分享页请求。
+      const isDirect = (u: string) => /\.(m3u8|mp4)(\?|$)/i.test(u);
+      let picked = first.url;
+      let resolved = first.url;
+      if (!isDirect(first.url)) {
+        resolved = await resolvePlayUrl(first.url);
+        // V3.6.7：主线路是分享页且解析失败时，**回退到后续线路的第一集**再试一次。
+        // 旧实现解析失败会把分享页 URL 原样交给播放器 → 播放器拿到 HTML → manifestParsingError
+        // → 用户只看到「加载失败/转圈」。LZ 这类源往往另有 lzm3u8 直链线路，白放着没用到。
+        // 只多试最多 2 条备选，避免重蹈「逐集轮询半小时」的覆辙；每条备选只试 1 集。
+        if (resolved === first.url && !isDirect(resolved)) {
+          for (let li = 1; li < Math.min(lineGroups.length, 3); li++) {
+            const cand = lineGroups[li]?.[0];
+            if (!cand?.url) continue;
+            if (isDirect(cand.url)) {
+              picked = cand.url;
+              resolved = cand.url;
+              break;
+            }
+            const r2 = await resolvePlayUrl(cand.url);
+            if (r2 !== cand.url && isDirect(r2)) {
+              picked = cand.url;
+              resolved = r2;
+              break;
+            }
+          }
+        } else if (resolved !== first.url) {
+          picked = first.url;
+        }
+      }
       // V3.6.6 A1（致命）：Referer 必须按「播放地址自身的 origin」推导，不能用 API 域名。
       // 例：API 是 hhzyapi.com，但真实播放域名是 play.hhuus.com / hn.bfvvs.com / v.gsuus.com。
       // 拿 API 域名当 Referer 与播放域名不同源 → 防盗链校验拒绝 → 永远取不到流 → 永久「加载中」。
       // 源地址（first.url）与解析后地址（resolved）同域时都指向播放站；解析后地址优先（更接近真实资源）。
       const referer = (() => {
         try {
-          return new URL(resolved || first.url).origin + '/';
+          return new URL(resolved || picked).origin + '/';
         } catch {
-          return endpoint + '/'; // 兜底：极少数 first.url 非绝对 URL
+          return endpoint + '/'; // 兜底：极少数首集地址非绝对 URL
         }
       })();
-      return { url: resolved || first.url, headers: { Referer: referer } };
+      return { url: resolved || picked, headers: { Referer: referer } };
     },
 
     async test() {

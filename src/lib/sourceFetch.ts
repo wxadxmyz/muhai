@@ -102,14 +102,31 @@ function toSourceList(data: any): any[] {
   return [data];
 }
 
+// V3.7.4 #4：导入抓取超时保护，避免失效源永久转圈（上游无响应时一直 pending）。
+function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(msg)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
 // 优先走 Rust 后端代理抓取；不在 Tauri 环境时回退前端 fetch。
 async function fetchText(url: string): Promise<string> {
   try {
     return await invoke<string>('fetchsource', { url });
   } catch {
-    const res = await fetch(url, { redirect: 'follow' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -213,7 +230,7 @@ export async function fetchFromUrl(input: string): Promise<FetchResult> {
   let url = input.trim();
   if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
   try {
-    const text = await fetchText(url);
+    const text = await withTimeout(fetchText(url), 18000, '抓取超时（源可能已失效或需特殊网络）');
     return parseFetched(text, url);
   } catch (e: any) {
     return {

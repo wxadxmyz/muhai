@@ -15,6 +15,20 @@ type SourceState =
 
 const ALL_KEY = '__all__';
 
+// V3.7.4 #2：搜索页选中子站的回看持久化。
+// 从播放页返回时 SearchView 会 remount，组件内 activeSource 回到默认值 ALL_KEY，
+// 故把「选中的子站 + 当前搜索词」暂存 sessionStorage，mount 时若搜索词一致则恢复。
+const MH_SRCKEY = 'mh_search_src_v2';
+function saveSrcPref(src: string, kw: string) {
+  try { sessionStorage.setItem(MH_SRCKEY, JSON.stringify({ src, kw })); } catch {}
+}
+function loadSrcPref(): { src: string; kw: string } | null {
+  try { return JSON.parse(sessionStorage.getItem(MH_SRCKEY) || 'null'); } catch { return null; }
+}
+function clearSrcPref() {
+  try { sessionStorage.removeItem(MH_SRCKEY); } catch {}
+}
+
 function parentIdOf(src: SourceConfig): string {
   return ((src as any).parentId as string) || src.id;
 }
@@ -47,7 +61,10 @@ export function SearchView({
   const [errors, setErrors] = useState<{ sourceId: string; sourceName: string; message: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
+  const [activeSource, setActiveSource] = useState<string>(() => {
+    const p = loadSrcPref();
+    return p && p.kw === (initialQuery ?? '') ? p.src : ALL_KEY;
+  });
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
   // V3.3.8 Bug 3/4：主源封面加载失败时，回退到豆瓣同名封面 / 其它源同名封面（按 key 局部回填）
   const [cross, setCross] = useState<Record<string, string>>({});
@@ -72,7 +89,7 @@ export function SearchView({
     () =>
       pushBackHandler(() => {
         if (activeSourceRef.current !== ALL_KEY) {
-          setActiveSource(ALL_KEY);
+          setActiveSource(ALL_KEY); clearSrcPref();
           return true; // 已逐级退一层（子站 → 全部）
         }
         return false; // 无内部层级：交还栈下一层
@@ -110,14 +127,14 @@ export function SearchView({
 
   const showHints = !searched;
 
-  const run = async (q?: string) => {
+  const run = async (q?: string, resetSrc = true) => {
     const query = (q ?? kw).trim();
     if (!query) return;
     const mySeq = ++searchSeqRef.current; // V3.3.4：本次搜索的代际序号
     setKw(query);
     setLoading(true);
     setSearched(true);
-    setActiveSource(ALL_KEY);
+    if (resetSrc) { setActiveSource(ALL_KEY); clearSrcPref(); }
     setPage(1); // V3.6.5：新搜索回到第 1 页
     setProgressText('跨源搜索中…');
     library.addSearch(query);
@@ -212,7 +229,7 @@ export function SearchView({
   }, [items]);
 
   useEffect(() => {
-    if (initialQuery && initialQuery.trim()) run(initialQuery);
+    if (initialQuery && initialQuery.trim()) run(initialQuery, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -305,7 +322,7 @@ export function SearchView({
           <aside className="search-sources" aria-label="视频源">
               <div
                 className={'search-source' + (activeSource === ALL_KEY ? ' active' : '')}
-                onClick={() => setActiveSource(ALL_KEY)}
+                onClick={() => { setActiveSource(ALL_KEY); saveSrcPref(ALL_KEY, kw); }}
                 role="button"
               >
                 <span className="search-source-name">全部</span>
@@ -330,7 +347,7 @@ export function SearchView({
                     (isActive ? ' active' : '') +
                     (isError ? ' error' : '')
                   }
-                  onClick={() => !isError && setActiveSource(src.id)}
+                  onClick={() => { if (!isError) { setActiveSource(src.id); saveSrcPref(src.id, kw); } }}
                   role="button"
                   title={isError ? '该源暂不可用，可换其它源' : src.name}
                 >
@@ -420,7 +437,7 @@ export function SearchView({
                 !loading && searched && (
                   <div className="empty">
                     {activeSource === ALL_KEY
-                      ? '没有找到结果，换个关键词或检查音源。'
+                      ? '没有找到结果，换个关键词或检查影视源。'
                       : '该源暂无相关内容。'}
                   </div>
                 )

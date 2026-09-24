@@ -409,8 +409,23 @@ export function createDrpy3Source(
       }
       // V3.7.0 B1：最终地址可播性校验（见 guardPlayable）——网页/非媒体一律明确报错，
       // 不再把 HTML 喂给 hls.js 导致永久转圈。
+      // V3.7.4 #1：guard 命中「网页/非媒体」时，先经本地代理跟随重定向解析一次真直链
+      // （覆盖金鹰类「分享页/中间地址」源——其 play() 偶发返回中间页被误杀，重试又成功）。
+      // 解析成功且不再是网页则放行，否则保持原错误抛出，不会引入新风险。
       if (url && /^https?:\/\//i.test(url)) {
-        const guardErr = await guardPlayable(url, headers);
+        let guardErr = await guardPlayable(url, headers);
+        if (guardErr) {
+          try {
+            await ensureProxyPort();
+            const real = await resolveViaProxy(url, headers);
+            if (real && real !== url) {
+              const re = await guardPlayable(real, headers);
+              if (!re) { url = real; guardErr = null; }
+            }
+          } catch {
+            /* 解析失败，保持原 guardErr 继续报错 */
+          }
+        }
         if (guardErr) throw new Error(guardErr);
       }
       return { url, headers };

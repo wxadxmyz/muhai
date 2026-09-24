@@ -3,6 +3,7 @@ import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { devLog } from '../../lib/log';
 import { ensureProxyPort, buildProxyUrl } from '../../lib/hlsPlayer';
 import { isTauri } from '../../lib/tauriBridge';
+import { isNetdiskShare, resolveNetdiskShare } from '../../lib/netdiskShare';
 
 // V3.6.5 #1：jx/parse 二次解析助手。把中间地址经本地流式代理 fetch（代理跟随上游重定向），
 // 用回传的 x-proxy-final-url 作为真直链。代理不可用时返回 null（调用方回退原始中间地址）。
@@ -207,7 +208,7 @@ export function createDrpy3Source(
     let raw: string;
     try {
       raw = await invoke<string>('drpy3run', {
-        payload: { code, key: String(jsCfg.id ?? jsCfg.name ?? 'drpy3'), func, args },
+        payload: { code, key: String(jsCfg.id ?? jsCfg.name ?? 'drpy3'), func, args, ext: jsCfg.ext },
       });
     } catch (e: any) {
       const msg = `drpy3 ${func} 调用失败: ${e?.message ?? e}`;
@@ -412,6 +413,20 @@ export function createDrpy3Source(
       // V3.7.4 #1：guard 命中「网页/非媒体」时，先经本地代理跟随重定向解析一次真直链
       // （覆盖金鹰类「分享页/中间地址」源——其 play() 偶发返回中间页被误杀，重试又成功）。
       // 解析成功且不再是网页则放行，否则保持原错误抛出，不会引入新风险。
+      // V3.7.5 #4：play() 返回的是网盘分享链接（阿里/夸克）时，先经网盘解析模块换成直链。
+      // 解析成功得到可播直链则替换 url，失败回退到 guard 的原有报错路径。
+      if (url && /^https?:\/\//i.test(url) && isNetdiskShare(url)) {
+        try {
+          await ensureProxyPort();
+          const real = await resolveNetdiskShare(url);
+          if (real) {
+            devLog(`[drpy3] 网盘分享链接 ${url} → 直链 ${real}`);
+            url = real;
+          }
+        } catch (e: any) {
+          devLog(`[drpy3] 网盘分享解析失败，回退原行为:`, e?.message ?? e);
+        }
+      }
       if (url && /^https?:\/\//i.test(url)) {
         let guardErr = await guardPlayable(url, headers);
         if (guardErr) {

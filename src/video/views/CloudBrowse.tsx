@@ -15,9 +15,9 @@ export function CloudBrowse({
   onHeadSlot?: (node: ReactNode) => void;
 }) {
   const alistSources = sources.filter((s) => s.type === 'alist');
-  // 未配置真实 alist 源时，使用一个内置示例盘，保证开箱即可体验文件浏览（仅为演示数据）
-  const DEMO: SourceConfig = { id: '__demo_alist__', name: '示例网盘(离线演示)', type: 'alist', baseUrl: '', enabled: true, priority: 0 };
-  const effective = alistSources.length > 0 ? alistSources : [DEMO];
+  // V3.7.5 #6：移除写死的「示例网盘(离线演示)」。未配置真实 alist 源时直接显示空态，
+  // 不再用演示数据误导用户以为已挂载。
+  const effective = alistSources;
   const [srcId, setSrcId] = useState<string>(effective[0]?.id ?? '');
   const [path, setPath] = useState('/');
   const [files, setFiles] = useState<AlistFile[]>([]);
@@ -102,7 +102,7 @@ export function CloudBrowse({
           <div className="empty" style={{ gridColumn: '1 / -1' }}>
             <span className="ic"><Icon name="folder" size={48} /></span>
             <div className="big">该目录为空</div>
-            <div className="sm">尚未配置云盘源，可在「音源管理」添加一个 alist 源</div>
+            <div className="sm">尚未配置云盘源，可在「影视源管理」添加一个 alist 源</div>
           </div>
         )}
         {files.map((f) => {

@@ -113,10 +113,24 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
   });
 }
 
+// V3.7.5 #1：中文域名（IDN）转码。Rust 后端 fetchsource 内部 url::Url::parse 不识别中文域名，
+// TS 侧统一在抓取入口转成 Punycode，避免「肥猫.live」「饭太硬.com」这类配置地址解析失败。
+// 浏览器 new URL 会自动把 host 转成 xn--...，ASCII 链接保持不变。
+function toAsciiUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (/^https?:$/i.test(u.protocol)) return u.href;
+  } catch {
+    /* 非标准 URL 原样返回 */
+  }
+  return url;
+}
+
 // 优先走 Rust 后端代理抓取；不在 Tauri 环境时回退前端 fetch。
 async function fetchText(url: string): Promise<string> {
+  const realUrl = toAsciiUrl(url);
   try {
-    return await invoke<string>('fetchsource', { url });
+    return await invoke<string>('fetchsource', { url: realUrl });
   } catch {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 15000);

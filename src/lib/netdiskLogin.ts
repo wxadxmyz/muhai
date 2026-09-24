@@ -8,6 +8,9 @@
 // 回传机制：登录页内的抓取脚本抓到 token 后设置
 //   window.location.href = <App地址>?ndtok=<provider>:<token>
 // 主 WebView 跳回 App 重新加载；startup（main.tsx）调用 syncNetdiskTokens() 消费 query 写入。
+//
+// V3.7.5 #5：登录页是外部站点（主 WebView 已导航到外部域），App 的 React 导航栏被替换，
+// 故注入浮动「返回」按钮回到「网盘登录页」；并在超时/取消时兜底导航回 App。
 import { Webview } from '@tauri-apps/api/webview';
 import { buildCaptureNavScript, setNetdiskToken, type NetdiskProvider } from './netdisk';
 
@@ -23,7 +26,7 @@ export function openNetdiskLogin(p: NetdiskProvider): Promise<string | null> {
     // 记下当前 App 地址（去掉 hash），抓取成功后跳回
     const appHref = window.location.href.split('#')[0];
     let done = false;
-    const finish = (token: string | null) => {
+    let finish = (token: string | null) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -48,25 +51,53 @@ export function openNetdiskLogin(p: NetdiskProvider): Promise<string | null> {
 
     const timer = window.setTimeout(() => finish(null), TIMEOUT_MS);
 
-    // 在主 WebView 内打开登录页（替代独立窗口，Android 兼容）
+    // 在主 WebView 内打开登录页（替代独立窗口，Android 兼容）。V3.7.5 #5：getCurrent 为同步返回。
     const go = () => {
       try {
-        Webview.getCurrent()
-          .then((wv) => wv.navigate(p.loginUrl))
-          .catch(() => {
-            window.location.href = p.loginUrl; // 兜底：直接导航
-          });
+        ((Webview.getCurrent()) as any).navigate(p.loginUrl);
       } catch {
-        window.location.href = p.loginUrl;
+        window.location.href = p.loginUrl; // 兜底：直接导航
       }
     };
     go();
 
+    // V3.7.5 #5：登录页是外部站点，App 的 React 导航栏已被替换，故注入一个浮动「返回」按钮，
+    // 点击 history.back() 回到「网盘登录页」（主 WebView 历史栈里仍保留着 App 页）。
+    const BACK_BTN_ID = '__muhai_back_btn';
+    const injectBackButton = () => {
+      try {
+        ((Webview.getCurrent()) as any).eval(
+          `(function(){if(document.getElementById('${BACK_BTN_ID}'))return;var b=document.createElement('div');` +
+          `b.id='${BACK_BTN_ID}';b.textContent='← 返回';` +
+          `b.style.cssText='position:fixed;top:10px;left:10px;z-index:2147483647;background:rgba(0,0,0,.72);` +
+          `color:#fff;padding:9px 14px;border-radius:10px;font-size:14px;font-family:sans-serif;cursor:pointer';` +
+          `b.addEventListener('click',function(){history.back();});` +
+          `(document.body||document.documentElement).appendChild(b);})();`
+        );
+      } catch { /* 注入失败不影响抓取 */ }
+    };
+    // 登录页加载需要时间，延后注入；再补一次兜底（部分站点二次跳转后才挂载 body）
+    window.setTimeout(injectBackButton, 1500);
+    window.setTimeout(injectBackButton, 4000);
+
     // 等登录页加载后，注入抓取脚本（复用 netdisk.ts 的 getter 逻辑，抓到后跳回 App）
     window.setTimeout(() => {
-      Webview.getCurrent()
-        .then((wv) => wv.eval(buildCaptureNavScript(p, appHref)))
-        .catch(() => { /* 登录页可能已关闭 */ });
+      try {
+        ((Webview.getCurrent()) as any).eval(buildCaptureNavScript(p, appHref));
+      } catch { /* 登录页可能已关闭 */ }
     }, 2000);
+
+    // 超时 / 取消后兜底：若仍停在外部登录页，跳回 App（避免卡在外部页或回到桌面）
+    const origFinish = finish;
+    finish = (token: string | null) => {
+      try {
+        const curBase = (window.location.href.split('#')[0] || '');
+        const appBase = (appHref.split('#')[0] || 'x');
+        if (!curBase.startsWith(appBase)) ((Webview.getCurrent()) as any).navigate(appHref);
+      } catch {
+        try { window.location.href = appHref; } catch { /* ignore */ }
+      }
+      origFinish(token);
+    };
   });
 }

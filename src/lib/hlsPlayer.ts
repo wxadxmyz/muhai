@@ -296,7 +296,24 @@ export async function attachHlsWithBackend(
   await ensureProxyPort();
   const proxiedUrl = buildProxyUrl(url, opts.headers ?? null);
   const loader = createBackendLoader(opts.headers ?? null);
-  const hls = new Hls({ loader, pLoader: loader });
+  // V3.7.5 #2：弱网/代理逐分片转发场景下的保守缓冲策略，缓解「卡一下播一下再卡」。
+  // - startLevel:-1 让 ABR 按带宽自动起播，不盲选最高档
+  // - 限制前后向缓冲，避免上游抖动把整段塞进内存反而卡
+  // - 提高分片/清单加载重试次数与间隔，对抗代理回源不稳定
+  const hls = new Hls({
+    loader,
+    pLoader: loader,
+    startLevel: -1,
+    maxBufferLength: 40,
+    maxMaxBufferLength: 60,
+    backBufferLength: 30,
+    fragLoadingMaxRetry: 4,
+    manifestLoadingMaxRetry: 4,
+    fragLoadingRetryDelay: 1000,
+    manifestLoadingRetryDelay: 1000,
+    enableWorker: true,
+    capLevelToPlayerSize: false,
+  });
   (video as any).__hls = hls;
   INSTANCES.set(video, hls);
   hls.loadSource(proxiedUrl);

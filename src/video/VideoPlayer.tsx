@@ -812,6 +812,23 @@ export function VideoPlayer({
   const [cacheWifiOnly, setCacheWifiOnly] = useState<boolean>(() => localStorage.getItem('rf_cache_wifi') !== '0');
   const [cacheNextCount, setCacheNextCount] = useState<boolean>(() => localStorage.getItem('rf_cache_next') === '1');
   const refreshLevels = useCallback(() => { setLevels(getLevels(videoRef.current)); }, []);
+  // V3.7.5 #2：弱网标记。播放器出现 stalled/waiting（缓冲空）时置位，8s 内视为弱网。
+  // 弱网期间不强制锁回用户选过的高码率档位，交给 ABR 自适应，避免「卡一下播一下再卡」。
+  const weakNetRef = useRef(false);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onStall = () => {
+      weakNetRef.current = true;
+      window.setTimeout(() => { weakNetRef.current = false; }, 8000);
+    };
+    v.addEventListener('stalled', onStall);
+    v.addEventListener('waiting', onStall);
+    return () => {
+      v.removeEventListener('stalled', onStall);
+      v.removeEventListener('waiting', onStall);
+    };
+  }, []);
   // S3：切集 / 换线路 / 重试后档位列表会变，重新读一次并恢复用户选过的档位
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -819,7 +836,8 @@ export function VideoPlayer({
       setLevels(ls);
       if (ls.length >= 2) {
         const saved = Number(localStorage.getItem('rf_quality_level') ?? '-1');
-        if (saved >= -1 && saved < ls.length) setLevel(videoRef.current, saved);
+        // 弱网时跳过强制锁档（saved===0 自动档本就是 ABR，无需强设），让 hls.js 按带宽自适应
+        if (saved >= 0 && saved < ls.length && !weakNetRef.current) setLevel(videoRef.current, saved);
       }
     }, 800);
     return () => window.clearTimeout(t);

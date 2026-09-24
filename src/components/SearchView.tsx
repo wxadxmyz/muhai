@@ -108,7 +108,7 @@ export function SearchView({
     return map;
   }, [expanded, items, errors]);
 
-  const showHints = !searched && kw.trim() === '';
+  const showHints = !searched;
 
   const run = async (q?: string) => {
     const query = (q ?? kw).trim();
@@ -121,24 +121,25 @@ export function SearchView({
     setPage(1); // V3.6.5：新搜索回到第 1 页
     setProgressText('跨源搜索中…');
     library.addSearch(query);
-    // 展开 tvbox 子站（左侧源栏用）
+    // 展开 tvbox 子站（左侧源栏用 + 搜索逐源并发）
+    let ex: SourceConfig[] = [];
     try {
-      const ex = await expandSources(sources);
+      ex = await expandSources(sources);
       if (mySeq === searchSeqRef.current) setExpanded(ex);
     } catch {
+      ex = sources;
       setExpanded(sources);
     }
     try {
-      const r = await aggregateSearch(sources, query, {
+      const r = await aggregateSearch(ex, query, {
         timeout: 18000, // V3.7.0 A2：单源超时 6s → 18s（上限非等待；快源经 onPartial 秒出）
         page: 1,
         mediaType,
-        // V3.6.5：进度文案——已返回 N 个源 / 仍有 M 个搜索中
+        // V3.7.3：传展开子站 → 逐源并发、进度报真实子站数；先回的源先显示
         onProgress: (done, total) => {
           if (mySeq !== searchSeqRef.current) return;
-          const remain = Math.max(0, total - done);
           setProgressText(
-            remain > 0 ? `已返回 ${done} 个源，仍有 ${remain} 个搜索中…` : `已搜完 ${total} 个源`
+            done < total ? `已返回 ${done}/${total} 个源…` : `已搜完 ${total} 个源`
           );
         },
         // #5：哪个源先回来就把它的结果先显示出来，不再干等最慢的源
@@ -168,8 +169,13 @@ export function SearchView({
     const next = page + 1;
     const mySeq = searchSeqRef.current;
     setLoadingMore(true);
+    // 翻页同样走展开子站（与 run 一致），避免仍走 tvbox 父源一次性返回
+    let ex: SourceConfig[] = expanded.length ? expanded : [];
+    if (ex.length === 0) {
+      try { ex = await expandSources(sources); } catch { ex = sources; }
+    }
     try {
-      const r = await aggregateSearch(sources, query, {
+      const r = await aggregateSearch(ex, query, {
         timeout: 18000, // V3.7.0 A2：加载更多同样放宽到 18s
         page: next,
         mediaType,
@@ -305,7 +311,14 @@ export function SearchView({
                 <span className="search-source-name">全部</span>
                 <span className="search-source-count">{totalCount}</span>
               </div>
-            {expanded.map((src) => {
+            {expanded
+              .filter((src) => {
+                // 搜索未完成（未搜/搜索中）：所有子站都显示，让用户看到哪些还在搜
+                if (!searched || loading) return true;
+                // 搜索完成：只显示有结果的子站，空结果/死源不占位置（V3.7.3 清单第4条）
+                return sourceState.get(src.id)?.kind === 'ok';
+              })
+              .map((src) => {
               const st = sourceState.get(src.id);
               const isError = st?.kind === 'error';
               const isActive = activeSource === src.id;

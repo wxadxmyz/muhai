@@ -465,10 +465,11 @@ export function VideoPlayer({
             setErr('未取到可播放地址，换个线路或换个源试试。');
           }
         })
-        .catch(() => {
+        .catch((e: any) => {
           if (!alive) return;
           setResolving(false);
-          setErr('解析播放地址失败，请换个源试试。');
+          // V3.7.1：显示底层真实错误，优先用 B1 抛出的"网页不可播"等明确提示。
+          setErr(e?.message || '解析播放地址失败，请换个源试试。');
         });
       return () => { alive = false; };
     }
@@ -525,10 +526,10 @@ export function VideoPlayer({
       }, 8000);
       v.playbackRate = speed;
       if (state.isPlaying) v.play().catch(() => {});
-    }).catch(() => {
+    }).catch((e: any) => {
       if (alive) {
         setResolving(false);
-        setErr('解析播放地址失败，请换个音源。');
+        setErr(e?.message || '解析播放地址失败，请换个音源。');
       }
     });
     return () => {

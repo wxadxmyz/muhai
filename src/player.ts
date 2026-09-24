@@ -8,7 +8,9 @@ export async function resolvePlay(item: MediaItem, sources: SourceConfig[]): Pro
   try {
     const { url, headers } = await createSource(cfg).getPlayUrl(item.id);
     return { ...item, playUrl: url, raw: { ...item.raw, headers } };
-  } catch {
-    throw new Error('获取播放地址失败');
+  } catch (e: any) {
+    // V3.7.1：保留底层真实错误（如 B1 的"网页不可播"、源站 404、超时），
+    // 避免上游再显示一句模糊的"获取播放地址失败"。
+    throw new Error(e?.message || '获取播放地址失败');
   }
 }

@@ -52,8 +52,10 @@ export function useMediaResolver(sources: SourceConfig[]) {
       const r = await resolvePlay(item, sources);
       player.updateCurrent(r);
       return r;
-    } catch {
-      return item;
+    } catch (e: any) {
+      // V3.7.1：把底层错误继续向上抛，让播放器 UI 显示真实原因（如"该源返回网页不可播"），
+      // 而不是静默吞掉后永远显示"加载中..."
+      throw e;
     }
   };
 

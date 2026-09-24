@@ -1163,6 +1163,27 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 }
 .netdisk-row .nd-remove:active { background: var(--panel3); }
 .netdisk-row .st + .nd-remove { margin-left: 10px; }
+/* V3.7.6 #5：手动粘贴授权卡片（绕开官网下载页拦截，最可靠的网盘授权方式） */
+.paste-card {
+  margin-top: 14px; padding: 14px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--r-md, 12px); display: flex; flex-direction: column; gap: 10px;
+}
+.paste-card .paste-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.paste-card .paste-area {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace;
+  line-height: 1.5;
+}
+.paste-card .paste-keys { display: flex; gap: 8px; flex-wrap: wrap; }
+.paste-card .paste-keys .pill {
+  padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel2);
+  color: var(--text); font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.paste-card .paste-keys .pill.on { background: var(--accent); color: #fff; border-color: transparent; }
 .netdisk-form { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .netdisk-form h4 { margin: 0 0 4px; font-size: 16px; }
 .netdisk-form label { font-size: 12px; color: var(--muted); }

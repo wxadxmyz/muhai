@@ -19,6 +19,7 @@ import { toast } from '../lib/toast';
 import {
   getNetdiskToken,
   getAllNetdiskTokens,
+  setNetdiskToken,
   clearNetdiskToken,
   syncNetdiskTokens,
   providerOf,
@@ -163,6 +164,18 @@ export function SettingsPage({
   const refreshNdTokens = () => setNdTokens(getAllNetdiskTokens());
   useEffect(() => { syncNetdiskTokens(); }, []);
   useEffect(() => { if (sub === 'mounts' || sub === 'netdisk') refreshNdTokens(); }, [sub]);
+
+  // V3.7.6 #5：手动粘贴授权（绕开官网在 App 内显示下载页、无法登录的问题，最可靠）
+  const [pasteKey, setPasteKey] = useState<NetdiskKey>('ali');
+  const [pasteVal, setPasteVal] = useState('');
+  const pasteToken = () => {
+    const v = pasteVal.trim();
+    if (!v) { toast('请先粘贴 Token / Cookie', 'err'); return; }
+    setNetdiskToken(pasteKey, v);
+    refreshNdTokens();
+    setPasteVal('');
+    toast(`已保存 ${providerOf(pasteKey).label} 授权`);
+  };
 
   // ⑬ 首页地区过滤入口已删除（v3.2.0）：内地过滤改由 Home.isDomestic 硬编码规则实现，无需用户维护屏蔽词。
 
@@ -352,6 +365,35 @@ export function SettingsPage({
               </div>
             );
           })}
+
+          {/* V3.7.6 #5：手动粘贴授权——官网登录页在 App 内常显示下载页无法登录，粘贴 refresh_token / cookie 最稳 */}
+          <div className="paste-card">
+            <div className="paste-title">手动粘贴授权（推荐）</div>
+            <p className="muted sm">官网登录页在 App 内常强制显示「下载客户端」而无法直接登录；可直接粘贴已获取的凭据完成授权。</p>
+            <div className="paste-keys">
+              {NETDISKS.map((nd) => (
+                <button
+                  key={nd.key}
+                  className={'pill' + (pasteKey === nd.key ? ' on' : '')}
+                  onClick={() => setPasteKey(nd.key as NetdiskKey)}
+                >
+                  {nd.label}
+                </button>
+              ))}
+            </div>
+            <textarea
+              className="paste-area"
+              rows={3}
+              placeholder={
+                pasteKey === 'ali'
+                  ? '粘贴阿里云盘 refresh_token（从 aliyundrive 网页/客户端获取）'
+                  : '粘贴对应网盘的 Cookie（需含 PUID= / kps= 等登录态字段）'
+              }
+              value={pasteVal}
+              onChange={(e) => setPasteVal(e.target.value)}
+            />
+            <button className="primary block" onClick={pasteToken}>保存授权</button>
+          </div>
         </SubPage>
       )}
 

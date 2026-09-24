@@ -67,12 +67,22 @@ function stripJsonComments(text: string): string {
     }
     out += ch;
   }
-  return out
+  let cleaned = out
     .replace(/\/\*[\s\S]*?\*\//g, '') // 块注释
     .replace(/^[ \t]*\/\/.*$/gm, '') // 整行 // 注释
     .replace(/(^|[^:])(\/\/.*$)/gm, '$1') // 行内 // 注释（不误伤 http://）
     .replace(/,(\s*[}\]])/g, '$1') // 尾随逗号容错
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, ''); // 其他非转义控制字符
+  // V3.7.6 #1：部分聚合源（如肥猫.net）返回的是「缺引号 key」的畸形 JSON，例如
+  //   "api": "csp_AppDrama",
+  //   ext": {            ← 应写作 "ext": {
+  // 标准 JSON.parse 会在这一行直接抛错，导致「未在该页面识别到可用的源配置」。
+  // 根因是源站把 key 写成了裸标识符；且因前面转义引号使字符扫描器 inStr 状态错乱、
+  // 换行被折叠，缺引号 key 未必停在行首。故用「结构性位置」正则：key 前是 { [ , 或
+  // 空白（含换行）、后跟 ": "，补回缺失前引号。已正确加引号的 "key": 因 key 前是
+  // 引号而不是 { [ ,，绝不会被命中，安全。
+  cleaned = cleaned.replace(/([[,{]\s*)([A-Za-z_$][A-Za-z0-9_$]*)"\s*:/g, '$1"$2":');
+  return cleaned;
 }
 
 // 兼容常见的 tvbox / 苹果CMS / 聚合源 JSON 结构，统一转成带 type+baseUrl 的源数组：

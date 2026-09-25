@@ -29,6 +29,7 @@
     "allow-media-proxy-port",
     "allow-proxy-probe-snapshot",
     "allow-proxy-probe-clear",
-    "allow-proxy-probe-set-recording"
+    "allow-proxy-probe-set-recording",
+    { "identifier": "shell:allow-open", "allow": [{ "url": "https://*/*" }] }
   ]
 }

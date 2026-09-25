@@ -1,6 +1,6 @@
 [package]
 name = "muhai"
-version = "3.7.6"
+version = "3.7.7"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
 edition = "2021"
@@ -37,6 +37,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-shell = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

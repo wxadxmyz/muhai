@@ -252,14 +252,12 @@ export function SettingsPage({
 
   // C3：是否已在本地抓到该盘 token
   const boundNetdisk = (key: NetdiskKey) => !!getNetdiskToken(key);
-  // C3：打开官网登录页，登录后自动抓 token
+  // C3：用系统浏览器打开官网登录页（V3.7.7：plugin-shell open，100% 进登录页），
+  //     登录后由用户在「手动粘贴授权」面板录入 token（不再依赖 WebView 内自动抓取）。
   const loginNetdisk = async (key: NetdiskKey) => {
     const p = providerOf(key);
-    toast(`正在打开 ${p.label} 登录页，登录后自动获取 Token…`);
-    const token = await openNetdiskLogin(p);
-    refreshNdTokens();
-    if (token) toast(`已获取 ${p.label} Token`);
-    else toast(`${p.label} 未获取到 Token（可重试）`, 'err');
+    toast(`已用系统浏览器打开 ${p.label} 登录页，登录后请回到此处「手动粘贴授权」`);
+    await openNetdiskLogin(p);
   };
   const unbindNetdisk = (key: NetdiskKey) => {
     clearNetdiskToken(key);

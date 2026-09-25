@@ -1,7 +1,7 @@
 // 统一媒体源引擎 —— 核心类型定义
 // 与《媒体源引擎接口规范 v1》保持一致
 
-export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js' | 'normal' | 'lives-direct';
+export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js' | 'normal' | 'csp' | 'lives-direct';
 
 export type MediaType = 'music' | 'video';
 
@@ -29,6 +29,24 @@ export interface JsSourceConfig extends SourceConfig {
   spiderUrl?: string;
   // TVBox csp 模型：站点代号与 ext 配置（JSON 字符串），传给 spider 构造器选路
   ext?: string;
+}
+
+// csp 蜘蛛源（V3.8.0）：影视仓 catvod 生态的 `csp_XXX` 代号源。
+// 顶层 `spider` 是被混淆的「蜘蛛管理器」远程地址（形如 `...png;md5;<hash>`），
+// 运行时由 Rust 端下载 + md5 校验后执行；每个站点用 `api: "csp_XXX"` 代号选路。
+// 管理器可能是 JS（桌面/Android 均可执行）或原生 DEX/APK（仅 Android 可执行）。
+export interface CspSourceConfig extends SourceConfig {
+  type: 'csp';
+  /** csp 代号（如 "csp_AppGet" / "csp_Douban"），传给管理器构造器选路 */
+  api?: string;
+  /** 管理器真实下载地址（已去掉 `;md5;` 伪装段） */
+  spiderUrl?: string;
+  /** 管理器下载后的 md5 校验值；非空时 Rust 端会校验完整性 */
+  spiderMd5?: string;
+  /** 内联管理器脚本（罕见：顶层 spider 不是远程地址而是内联代码时） */
+  spider?: string;
+  /** 站点 ext 配置：字符串或对象皆可（如 `{"class":"电影"}`），原样透传给管理器构造器 */
+  ext?: any;
 }
 
 export interface Episode {

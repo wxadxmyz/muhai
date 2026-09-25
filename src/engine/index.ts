@@ -3,7 +3,7 @@ import { createMusicJsonSource } from './adapters/musicJson';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
-import { createJsSource } from './adapters/js';
+import { createJsSource, createCspSource } from './adapters/js';
 import { createNormalSource } from './adapters/normal';
 import { withTimeout } from './http';
 import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
@@ -59,6 +59,8 @@ export function createSource(cfg: SourceConfig): MediaSource {
       return createTvboxSource(cfg);
     case 'js':
       return createJsSource(cfg);
+    case 'csp':
+      return createCspSource(cfg as any);
     case 'normal':
       return createNormalSource(cfg);
     case 'mock':

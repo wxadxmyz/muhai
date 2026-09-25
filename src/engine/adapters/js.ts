@@ -304,6 +304,179 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
 // v2.4.2 调试：记录每个 spider 最近一次原始返回（按源 id），供 tvbox.ts 在
 // 搜索/首页空白时回显具体返回内容，无需 root 即可定位"蜘蛛跑通但返回空"。
 const lastRaw = new Map<string, string>();
+
+// ─────────────────────────────────────────────────────────────
+// V3.8.0：catvod csp 代号蜘蛛源适配器
+//
+// 与 createJsSource 同走 Rust 的 spiderrun，但采用 catvod csp 模型：
+//   - 管理器（顶层 spider）由 Rust 端按 spiderUrl 下载 + md5 校验后执行，
+//     本端不预拉（避免对 DEX/APK 管理器误拉、也复用同一处 md5 校验）；
+//   - 调用 `new spider(api, ext)` 实例化（api = "csp_XXX" 代号，ext = 站点配置）；
+//   - 用 catvod 的 Content 命名（homeContent/searchContent/detailContent/playerContent），
+//     不再回退 drpy 短名——csp 蜘蛛就是这个形态；
+//   - 网盘 token 由前端从 window.__netdiskTokens 读取后随调用透传（引擎与 WebView
+//     上下文隔离，必须显式注入，供子蜘蛛取 4K 直链）。
+// ─────────────────────────────────────────────────────────────
+export function createCspSource(cfg: SourceConfig): MediaSource {
+  const jsCfg = cfg as any;
+
+  // 读取已登录的网盘 token（window.__netdiskTokens = {ali,quark,uc}），随调用透传进引擎。
+  function netdiskTokens(): any {
+    try {
+      return (window as any).__netdiskTokens ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function call(func: string, args: any[]): Promise<any> {
+    let raw: string;
+    try {
+      raw = await invoke<string>('spiderrun', {
+        payload: {
+          code: jsCfg.spider ?? '',
+          spider_url: jsCfg.spiderUrl ?? null,
+          spider_md5: jsCfg.spiderMd5 ?? null,
+          func,
+          args,
+          api: jsCfg.api ?? null,
+          ext: jsCfg.ext ?? null,
+          netdisk_tokens: netdiskTokens(),
+        },
+      });
+    } catch (e: any) {
+      const msg = `csp spiderrun ${func} 调用失败: ${e?.message ?? e}`;
+      lastRaw.set(jsCfg.id, msg);
+      devLog(`[csp] ${jsCfg.name} ${func} 调用失败: ${msg}`);
+      throw new Error(msg);
+    }
+    lastRaw.set(jsCfg.id, raw);
+    devLog(`[csp] ${jsCfg.name} ${func} 返回长度=${raw.length}`);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+    // catvod 蜘蛛常返回 JSON 字符串，需二次解析
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        /* 保留为字符串 */
+      }
+    }
+    return parsed;
+  }
+
+  function toItems(list: any[]): MediaItem[] {
+    if (!Array.isArray(list)) return [];
+    return list.map((v: any) => ({
+      id: String(v.vod_id ?? v.id ?? ''),
+      sourceId: cfg.id,
+      sourceName: cfg.name,
+      title: v.vod_name ?? v.name ?? '未命名',
+      artist: v.vod_remarks ?? v.type_name ?? '',
+      cover: v.vod_pic ?? v.pic ?? '',
+      desc: v.vod_content ?? v.vod_blurb ?? '',
+      mediaType: 'video' as const,
+      raw: v,
+    }));
+  }
+
+  function toEpisodes(playUrl: string): { name: string; url: string }[] {
+    if (!playUrl) return [];
+    const out: { name: string; url: string }[] = [];
+    for (const group of playUrl.split('$$$')) {
+      for (const seg of group.split('#')) {
+        if (!seg) continue;
+        const idx = seg.indexOf('$');
+        if (idx < 0) out.push({ name: seg, url: seg });
+        else out.push({ name: seg.slice(0, idx), url: seg.slice(idx + 1) });
+      }
+    }
+    return out;
+  }
+
+  const hasList = (r: any) =>
+    !!r && ((Array.isArray(r.list) && r.list.length > 0) || (Array.isArray(r) && r.length > 0));
+
+  return {
+    async search(keyword: string) {
+      const data = await call('searchContent', [keyword, false]);
+      const list = data?.list ?? (Array.isArray(data) ? data : []);
+      return toItems(list);
+    },
+
+    async getPlayUrl(itemId: string): Promise<PlayUrl> {
+      // catvod playerContent(flag, id, flags)：先从 detail 取线路 flag 与 vod_id。
+      let url = '';
+      try {
+        const d = await call('detailContent', [itemId]);
+        const list = d?.list ?? (Array.isArray(d) ? d : []);
+        const first = list[0];
+        const from = String(first?.vod_play_from ?? '').split('$$$')[0] || '';
+        const id = String(first?.vod_id ?? itemId);
+        let play: any;
+        try {
+          play = await call('playerContent', [from, id, []]);
+        } catch {
+          play = null;
+        }
+        if (typeof play === 'string') url = play;
+        else if (play && typeof play.url === 'string') url = play.url;
+        // playerContent 无果：回退 detail 首集（列表项常自带 vod_play_url）
+        if (!url && first?.vod_play_url) {
+          const eps = toEpisodes(first.vod_play_url);
+          url = eps[0]?.url ?? '';
+        }
+      } catch {
+        /* 忽略，交给下方兜底 */
+      }
+      const host = extractHost(jsCfg.ext || jsCfg.api || cfg.baseUrl);
+      return { url, headers: host ? { Referer: host + '/' } : undefined };
+    },
+
+    async getDetail(itemId: string) {
+      const data = await call('detailContent', [itemId]);
+      const list = data?.list ?? (Array.isArray(data) ? data : []);
+      const items = toItems(list);
+      const it = items[0];
+      if (it && it.raw?.vod_play_url) {
+        it.episodes = toEpisodes(it.raw.vod_play_url);
+      }
+      return (
+        it ?? {
+          id: itemId,
+          sourceId: cfg.id,
+          sourceName: cfg.name,
+          title: '',
+          mediaType: 'video' as const,
+        }
+      );
+    },
+
+    async test() {
+      try {
+        await call('homeContent', []);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    async home() {
+      const data = await call('homeContent', []);
+      const list = data?.list ?? (Array.isArray(data) ? data : []);
+      return toItems(list);
+    },
+
+    async lives(): Promise<LiveChannelSource[]> {
+      return [];
+    },
+  };
+}
+
 export function getSpiderRaw(id: string): string | undefined {
   return lastRaw.get(id);
 }

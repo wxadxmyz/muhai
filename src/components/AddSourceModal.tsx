@@ -18,7 +18,7 @@ export function AddSourceModal({
   const [token, setToken] = useState(initial?.token ?? '');
   const [mountPath, setMountPath] = useState(initial?.mountPath ?? '/');
 
-  const PLACEHOLDER: Record<SourceType, string> = {
+  const PLACEHOLDER: Partial<Record<SourceType, string>> = {
     'music-json': 'https://your-music-api.com',
     alist: 'https://your-alist.com',
     tvbox: 'http://www.饭太硬.cc/tv',

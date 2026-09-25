@@ -86,7 +86,8 @@ fn webview_ua(
                 let ua_jstring = env
                     .call_method(settings, "getUserAgentString", "()Ljava/lang/String;", &[])?
                     .l()?;
-                let ua: String = env.get_string(&JString::from(ua_jstring))?.into();
+                let java_str = env.get_string(&JString::from(ua_jstring))?;
+                let ua: String = String::from(&*java_str);
                 Ok(Some(ua))
             }
         })()

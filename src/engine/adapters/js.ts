@@ -329,7 +329,52 @@ export function createCspSource(cfg: SourceConfig): MediaSource {
     }
   }
 
+  // V3.8.1 Phase 2：原生 DEX 源（肥猫.net 等）检测缓存。
+  // 一旦 spiderrun 返回 __native_csp 描述符即锁定，后续同名调用直连 Kotlin MuHaiCsp 桥，
+  // 不再走 Rust（避免每次都让 Rust 重新下载+md5 检测管理器）。
+  let nativeDesc: any = null;
+
+  // Android 端 Kotlin MuHaiCsp 桥：DexClassLoader 加载原生 DEX 并执行 catvod SpiderPool。
+  // 仅 Android 的 MainActivity 注入了 window.MuHaiCsp；桌面端不存在，调用会明确报错。
+  async function cspNativeRequire(desc: any, func: string, args: any[]): Promise<any> {
+    const w = window as any;
+    if (typeof w.MuHaiCsp?.require !== 'function') {
+      throw new Error('原生蜘蛛源（DEX）仅 Android 支持，当前平台无法运行');
+    }
+    const arg = {
+      spider_url: desc.spider_url ?? null,
+      spider_md5: desc.spider_md5 ?? null,
+      api: desc.api ?? null,
+      ext: desc.ext ?? null,
+      func,
+      args,
+    };
+    const raw: string = await w.MuHaiCsp.require(JSON.stringify(arg));
+    let parsed: any;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+    if (typeof parsed === 'string') {
+      try {
+        parsed = JSON.parse(parsed);
+      } catch {
+        /* 保留为字符串 */
+      }
+    }
+    // Kotlin 桥执行失败时返回 {"__csp_error":"..."}，明确抛出便于前端定位
+    if (parsed && typeof parsed === 'object' && parsed.__csp_error) {
+      throw new Error(`原生蜘蛛执行失败: ${parsed.__csp_error}`);
+    }
+    return parsed;
+  }
+
   async function call(func: string, args: any[]): Promise<any> {
+    // 已确认是原生 DEX 源：直接走 Kotlin MuHaiCsp 桥
+    if (nativeDesc) {
+      return cspNativeRequire(nativeDesc, func, args);
+    }
     let raw: string;
     try {
       raw = await invoke<string>('spiderrun', {
@@ -357,6 +402,12 @@ export function createCspSource(cfg: SourceConfig): MediaSource {
       parsed = JSON.parse(raw);
     } catch {
       return raw;
+    }
+    // V3.8.1：spiderrun 在 Android 上检测到原生 DEX 会返回 __native_csp 描述符，
+    // 锁定后改走 MuHaiCsp 桥执行本次 func/args。
+    if (parsed && parsed.__native_csp) {
+      nativeDesc = parsed;
+      return cspNativeRequire(nativeDesc, func, args);
     }
     // catvod 蜘蛛常返回 JSON 字符串，需二次解析
     if (typeof parsed === 'string') {

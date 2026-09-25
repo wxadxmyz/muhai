@@ -162,12 +162,20 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
                     ));
                 }
             }
-            // 原生 DEX/APK（zip 头 PK）：纯 QuickJS 无法执行，按平台分派
+            // 原生 DEX/APK（zip 头 PK）：纯 QuickJS 无法执行，按平台分派。
+            // V3.8.1 Phase 2：Android 端交由 Kotlin DexClassLoader 桥（window.MuHaiCsp）执行，
+            // 这里只下发结构化描述符，由前端 createCspSource 路由到 MuHaiCsp.require()。
             if bytes.starts_with(b"PK") {
                 #[cfg(target_os = "android")]
                 {
-                    // Phase 2：转发给 Kotlin DexClassLoader 桥（TODO）
-                    return Err("原生蜘蛛源（DEX/APK）的 Android 执行桥尚未实现（Phase 2 进行中）".into());
+                    let desc = serde_json::json!({
+                        "__native_csp": true,
+                        "spider_url": payload.spider_url,
+                        "spider_md5": payload.spider_md5,
+                        "api": payload.api,
+                        "ext": payload.ext,
+                    });
+                    return Ok(desc.to_string());
                 }
                 #[cfg(not(target_os = "android"))]
                 {

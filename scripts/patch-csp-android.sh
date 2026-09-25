@@ -186,22 +186,24 @@ object MuHaiCsp {
             Init.init(ctx)
             val dexFile = fetchDex(ctx, url, md5)
                 ?: return "{\"__csp_error\":\"原生蜘蛛下载或 md5 校验失败: $url\"}"
-            var pool = pools[url]
-            if (pool == null) {
+            // 用非空 val 承接（HashMap<String, Any> 取值返回 Any?，var 无法被智能推断为非空）
+            val pool: Any = pools[url] ?: run {
                 val optDir = File(ctx.cacheDir, "csp_opt").absolutePath
                 val cl = DexClassLoader(dexFile.absolutePath, optDir, null, ctx.classLoader)
                 val mgrClass = cl.loadClass("com.github.catvod.spider.Manager")
-                pool = mgrClass.getDeclaredConstructor().newInstance()
-                mgrClass.getMethod("init", Context::class.java, String::class.java).invoke(pool, ctx, "")
-                pools[url] = pool
+                val p: Any = mgrClass.getDeclaredConstructor().newInstance()
+                mgrClass.getMethod("init", Context::class.java, String::class.java).invoke(p, ctx, "")
+                pools[url] = p
+                p
             }
             val getSpider = pool.javaClass.getMethod("getSpider", String::class.java, String::class.java)
             val key = url + "#" + api
-            var spider = spiders[key]
-            if (spider == null) {
-                spider = getSpider.invoke(pool, api, ext)
-                injectJava(spider)
-                spiders[key] = spider
+            val spider: Any = spiders[key] ?: run {
+                val s: Any = getSpider.invoke(pool, api, ext)
+                    ?: throw RuntimeException("getSpider($api) 返回 null")
+                injectJava(s)
+                spiders[key] = s
+                s
             }
             invokeFunc(spider, func, a)
         } catch (e: Throwable) {

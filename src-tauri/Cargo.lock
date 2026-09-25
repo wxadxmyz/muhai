@@ -2433,6 +2433,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "jni 0.21.1",
  "md-5",
  "quick-xml 0.36.2",
  "reqwest 0.12.28",

@@ -74,7 +74,7 @@ fn webview_ua(
                 .call_method(wv, "getSettings", "()Landroid/webkit/WebSettings;", &[])?
                 .l()?;
             if let Some(ua) = new_ua {
-                let ua_jstring = env.new_string(&ua)?;
+                let ua_jstring = env.new_string(ua.as_str())?;
                 env.call_method(
                     settings,
                     "setUserAgentString",

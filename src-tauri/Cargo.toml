@@ -41,6 +41,10 @@ tauri-plugin-shell = "2"
 # 网盘登录 token URL 编码（ndtok=provider:token 中的 token 可能含特殊字符）
 urlencoding = "2"
 
+# Android 网盘登录：JNI 改 WebView UA 需要 jni crate（与 wry 使用的 0.21.1 同版本，类型才能匹配）
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
 

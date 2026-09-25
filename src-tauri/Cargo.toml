@@ -1,6 +1,6 @@
 [package]
 name = "muhai"
-version = "3.7.7"
+version = "3.7.8"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
 edition = "2021"
@@ -38,6 +38,8 @@ tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-shell = "2"
+# 网盘登录 token URL 编码（ndtok=provider:token 中的 token 可能含特殊字符）
+urlencoding = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

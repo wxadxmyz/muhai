@@ -1,9 +1,8 @@
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
+use tauri::Manager;
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-#[cfg(desktop)]
-use tauri::Manager;
 
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
@@ -20,7 +19,7 @@ mod probe;
 // 客户端不复用 = 连接池不复用 = 每个请求都要重走 DNS + TCP + TLS 握手。首页二十多张封面
 // 就是二十多次完整握手，点详情、解析播放地址又各来一轮，是"点什么都慢"的主因之一。
 // 这里改成进程内单例：连接常驻复用，超时改为按请求单独设置（各自业务需要不同时长）。
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 // V3.6.5：本地流式媒体代理所需依赖（根治播放卡顿/转圈，替代 fetchmedia 的 base64 全量过桥）
 use std::convert::Infallible;
@@ -46,6 +45,169 @@ fn http_client() -> &'static reqwest::Client {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new())
     })
+}
+
+// V3.7.8 #2/#5：网盘登录——App 内 WebView + 桌面 UA + 注入返回/抓 token 脚本。
+// 解决 system browser 打开夸克/UC 被重定向到下载页、且无返回按钮的问题。
+#[derive(Clone)]
+struct NetdiskLoginState {
+    original_ua: String,
+    back_url: String,
+    provider: String,
+}
+
+static NETDISK_LOGIN_STATE: OnceLock<Mutex<Option<NetdiskLoginState>>> = OnceLock::new();
+
+const DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+#[cfg(target_os = "android")]
+fn webview_ua(
+    webview: &tauri::webview::PlatformWebview,
+    new_ua: Option<String>,
+) -> Result<Option<String>, String> {
+    use jni::objects::JString;
+    let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+    let new_ua = new_ua.map(|s| s.to_string());
+    webview.jni_handle().exec(move |env, _, wv| {
+        let res = (|| -> Result<Option<String>, jni::errors::Error> {
+            let settings = env
+                .call_method(wv, "getSettings", "()Landroid/webkit/WebSettings;", &[])?
+                .l()?;
+            if let Some(ua) = new_ua {
+                let ua_jstring = env.new_string(&ua)?;
+                env.call_method(
+                    settings,
+                    "setUserAgentString",
+                    "(Ljava/lang/String;)V",
+                    &[(&ua_jstring).into()],
+                )?;
+                Ok(None)
+            } else {
+                let ua_jstring = env
+                    .call_method(settings, "getUserAgentString", "()Ljava/lang/String;", &[])?
+                    .l()?;
+                let ua: String = env.get_string(&JString::from(ua_jstring))?.into();
+                Ok(Some(ua))
+            }
+        })()
+        .map_err(|e| e.to_string());
+        let _ = tx.send(res);
+    });
+    rx.recv().map_err(|e| e.to_string())?
+}
+
+/// 在 App 内 WebView 打开网盘登录页。
+/// Android 下会强制设置桌面 UA，避免官网返回下载页；注入的 JS 负责添加返回按钮并抓取 token。
+#[tauri::command]
+async fn open_netdisk_login(
+    app: tauri::AppHandle,
+    url: String,
+    back_url: String,
+    provider: String,
+    capture_script: String,
+) -> Result<(), String> {
+    let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
+    let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+
+    // Android：读取并保存原 UA，再设成桌面 UA
+    #[cfg(target_os = "android")]
+    {
+        let (tx1, rx1) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+        window
+            .with_webview(move |wv| {
+                let r = webview_ua(&wv, None);
+                let _ = tx1.send(r);
+            })
+            .map_err(|e| e.to_string())?;
+        let original_ua = rx1.recv().map_err(|e| e.to_string())??;
+
+        let (tx2, rx2) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+        window
+            .with_webview(move |wv| {
+                let r = webview_ua(&wv, Some(DESKTOP_UA.to_string()));
+                let _ = tx2.send(r);
+            })
+            .map_err(|e| e.to_string())?;
+        rx2.recv().map_err(|e| e.to_string())??;
+
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.replace(NetdiskLoginState {
+            original_ua: original_ua.unwrap_or_default(),
+            back_url,
+            provider,
+        });
+    }
+    // 非 Android：只保存状态，不改 UA
+    #[cfg(not(target_os = "android"))]
+    {
+        let mut s = state.lock().map_err(|e| e.to_string())?;
+        s.replace(NetdiskLoginState {
+            original_ua: String::new(),
+            back_url,
+            provider,
+        });
+    }
+
+    // 导航到登录页
+    let target = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    window.navigate(target).map_err(|e| e.to_string())?;
+
+    // 延迟注入返回/抓 token 脚本（给页面留 1.2s 加载时间）
+    let window_for_inject = window.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        let _ = window_for_inject.eval(&capture_script);
+    });
+
+    Ok(())
+}
+
+/// 网盘登录结束：可选保存 token、重置 UA、跳转回 App。
+#[tauri::command]
+async fn close_netdisk_login(app: tauri::AppHandle, token: Option<String>) -> Result<(), String> {
+    let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
+    let (_original_ua, back_url, provider) = {
+        let s = state.lock().map_err(|e| e.to_string())?;
+        let st = s.as_ref().ok_or("当前未处于网盘登录流程")?;
+        (st.original_ua.clone(), st.back_url.clone(), st.provider.clone())
+    };
+
+    let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+
+    // Android：恢复原始 UA
+    #[cfg(target_os = "android")]
+    if !_original_ua.is_empty() {
+        let original = _original_ua.clone();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+        window
+            .with_webview(move |wv| {
+                let r = webview_ua(&wv, Some(original));
+                let _ = tx.send(r);
+            })
+            .map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())??;
+    }
+
+    // 构造回 App 地址；如有 token 则挂在 ?ndtok=provider:token（前端 syncNetdiskTokens 消费）
+    let mut final_url = back_url;
+    if let Some(t) = token {
+        let sep = if final_url.contains('?') { '&' } else { '?' };
+        final_url.push_str(&format!(
+            "{}ndtok={}:{}",
+            sep,
+            urlencoding::encode(&provider),
+            urlencoding::encode(&t)
+        ));
+    }
+
+    let target = final_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    window.navigate(target).map_err(|e| e.to_string())?;
+
+    // 清理状态
+    if let Ok(mut s) = state.lock() {
+        *s = None;
+    }
+    Ok(())
 }
 
 // P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），
@@ -90,7 +252,10 @@ pub fn run() {
             drpy3run,
             dlnascan,
             castvideo,
-            clear_webview_cache
+            clear_webview_cache,
+            // V3.7.8：网盘登录走 App 内 WebView + 桌面 UA + 注入返回/抓 token 脚本
+            open_netdisk_login,
+            close_netdisk_login
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

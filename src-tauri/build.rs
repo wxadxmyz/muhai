@@ -24,6 +24,9 @@ fn main() {
                     "proxy_probe_snapshot",
                     "proxy_probe_clear",
                     "proxy_probe_set_recording",
+                    // V3.7.8：网盘登录走 App 内 WebView + 桌面 UA + 注入返回/抓 token 脚本
+                    "open_netdisk_login",
+                    "close_netdisk_login",
                 ]),
         ),
     )

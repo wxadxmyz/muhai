@@ -252,12 +252,16 @@ export function SettingsPage({
 
   // C3：是否已在本地抓到该盘 token
   const boundNetdisk = (key: NetdiskKey) => !!getNetdiskToken(key);
-  // C3：用系统浏览器打开官网登录页（V3.7.7：plugin-shell open，100% 进登录页），
-  //     登录后由用户在「手动粘贴授权」面板录入 token（不再依赖 WebView 内自动抓取）。
+  // V3.7.8：在 App 内 WebView 打开官网登录页（Rust 命令 + 桌面 UA + 注入返回/抓 token 脚本），
+  // 登录后自动回 App 写 token；抓不到时仍可走下方「手动粘贴授权」兜底。
   const loginNetdisk = async (key: NetdiskKey) => {
     const p = providerOf(key);
-    toast(`已用系统浏览器打开 ${p.label} 登录页，登录后请回到此处「手动粘贴授权」`);
-    await openNetdiskLogin(p);
+    try {
+      await openNetdiskLogin(p);
+      toast(`正在打开 ${p.label} 登录页（App 内，顶部有「返回幕海」）`);
+    } catch (e: any) {
+      toast(`打开登录页失败：${e?.message ?? e}`, 'err');
+    }
   };
   const unbindNetdisk = (key: NetdiskKey) => {
     clearNetdiskToken(key);
@@ -364,10 +368,10 @@ export function SettingsPage({
             );
           })}
 
-          {/* V3.7.6 #5：手动粘贴授权——官网登录页在 App 内常显示下载页无法登录，粘贴 refresh_token / cookie 最稳 */}
+          {/* V3.7.8：手动粘贴授权改为兜底——App 内登录页自动抓 token 失败时用 */}
           <div className="paste-card">
-            <div className="paste-title">手动粘贴授权（推荐）</div>
-            <p className="muted sm">官网登录页在 App 内常强制显示「下载客户端」而无法直接登录；可直接粘贴已获取的凭据完成授权。</p>
+            <div className="paste-title">手动粘贴授权（兜底）</div>
+            <p className="muted sm">正常情况下点上方网盘即可在 App 内登录并自动授权；若自动抓取失败，可在此粘贴已获取的凭据完成授权。</p>
             <div className="paste-keys">
               {NETDISKS.map((nd) => (
                 <button

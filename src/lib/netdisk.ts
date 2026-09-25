@@ -42,7 +42,8 @@ export const NETDISKS: NetdiskProvider[] = [
     key: 'quark',
     label: '夸克网盘',
     color: '#2b6ff2',
-    loginUrl: 'https://pan.quark.cn/sign_in',
+    // V3.7.8：用网页版入口（桌面 UA 下才会出登录框，移动 UA 会被推到下载页）
+    loginUrl: 'https://pan.quark.cn/',
     captureMode: 'cookie',
     mustMatch: 'PUID|b-user-id|__pus|kps',
     headerName: 'cookie',
@@ -52,7 +53,8 @@ export const NETDISKS: NetdiskProvider[] = [
     key: 'uc',
     label: 'UC网盘',
     color: '#ff6a00',
-    loginUrl: 'https://pc.uc.cn/',
+    // V3.7.8：用网页版登录页（drive.uc.cn，桌面 UA 下出登录框）
+    loginUrl: 'https://drive.uc.cn/',
     captureMode: 'cookie',
     mustMatch: 'PUID|uc_uid|b-user-id|kps',
     headerName: 'cookie',
@@ -163,30 +165,52 @@ export function buildCaptureScript(p: NetdiskProvider): string {
 }
 
 /**
- * 选项 B（V3.2.5，Android 兼容）抓取脚本：
- * 与 buildCaptureScript 同源，但抓到 token 后不再依赖事件回传——因为主 WebView 已跳转到
- * 登录页，App 原先的监听上下文已被卸载。改为直接把主 WebView 导航回 App，并把 token 带在
- * URL query 中（?ndtok=<provider>:<token>），由 startup 的 syncNetdiskTokens 消费写入。
- * @param appHref 进入登录页前记录的 App 地址（不含 hash），用于跳回
+ * V3.7.8：注入到网盘登录页的脚本。负责两件事：
+ *  1) 顶部悬浮「返回幕海」按钮——点击调 Rust 命令 close_netdisk_login 回 App（无 token 也回）；
+ *  2) 轮询抓 token，命中登录态特征后调 close_netdisk_login 并带上 token，由 Rust 拼 ?ndtok 跳回 App。
+ * 脚本对登录页是"可信注入"（webview.eval），不受页面 CSP 限制；用 setInterval 反复尝试，
+ * 避开页面未加载完 document.body 的时序问题。
  */
-export function buildCaptureNavScript(p: NetdiskProvider, appHref: string): string {
+export function buildCaptureNavScript(p: NetdiskProvider): string {
   const must = JSON.stringify(p.mustMatch || '');
+  const lsKey = JSON.stringify(p.lsKey);
+  // 注意：getter 是「函数表达式」而不是 IIFE 结果——每次轮询都要重新读 localStorage/cookie，
+  // 否则只在注入瞬间取一次值，登录后再也不会命中。
   const getter =
     p.captureMode === 'localStorage'
-      ? `(function(){try{var v=localStorage.getItem(${JSON.stringify(p.lsKey)});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';})()`
-      : `(function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';})()`;
-  const back = JSON.stringify(appHref.split('#')[0]);
-  const sep = back.includes('?') ? '&' : '?';
-  return `(function(){
-  if (window.__ndPoll) return;
-  window.__ndPoll = setInterval(function(){
-    var t = ${getter};
+      ? `function(){try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';}`
+      : `function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
+  // 返回 / 抓到 token 后调用 Rust 命令；withGlobalTauri 已在 tauri.conf 开启
+  const close = `function __ndClose(tok){try{if(window.__TAURI__&&window.__TAURI__.invoke){window.__TAURI__.invoke('close_netdisk_login',tok?{token:tok}:{});}else{window.__ndFallback&&window.__ndFallback(tok);}}catch(e){}}`;
+  return `(()=>{
+  ${close}
+  var __ND_PROVIDER = ${JSON.stringify(p.key)};
+  var __ND_GETTER = ${getter};
+  var __ND_MATCH = ${must};
+  var __ND_DONE = false;
+  // 悬浮返回按钮
+  function __ndEnsureBar(){
+    if (document.getElementById('__nd_bar')) return;
+    var bar = document.createElement('div');
+    bar.id = '__nd_bar';
+    bar.textContent = '← 返回幕海';
+    bar.style.cssText = 'position:fixed!important;top:0!important;left:0!important;right:0!important;height:46px!important;line-height:46px!important;padding:0 16px!important;background:#1f1f23!important;color:#fff!important;font-size:16px!important;z-index:2147483647!important;box-shadow:0 1px 4px rgba(0,0,0,.4)!important;cursor:pointer!important;';
+    bar.onclick = function(){ if(!__ND_DONE){ __ND_DONE = true; __ndClose(null); } };
+    (document.body || document.documentElement).appendChild(bar);
+    if (document.body) document.body.style.paddingTop = '46px';
+  }
+  // 每秒：确保按钮在；抓 token
+  setInterval(function(){
+    try { __ndEnsureBar(); } catch(e){}
+    if (__ND_DONE) return;
+    var t = '';
+    try { t = __ND_GETTER(); } catch(e){ t = ''; }
     if (t) {
-      clearInterval(window.__ndPoll);
-      var payload = { provider: ${JSON.stringify(p.key)}, token: t };
-      try { window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.emit('netdisk-captured', payload); } catch(e){}
-      try { window.location.href = ${back} + ${JSON.stringify(sep)} + 'ndtok=' + encodeURIComponent(payload.provider + ':' + payload.token); } catch(e2){}
+      __ND_DONE = true;
+      try { __ndClose(t); } catch(e){}
     }
   }, 1000);
+  // 立即先来一次（页面已就绪时）
+  try { __ndEnsureBar(); } catch(e){}
 })();`;
 }

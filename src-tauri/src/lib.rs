@@ -65,7 +65,7 @@ fn webview_ua(
     webview: &tauri::webview::PlatformWebview,
     new_ua: Option<String>,
 ) -> Result<Option<String>, String> {
-    use jni::objects::JString;
+    use jni::objects::{JString, JValue};
     let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
     let new_ua = new_ua.map(|s| s.to_string());
     webview.jni_handle().exec(move |env, _, wv| {
@@ -79,7 +79,7 @@ fn webview_ua(
                     settings,
                     "setUserAgentString",
                     "(Ljava/lang/String;)V",
-                    &[(&ua_jstring).into()],
+                    &[JValue::Object(&*ua_jstring)],
                 )?;
                 Ok(None)
             } else {

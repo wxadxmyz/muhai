@@ -87,7 +87,9 @@ fn webview_ua(
                     .call_method(settings, "getUserAgentString", "()Ljava/lang/String;", &[])?
                     .l()?;
                 let java_str = env.get_string(&JString::from(ua_jstring))?;
-                let ua: String = java_str.to_str()?.to_string();
+                // jni 0.21.1 的 JavaStr 没有 to_str()/to_string_lossy()；它有 From<JavaStr> for String，
+                // 直接消费 java_str 转成 String（避免 `&*java_str` 落到 &JNIStr 上无 From 实现）。
+                let ua: String = java_str.into();
                 Ok(Some(ua))
             }
         })()

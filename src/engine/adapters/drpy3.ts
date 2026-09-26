@@ -196,7 +196,12 @@ function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
     const id = String(v.vod_id ?? v.id ?? '');
     // V3.6.5 #4：搜索/分类列表里若已带 vod_play_url，就地解析出集数并记住 flag 与首集。
     // 这样①列表卡片能直接显示「更新至 N 集」，②播放时可复用首集，省掉一次 detail 往返。
-    const eps = toEpisodesWithFlag(v?.vod_play_url ?? '');
+    // V3.8.5 #1：列表/搜索项自带选集时，用与详情一致的 toLineGroups（按直链占比排序、
+    // 线路名作 flag）解析，而非未排序的 toEpisodesWithFlag 摊平。否则「分享页线路」会排在
+    // 「直链线路」前面（如 lzi 的 vod_play_from = "liangzi$$$lzm3u8"），firstEpMap 记成已失效
+    // 的分享页 URL → play 去死链抠 m3u8 → 「能搜不能播 / 未取到可播放地址」。直链优先后，
+    // 搜索卡片也能直接起播，省一次 detail 往返。
+    const { episodes: eps } = toLineGroups(v);
     for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
     if (eps.length) rememberFirstEp(cfg.id, id, eps);
     return {
@@ -398,21 +403,21 @@ export function createDrpy3Source(
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
       await ensureInit();
       const isHttpUrl = (s: string) => /^https?:\/\//i.test(s);
+      const isDirect = (s: string) => /\.(m3u8|mp4)(\?|$)/i.test(s);
       let flag = flagMap.get(`${cfg.id}|${itemId}`) ?? '';
       let playId = itemId;
       // V3.6.5 #4：先查首集映射（详情页/列表已拉过集数时命中），命中即直接用，
       // 跳过下面那次 detail 往返。这是「播放慢」的一个隐性开销：每次播放都多拉一次详情。
-      if (!flag) {
-        const first = firstEpMap.get(`${cfg.id}|${itemId}`);
-        if (first?.url) {
-          flag = first.flag;
-          playId = first.url;
-        }
+      const first = firstEpMap.get(`${cfg.id}|${itemId}`);
+      if (!flag && first?.url) {
+        flag = first.flag;
+        playId = first.url;
       }
-      // V3.8.4 #1：itemId 不是合法播放 URL（常见为 vod_id）且没有首集缓存时，
-      // 必须拉一次 detail 取出真实首集 URL。否则把 vod_id 传给 drpy 默认 play()，
-      // 它会原样返回 vod_id 字符串，下游 hls.js 无法加载，表现为「未获取到播放地址」或立即报错。
-      if (!flag && !isHttpUrl(playId)) {
+      // V3.8.5 #1：首集缓存为空，或缓存的是「分享页 / 中间地址」（非直链）时，拉一次 detail，
+      // 用 toLineGroups 选直链占比最高的线路（与详情页一致）。否则一旦缓存的是失效分享页 URL
+      // （如 lzi 的 liangzi 线路），直接 play 必然失败 → 「能搜不能播 / 未取到可播放地址」。
+      // 直链首集则直接用，跳过这次 detail，不增加额外耗时。
+      if (!isDirect(playId)) {
         try {
           const r = await call('detail', [itemId]);
           const first = (r?.list ?? [])[0];

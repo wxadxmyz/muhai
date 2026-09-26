@@ -27,7 +27,6 @@
     "allow-proxy-probe-clear",
     "allow-proxy-probe-set-recording",
     "allow-open-netdisk-login",
-    "allow-close-netdisk-login",
-    { "identifier": "shell:allow-open", "allow": [{ "url": "https://*/*" }] }
+    "allow-close-netdisk-login"
   ]
 }

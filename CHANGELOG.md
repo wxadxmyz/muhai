@@ -5,6 +5,24 @@
 
 ---
 
+## V3.8.4
+
+本版修复 V3.8.3 真机验证中暴露的 **drpy 源「能搜不能播」** 回归，并把安装包显著瘦身（三项）。
+
+### A. 修复 drpy 源「能搜不能播」
+
+- `src/engine/adapters/drpy3.ts`：`detail` 解析对齐苹果 CMS normal 源（按 `vod_play_from` 构造 `lineGroups/lineNames`，直链线路优先）；`getPlayUrl` 强制兜底拉 `detail` 取真实首集 URL（当 `playId` 不是合法 http(s) URL 时不再把 `vod_id` 当 URL 丢给播放器）；`play()` 返回非 URL 时显式报错而非无限转圈。
+
+### B. 安装包瘦身（三项）
+
+- 移除 `tauri-plugin-shell`：`Cargo.toml` 去依赖、`src-tauri/src/lib.rs` 去 `.plugin()` 初始化、两份 capabilities 删 `shell:allow-open` 权限声明（前端零引用，纯删冗余 ~10MB）。
+- `src-tauri/Cargo.toml` 追加 `[profile.release]`：`opt-level="z"` + `lto=true` + `strip=true`，单份 `libapp_lib.so` 再降约 20%~25%。
+- `.github/workflows/android.yml` 构建命令加 `--split-per-abi`，产物从单个 universal APK 改为按 ABI 拆分的多个 APK（arm64-v8a / armeabi-v7a / x86 / x86_64）；签名与上传步骤改为循环处理多 ABI 包。arm64 单包体积预计由 ~99MB 降到 ~20~25MB。
+
+> 注：瘦身三项均不涉及播放/drpy 逻辑，与 A 项功能修复互不干扰。
+
+---
+
 ## V3.8.3
 
 本版聚焦「**只留苹果 CMS（normal 型）+ drpy 两类源**」的精简，并把即使只用这两类源也仍然存在的播放链路 BUG 修掉。csp 体系（JS 型 csp 与 Phase 2 原生 DEX 桥）从代码里干净移除。

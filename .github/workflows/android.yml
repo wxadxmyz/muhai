@@ -572,7 +572,7 @@ jobs:
           fi
           export BINDGEN_EXTRA_CLANG_ARGS="--sysroot $NDK_SYSROOT"
           set -o pipefail
-          pnpm tauri android build --apk 2>&1 | tee /tmp/build.log
+          pnpm tauri android build --apk --split-per-abi 2>&1 | tee /tmp/build.log
 
       - name: Sign APK with persisted keystore (if configured)
         id: sign
@@ -591,17 +591,23 @@ jobs:
             exit 0
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/keystore.p12
-          SRC=$(find src-tauri/gen/android -name '*unsigned*.apk' | head -1)
-          OUT=src-tauri/gen/android/app/build/outputs/apk/universal/release/${{ github.event.repository.name }}-android-${RELEASE_TAG}.apk
-          $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-            --ks /tmp/keystore.p12 \
-            --ks-key-alias "$ANDROID_KEY_ALIAS" \
-            --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
-            --key-pass pass:"$ANDROID_KEY_PASSWORD" \
-            --out "$OUT" \
-            "$SRC"
-          $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$OUT"
-          echo "SIGNED_APK=$OUT" >> "$GITHUB_ENV"
+          # V3.8.4：启用 --split-per-abi 后产物为按 ABI 拆分的多个 unsigned APK
+          #（arm64-v8a / armeabi-v7a / x86 / x86_64），逐个签名并收集路径。
+          SIGNED_APKS=""
+          for SRC in $(find src-tauri/gen/android -name '*unsigned*.apk' | sort); do
+            ABI=$(echo "$SRC" | sed -E 's#.*/apk/([^/]+)/release/.*#\1#')
+            OUT=src-tauri/gen/android/app/build/outputs/apk/$ABI/release/${{ github.event.repository.name }}-android-${RELEASE_TAG}-${ABI}.apk
+            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
+              --ks /tmp/keystore.p12 \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
+              --key-pass pass:"$ANDROID_KEY_PASSWORD" \
+              --out "$OUT" \
+              "$SRC"
+            $ANDROID_HOME/build-tools/34.0.0/apksigner verify "$OUT"
+            SIGNED_APKS="$SIGNED_APKS $OUT"
+          done
+          echo "SIGNED_APKS=$SIGNED_APKS" >> "$GITHUB_ENV"
 
       - name: Ensure release exists
         if: steps.build.outcome == 'success'
@@ -616,22 +622,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
-          # V3.3.4：锁定产物——签名成功用 SIGNED_APK；未签名则只认 universal/release 下的包
-          #（app-universal-release-unsigned.apk）。旧逻辑 find 第一个 *.apk，可能捡到
-          # debug 包或单 ABI 包传上 Release，用户下载装错版本。
-          if [ -n "$SIGNED_APK" ]; then
-            APK="$SIGNED_APK"
+          # V3.8.4：启用 --split-per-abi 后产物为按 ABI 拆分的多个 APK（不再有 universal）。
+          # 有签名则上传全部已签名的 ABI 包；未配置 keystore 则上传全部 release 下的未签名 ABI 包。
+          APKS=""
+          if [ -n "$SIGNED_APKS" ]; then
+            APKS=$SIGNED_APKS
           else
-            APK=$(find src-tauri/gen/android/app/build/outputs -path '*universal/release*' -name '*.apk' | sort | head -1)
+            APKS=$(find src-tauri/gen/android/app/build/outputs -path '*/release/*' -name '*.apk' | sort)
           fi
-          echo "Uploading APK: $APK"
-          if [ -z "$APK" ]; then
-            echo "::error::No universal/release APK found (signed or unsigned) — refuse to upload wrong artifact"
+          echo "APKs to upload: $APKS"
+          if [ -z "$APKS" ]; then
+            echo "::error::No release APK found (signed or unsigned) — refuse to upload wrong artifact"
             echo "--- outputs tree ---"
             ls -R src-tauri/gen/android/app/build/outputs 2>/dev/null || true
             exit 1
           fi
-          gh release upload "$RELEASE_TAG" "$APK" --clobber 2>&1 | tee /tmp/upload.log
+          gh release upload "$RELEASE_TAG" $APKS --clobber 2>&1 | tee /tmp/upload.log
 
       - name: "Debug: dump logs to issue"
         if: always() && (steps.init.outcome != 'success' || steps.build.outcome != 'success' || steps.upload.outcome != 'success')

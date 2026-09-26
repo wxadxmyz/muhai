@@ -1,6 +1,6 @@
 [package]
 name = "muhai"
-version = "3.8.3"
+version = "3.8.4"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
 edition = "2021"
@@ -37,7 +37,6 @@ tauri-plugin-notification = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
-tauri-plugin-shell = "2"
 # 网盘登录 token URL 编码（ndtok=provider:token 中的 token 可能含特殊字符）
 urlencoding = "2"
 
@@ -56,3 +55,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [[bin]]
 name = "muhai"
 path = "src/main.rs"
+
+# ===== 体积优化：release 编译配置（V3.8.4） =====
+# 最小体积优先 + 链接时优化 + 去符号表，单份 libapp_lib.so 约降 20%~25%。
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

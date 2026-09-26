@@ -140,6 +140,56 @@ export function toEpisodesWithFlag(playUrl: string): EpisodeWithFlag[] {
   return out;
 }
 
+// V3.8.4 #1：drpy 源详情也按 vod_play_from / vod_play_url 构造 lineGroups/lineNames，
+// 让播放器线路切换、首集默认都复用与苹果CMS normal 源一致的逻辑。
+// 直链占比高的线路排在前面，避免默认选中分享页/中间页线路导致「无法播放」。
+function lineDirectScore(eps: { name: string; url: string }[]): number {
+  if (!eps.length) return 0;
+  const direct = eps.filter((e) => /\.(m3u8|mp4)(\?|$)/i.test(e.url)).length;
+  return direct / eps.length;
+}
+
+function parseOneLine(group: string): { name: string; url: string }[] {
+  if (!group) return [];
+  const out: { name: string; url: string }[] = [];
+  for (const seg of group.split('#')) {
+    if (!seg) continue;
+    const idx = seg.indexOf('$');
+    if (idx < 0) out.push({ name: `第${out.length + 1}集`, url: seg });
+    else out.push({ name: seg.slice(0, idx), url: seg.slice(idx + 1) });
+  }
+  return out;
+}
+
+export function toLineGroups(raw: any): {
+  lineGroups: { name: string; url: string }[][];
+  lineNames: string[];
+  episodes: EpisodeWithFlag[];
+} {
+  const urlStr = String(raw?.vod_play_url || raw?.vod_url || raw?.play_url || '');
+  const fromStr = String(raw?.vod_play_from || '');
+  if (!urlStr) return { lineGroups: [], lineNames: [], episodes: [] };
+  const groups = urlStr.split('$$$');
+  const names = fromStr ? fromStr.split('$$$') : [];
+  const parsed = groups
+    .map((g, i) => ({ name: names[i] || `线路${i + 1}`, eps: parseOneLine(g) }))
+    .filter((g) => g.eps.length > 0);
+  parsed.sort((a, b) => {
+    const sa = lineDirectScore(a.eps);
+    const sb = lineDirectScore(b.eps);
+    if (sa !== sb) return sb - sa;
+    const aDirect = /\.(m3u8|mp4)(\?|$)/i.test(a.eps[0]?.url ?? '') ? 0 : 1;
+    const bDirect = /\.(m3u8|mp4)(\?|$)/i.test(b.eps[0]?.url ?? '') ? 0 : 1;
+    return aDirect - bDirect;
+  });
+  // episodes 保持 flat（兼容旧消费方），但按线路顺序把直链线路的集数放前面
+  const episodes: EpisodeWithFlag[] = [];
+  for (const g of parsed) {
+    for (const e of g.eps) episodes.push({ ...e, flag: g.name });
+  }
+  return { lineGroups: parsed.map((g) => g.eps), lineNames: parsed.map((g) => g.name), episodes };
+}
+
 function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
   if (!Array.isArray(list)) return [];
   return list.map((v: any) => {
@@ -311,10 +361,13 @@ export function createDrpy3Source(
       const items = toItems(list, cfg);
       const it = items[0];
       if (it) {
-        const eps = toEpisodesWithFlag(it.raw?.vod_play_url ?? '');
+        // V3.8.4 #1：用与 normal 源一致的 lineGroups/lineNames 解析，直链线路优先，
+        // 同时把 flag 写进 episodes 供 getPlayUrl 使用。
+        const { lineGroups, lineNames, episodes: eps } = toLineGroups(it.raw);
         for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
         rememberFirstEp(cfg.id, itemId, eps); // #4：记住首集，播放时无需再拉详情
         it.episodes = eps.map((e) => ({ name: e.name, url: e.url }));
+        it.raw = { ...it.raw, lineGroups, lineNames };
       }
       // V3.6.7 修复④：电影 / 动漫剧场版等「单集片」在 detail 阶段常常不给 vod_play_url
       // （地址要到 play 阶段才现算）。旧实现在这里直接返回空 episodes，前端 openDetail 又
@@ -344,6 +397,7 @@ export function createDrpy3Source(
 
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
       await ensureInit();
+      const isHttpUrl = (s: string) => /^https?:\/\//i.test(s);
       let flag = flagMap.get(`${cfg.id}|${itemId}`) ?? '';
       let playId = itemId;
       // V3.6.5 #4：先查首集映射（详情页/列表已拉过集数时命中），命中即直接用，
@@ -355,22 +409,30 @@ export function createDrpy3Source(
           playId = first.url;
         }
       }
-      // itemId 是 vod_id（而非集数 url）且首集映射也没命中时，才兜底拉一次详情取首集
-      if (!flag) {
+      // V3.8.4 #1：itemId 不是合法播放 URL（常见为 vod_id）且没有首集缓存时，
+      // 必须拉一次 detail 取出真实首集 URL。否则把 vod_id 传给 drpy 默认 play()，
+      // 它会原样返回 vod_id 字符串，下游 hls.js 无法加载，表现为「未获取到播放地址」或立即报错。
+      if (!flag && !isHttpUrl(playId)) {
         try {
           const r = await call('detail', [itemId]);
           const first = (r?.list ?? [])[0];
-          if (first?.vod_play_url) {
-            const eps = toEpisodesWithFlag(first.vod_play_url);
+          const raw = first ?? (r && (r.vod_id != null || r.vod_play_url != null) ? r : null);
+          if (raw) {
+            const { episodes: eps } = toLineGroups(raw);
             for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
             if (eps[0]) {
               flag = eps[0].flag;
               playId = eps[0].url;
+              devLog(`[drpy3] ${jsCfg.name} detail 兜底取首集: flag=${flag}, url=${playId}`);
             }
           }
-        } catch {
-          /* 直传 itemId 再试 */
+        } catch (e: any) {
+          devLog(`[drpy3] ${jsCfg.name} detail 兜底失败: ${e?.message ?? e}`);
         }
+      }
+      // 最后一道防线：playId 仍然不是合法 URL，直接报错而不是把脏数据丢给播放器。
+      if (!isHttpUrl(playId)) {
+        throw new Error('该源未返回可播放地址（详情缺少选集链接）');
       }
       const r = await call('play', [flag, playId, []]);
       if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '解析播放地址失败'));
@@ -381,6 +443,29 @@ export function createDrpy3Source(
         if (typeof r.url === 'string' && r.url) url = r.url;
         else if (Array.isArray(r.urls) && typeof r.urls[1] === 'string') url = r.urls[1];
         if (r.header && typeof r.header === 'object') headers = r.header;
+      }
+      // V3.8.4 #1：play() 返回的不是可播放 URL（如返回了 vod_id 字符串、空字符串），
+      // 尝试再拉一次 detail 取首集直链。仍失败则明确报错，不再把脏数据塞给播放器。
+      if (!isHttpUrl(url)) {
+        devLog(`[drpy3] ${jsCfg.name} play 返回非 URL: "${url}", 尝试 detail 兜底`);
+        try {
+          const d = await call('detail', [itemId]);
+          const first = (d?.list ?? [])[0];
+          const raw = first ?? (d && (d.vod_id != null || d.vod_play_url != null) ? d : null);
+          if (raw) {
+            const { episodes: eps } = toLineGroups(raw);
+            if (eps[0]?.url && isHttpUrl(eps[0].url)) {
+              url = eps[0].url;
+              flag = eps[0].flag;
+              devLog(`[drpy3] ${jsCfg.name} detail 兜底取到 URL: ${url}`);
+            }
+          }
+        } catch (e: any) {
+          devLog(`[drpy3] ${jsCfg.name} detail 兜底失败: ${e?.message ?? e}`);
+        }
+      }
+      if (!isHttpUrl(url)) {
+        throw new Error('该源未返回可播放地址（解析结果不是有效视频链接）');
       }
       if (!headers) {
         // #5 Referer 修正：优先用源真实 host（ext/api 是源站接口地址，ruleHost 是从规则脚本解析的媒体站 host）。

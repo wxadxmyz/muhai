@@ -470,9 +470,6 @@ jobs:
           print(f"Patched {path} with Android back-button + MuHaiAndroid bridge")
           PYEOF
 
-      - name: Patch Android for CSP native DEX bridge (DexClassLoader)
-        run: bash scripts/patch-csp-android.sh
-
       - name: Patch AndroidManifest for Picture-in-Picture
         run: |
           MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)

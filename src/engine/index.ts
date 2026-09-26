@@ -3,7 +3,7 @@ import { createMusicJsonSource } from './adapters/musicJson';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
-import { createJsSource, createCspSource } from './adapters/js';
+import { createJsSource } from './adapters/js';
 import { createNormalSource } from './adapters/normal';
 import { withTimeout } from './http';
 import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
@@ -60,7 +60,9 @@ export function createSource(cfg: SourceConfig): MediaSource {
     case 'js':
       return createJsSource(cfg);
     case 'csp':
-      return createCspSource(cfg as any);
+      // 影视仓 csp 源已在 V3.8.3 移除；保留枚举值仅用于历史配置反序列化不报错，
+      // 实际加载时显式提示用户删除该源。
+      throw new Error('影视仓 csp 源（csp_*）已在 V3.8.3 移除，请删除该源后重试');
     case 'normal':
       return createNormalSource(cfg);
     case 'mock':

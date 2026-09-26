@@ -5,6 +5,26 @@
 
 ---
 
+## V3.8.3
+
+本版聚焦「**只留苹果 CMS（normal 型）+ drpy 两类源**」的精简，并把即使只用这两类源也仍然存在的播放链路 BUG 修掉。csp 体系（JS 型 csp 与 Phase 2 原生 DEX 桥）从代码里干净移除。
+
+### A. 移除影视仓 csp 体系
+
+- 删除 Phase 2 脚本 `scripts/patch-csp-android.sh` 及 CI 调用（Kotlin `MuHaiCsp` / `CspNative` / `Init` / `Java` DEX 桥整段移除）。
+- `src-tauri/src/js_engine.rs`：删 `__native_csp` 分支、csp 管理器下载+md5 校验、catvod `java` 宿主兼容层与 csp 专用字段；保留 QuickJS 沙箱与 drpy2 引擎核心。
+- `src/engine/adapters/tvbox.ts`：删 `isCspSite` / `spiderField` / 所有 `csp_` 选路分支；保留 normal/drpy 解析与 `$$$` 多线路分组。
+- `src/engine/adapters/js.ts`：删 `MuHaiCsp.require` 路由与 `__native_csp` 锁定。
+- `src/engine/types.ts`：删 `CspSourceConfig` 接口；`'csp'` 枚举字面量保留（避免历史配置反序列化报错），不再有新代码引用。
+- `src/engine/index.ts`：`case 'csp'` 显式抛错提示「csp 源已在 V3.8.3 移除」。
+
+### B. 修复播放链路（苹果 CMS / drpy 同样受益）
+
+- **m3u8 探测崩溃**：`src/lib/hlsPlayer.ts` 的 `createBackendLoader` 在 `Range: bytes=0-0` 畸形探测头（`rangeStart===0 && rangeEnd===0/''/null`）时不再发送 Range 头，改为普通 GET，避免 hls.js 按 1 字节解析导致 `fragParsingError` 卡死。
+- **云线路 WebView 转圈**：`src/engine/adapters/normal.ts` 的 `resolvePlayUrl` 增加苹果 CMS「云」线路 HTML 藏链兜底（正则匹配 `const vid='.../index.m3u8'` 等），抠出真实 m3u8 再走正常播放；解析失败改为显式报错（而非把 HTML 交给播放器无限转圈）。页面抓取补 `Referer` + 浏览器 UA。
+
+> APK 体积预期回落：移除了 Phase 2 引入的 Kotlin DEX 桥；后续按 `安装包瘦身清单.md` 在 V3.8.4 继续三项瘦身。
+
 ## V3.6.6
 
 本版修「**播放加载 10 秒不出片**」（四个真 BUG 中的两个致命项）、首页**冷启动白屏**、设置页边距不一致，并整理 gitee 三仓库结构。四项一次性做完。

@@ -10,14 +10,36 @@
 import { invoke } from '@tauri-apps/api/core';
 import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 
-async function fetchText(url: string): Promise<string> {
+async function fetchText(url: string, headers?: Record<string, string>): Promise<string> {
+  // V3.8.3：取播放页时尽量带浏览器 UA + 源站 Referer，部分源站（云线路 DPlayer 页）对
+  // 无 UA/Referer 的请求返回空/403，会导致解析不出 m3u8 而转圈。
+  const fallbackHeaders: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+    ...(headers ?? {}),
+  };
   try {
     return await invoke<string>('fetchsource', { url });
   } catch {
-    const res = await fetch(url, { redirect: 'follow' });
+    const res = await fetch(url, { headers: fallbackHeaders, redirect: 'follow' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
   }
+}
+
+// 取播放页用的浏览器 UA + 同域 Referer
+function pageHeaders(url: string): Record<string, string> {
+  let ref = '';
+  try {
+    ref = new URL(url).origin;
+  } catch {
+    /* ignore */
+  }
+  return {
+    'User-Agent':
+      'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36',
+    Referer: ref || 'https://www.google.com',
+  };
 }
 
 // 去掉末尾查询串，避免"用户粘贴时带了 ?ac=xxx"导致拼接出 ?ac=list?ac=list
@@ -169,41 +191,44 @@ function parseEpisodes(group: string): { name: string; url: string }[] {
   return out;
 }
 
-// v2.7.0 自解析：CMS 接口返回的播放地址常常是 HTML 分享页（量子/飞极速等），里面
-// 内嵌一段 JS：`var main = "/path/index.m3u8?sign=..."` 或同类变量名。
+// v2.7.0 自解析：CMS 接口返回的播放地址常常是 HTML 分享页（量子/飞极速/云线路 DPlayer 等），里面
+// 内嵌一段 JS：`var main = "/path/index.m3u8?sign=..."` 或同类变量名（`vid` / `url` / `play_url`）。
 // 通过抓分享页 → 提取 m3u8 → 用 URL 原域拼装成完整链接，回给播放器 HLS。
 // 已经直链（#EXTM3U / .mp4）的原样返回。
 export async function resolvePlayUrl(url: string): Promise<string> {
   if (!url) return url;
   if (/\.(m3u8|mp4)(\?|$)/i.test(url)) return url; // 看起来已是直链，省一次请求
   try {
-    const text = await fetchText(url);
+    const text = await fetchText(url, pageHeaders(url));
     if (!text) return url;
     const t = text.trimStart();
     if (t.startsWith('#EXTM3U')) return url; // 已经是 m3u8 文本
-    // V3.6.7：注意用 text（未 trim 的原串）匹配，避免 BOM / 前导空白影响 ^ 锚定类模板
-    // 常见分享页变量名：main / url / m3u8 / play_url / video_url（支持 var / const / let）
-    // V3.6.7 补充：LZ 用 `var main=...`、非凡用 `const url=\"/path/index.m3u8?sign=...\"`，
-    //   两家都给**相对路径**（靠分享页自身 origin 拼接）。下面的 new URL(m[1], url) 已覆盖。
-    //   新增 `player` 配置对象内嵌写法（`"url":"..."` 出现在 JSON 里）。
+    // V3.8.3：常见分享页变量名（支持 var / const / let）。云线路 DPlayer 页用 `const vid='.../index.m3u8'`，
+    // 单列出来避免被后面的宽兜底误伤；`player` 配置对象内嵌写法（`"url":"..."`）也覆盖。
     const m =
+      text.match(/(?:var|const|let)\s+vid\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/(?:var|const|let)\s+main\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/(?:var|const|let)\s+(?:url|m3u8|play_url|video_url|videoUrl|source)\s*=\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/["'](?:url|src|file|source)["']\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
       text.match(/src\s*[:=]\s*["']([^"']+\.m3u8[^"']*)["']/i) ||
-      // V3.3.1 Q3：更宽的兜底——不管变量名叫什么，页面里只要出现引号包裹的 m3u8 路径就取它。
-      // 各家分享页模板的赋值名千奇百怪（已见过 main / playurl / data-url / 直接写在
+      // 更宽的兜底——不管变量名叫什么，页面里只要出现引号包裹的 m3u8 路径就取它。
+      // 各家分享页模板的赋值名千奇百怪（已见过 main / vid / playurl / data-url / 直接写在
       // player 配置对象里），按名匹配漏一个就等于整条线路播不了。
       text.match(/["']([^"'\s]*\.m3u8[^"'\s]*)["']/i);
     if (m) {
       const abs = new URL(m[1].replace(/\\\//g, '/'), url).href;
-      // V3.6.7 校验：解析结果必须仍是 http(s)。个别分享页里有 m3u8 字样的静态资源
+      // 校验：解析结果必须仍是 http(s)。个别分享页里有 m3u8 字样的静态资源
       // （播放器 JS 路径、预加载提示图），命中会拿到 .js/.jpg 之类，直接交给播放器必失败。
       if (/^https?:/i.test(abs)) return abs;
       return url;
     }
-    return url; // 解析不出，原样返回给播放器去尝试
-  } catch {
+    // V3.8.3：页面已取到但里面没有任何 m3u8 地址——明确抛错，
+    // 不再把 HTML 页面 URL 丢给播放器导致永久转圈（用户只能干等）。
+    throw new Error('该线路解析失败：播放页未包含可播放的 m3u8 地址（源站可能已更换播放页结构）');
+  } catch (e: any) {
+    // 区分两类失败：明确的"解析失败"向上抛，让播放页/上层显示真实原因；
+    // 取页面本身的网络/防盗链错误则回退 URL，由上层 fallback 到 m3u8 直链线路。
+    if (e?.message && e.message.includes('解析失败')) throw e;
     return url;
   }
 }
@@ -258,7 +283,11 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
       let picked = first.url;
       let resolved = first.url;
       if (!isDirect(first.url)) {
-        resolved = await resolvePlayUrl(first.url);
+        try {
+          resolved = await resolvePlayUrl(first.url);
+        } catch {
+          resolved = first.url; // 解析失败：保留原地址，走下方回退逻辑
+        }
         // V3.6.7：主线路是分享页且解析失败时，**回退到后续线路的第一集**再试一次。
         // 旧实现解析失败会把分享页 URL 原样交给播放器 → 播放器拿到 HTML → manifestParsingError
         // → 用户只看到「加载失败/转圈」。LZ 这类源往往另有 lzm3u8 直链线路，白放着没用到。
@@ -272,11 +301,15 @@ export function createNormalSource(cfg: SourceConfig): MediaSource {
               resolved = cand.url;
               break;
             }
-            const r2 = await resolvePlayUrl(cand.url);
-            if (r2 !== cand.url && isDirect(r2)) {
-              picked = cand.url;
-              resolved = r2;
-              break;
+            try {
+              const r2 = await resolvePlayUrl(cand.url);
+              if (r2 !== cand.url && isDirect(r2)) {
+                picked = cand.url;
+                resolved = r2;
+                break;
+              }
+            } catch {
+              continue; // 该候选解析失败，试下一个
             }
           }
         } else if (resolved !== first.url) {

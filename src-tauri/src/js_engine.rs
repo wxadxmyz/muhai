@@ -9,7 +9,7 @@
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use md5::{Digest, Md5};
-use rquickjs::{Context, Function, Object, Runtime};
+use rquickjs::{Context, Function, Runtime};
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -20,33 +20,21 @@ pub struct SpiderCall {
     /// 要调用的函数名，如 "search" / "home" / "detail" / "play"
     pub func: String,
     /// 函数参数（JSON 值数组，引擎内 `const __args = [...]` 原样展开传入）。
-    /// V3.8.0 由 Vec<String> 升级为 Vec<serde_json::Value>，以支持 catvod csp
-    /// 方法需要的非字符串参数（如 searchContent(key, false) 的布尔、playerContent 的数组）。
+    /// 升级为 Vec<serde_json::Value>，以支持非字符串参数（如 search(key, false) 的布尔）。
     #[serde(default)]
     pub args: Vec<serde_json::Value>,
-    /// TVBox csp 模型：站点代号（如 "csp_DoubanGuard"），传给 spider 构造器选路
+    /// 站点代号（如 "DoubanGuard"），传给 spider 构造器选路（drpy2 规则也可携带）。
     #[serde(default)]
     pub api: Option<String>,
-    /// TVBox csp 模型：站点 ext 配置（字符串或对象皆可），传给 spider 构造器。
+    /// 站点 ext 配置（字符串或对象皆可），传给 spider 构造器。
     /// 改为 serde_json::Value 以兼容对象型 ext（如 {"class":"电影"}），
     /// 否则 ext 为对象时 Option<String> 反序列化失败、整个 run_spider 抛错，
-    /// 导致依赖 ext 的 drpy2/csp 站点（问题 #1/#2）全部返回空。
+    /// 导致依赖 ext 的 drpy2 站点（问题 #1/#2）全部返回空。
     #[serde(default)]
     pub ext: Option<serde_json::Value>,
-    /// V3.8.0：csp 管理器远程地址（已去 `;md5;` 伪装段）。code 为空且本字段存在时，
-    /// 由本端下载管理器（JS 或原生 DEX）+ md5 校验后再执行。
-    #[serde(default)]
-    pub spider_url: Option<String>,
-    /// V3.8.0：csp 管理器 md5 校验值；非空时下载后严格校验完整性。
-    #[serde(default)]
-    pub spider_md5: Option<String>,
-    /// V3.8.0：网盘 token（{ali,quark,uc}），注入引擎全局 `__netdiskTokens`，
-    /// 供 csp 子蜘蛛取 4K 直链。引擎与 WebView 上下文隔离，必须显式传入。
-    #[serde(default)]
-    pub netdisk_tokens: Option<serde_json::Value>,
 }
 
-// ── V3.8.0：同步 HTTP 辅助（供 fetch 桥与 catvod `java` 宿主对象复用） ──
+// ── 同步 HTTP 辅助（供脚本内 fetch 桥复用） ──
 // 统一走 okhttp UA（TVBox/catvod 生态普遍只对 okhttp UA 返回真实内容），
 // 超时 20s，headers 为可选 JSON 字符串（catvod 约定）。
 fn http_get_text(url: &str, headers: Option<&str>) -> Result<String, rquickjs::Error> {
@@ -109,35 +97,13 @@ fn http_post_text(url: &str, data: &str, headers: Option<&str>) -> Result<String
         .map_err(|e| rquickjs::Error::new_into_js_message("http", "body", e.to_string()))
 }
 
-// 下载二进制（csp 管理器可能是 JS 文本或原生 DEX/APK），超时 30s。
-fn http_get_bytes(url: &str) -> Result<Vec<u8>, rquickjs::Error> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| rquickjs::Error::new_into_js_message("http", "client", e.to_string()))?;
-    let resp = client
-        .get(url)
-        .header("User-Agent", "okhttp/4.10.0")
-        .send()
-        .map_err(|e| rquickjs::Error::new_into_js_message("http", "response", e.to_string()))?;
-    let bytes = resp
-        .bytes()
-        .map_err(|e| rquickjs::Error::new_into_js_message("http", "body", e.to_string()))?;
-    Ok(bytes.to_vec())
-}
-
-fn md5_hex(bytes: &[u8]) -> String {
-    let digest = Md5::digest(bytes);
-    digest.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
 /// 执行一段 spider 脚本并调用指定函数，,返回 JSON 字符串。
 /// 注意：本函数不再是 Tauri 命令，由 lib.rs 顶层 spiderrun 命令委托调用，
 /// 以避免子模块命令在 Tauri v2 ACL 权限标识生成上的限制。
 pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
     // [DEBUG-搜空] 记录收到的调用类型与各字段，定位"搜索/主页全 0"根因
     println!(
-        "[spider-debug] func={} api={:?} ext_type={} code_len={} spider_url={:?}",
+        "[spider-debug] func={} api={:?} ext_type={} code_len={}",
         payload.func,
         payload.api,
         match &payload.ext {
@@ -145,46 +111,9 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
             None => "none",
         },
         payload.code.len(),
-        payload.spider_url,
     );
-    // V3.8.0：csp 管理器下载 + md5 校验。当 code 为空且 spider_url 存在时，
-    // 说明是 csp 源——由本端下载顶层管理器（JS 或原生 DEX/APK），校验 md5 后再执行。
-    let mut code = payload.code.clone();
-    if code.trim().is_empty() {
-        if let Some(url) = &payload.spider_url {
-            let bytes = http_get_bytes(url)
-                .map_err(|e| format!("csp 管理器下载失败（{url}）：{e}"))?;
-            if let Some(expected) = &payload.spider_md5 {
-                let actual = md5_hex(&bytes);
-                if &actual != expected {
-                    return Err(format!(
-                        "csp 管理器 md5 校验失败：期望 {expected}，实际 {actual}（源站脚本可能已被篡改或下载不完整）"
-                    ));
-                }
-            }
-            // 原生 DEX/APK（zip 头 PK）：纯 QuickJS 无法执行，按平台分派。
-            // V3.8.1 Phase 2：Android 端交由 Kotlin DexClassLoader 桥（window.MuHaiCsp）执行，
-            // 这里只下发结构化描述符，由前端 createCspSource 路由到 MuHaiCsp.require()。
-            if bytes.starts_with(b"PK") {
-                #[cfg(target_os = "android")]
-                {
-                    let desc = serde_json::json!({
-                        "__native_csp": true,
-                        "spider_url": payload.spider_url,
-                        "spider_md5": payload.spider_md5,
-                        "api": payload.api,
-                        "ext": payload.ext,
-                    });
-                    return Ok(desc.to_string());
-                }
-                #[cfg(not(target_os = "android"))]
-                {
-                    return Err("原生蜘蛛源（DEX/APK）仅 Android 支持，桌面端无法运行".into());
-                }
-            }
-            code = String::from_utf8_lossy(&bytes).to_string();
-        }
-    }
+    // 脚本全文（createJsSource 已确保非空：drpy2 规则或 TVBox 蜘蛛脚本）。
+    let code = payload.code.clone();
     let rt = Runtime::new().map_err(|e| format!("引擎初始化失败: {e}"))?;
     let ctx = Context::full(&rt).map_err(|e| format!("上下文创建失败: {e}"))?;
 
@@ -282,107 +211,6 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
             .map_err(|e| e.to_string())?;
         globals.set("btoa", btoa_fn).map_err(|e| e.to_string())?;
 
-        // V3.8.0：网盘 token 注入。引擎与 WebView 上下文隔离，window.__netdiskTokens
-        // 不会自动可见，必须显式注入全局，供 csp 子蜘蛛取 4K 直链。
-        let tokens_lit = payload
-            .netdisk_tokens
-            .as_ref()
-            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "null".to_string()))
-            .unwrap_or_else(|| "null".to_string());
-        let inject_tokens = format!("globalThis.__netdiskTokens = {tokens_lit};");
-        ctx.eval::<(), _>(inject_tokens.as_str())
-            .map_err(|e| format!("注入 __netdiskTokens 失败: {e}"))?;
-
-        // V3.8.0：catvod 宿主 `java` 对象兼容层。catvod csp 蜘蛛（App 类）依赖
-        // `java.get/post/md5/base64Encode/base64Decode/stringToMap/getLocation` 等
-        // 全局 API。HTTP 类全部复用上面的同步 HTTP 辅助（与 fetch 同通道），
-        // 保证 CORS/明文 HTTP 一致；md5/base64 复用既有实现。
-        let java_obj = Object::new(ctx.clone()).map_err(|e| e.to_string())?;
-
-        // java.get(url, headers_json?) -> 响应文本
-        let java_get = Function::new(ctx.clone(), |url: String, hd: Option<String>| -> Result<String, rquickjs::Error> {
-            http_get_text(&url, hd.as_deref())
-        })
-        .map_err(|e| e.to_string())?;
-        java_obj.set("get", java_get).map_err(|e| e.to_string())?;
-
-        // java.post(url, data, headers_json?) -> 响应文本
-        let java_post = Function::new(ctx.clone(), |url: String, data: String, hd: Option<String>| -> Result<String, rquickjs::Error> {
-            http_post_text(&url, &data, hd.as_deref())
-        })
-        .map_err(|e| e.to_string())?;
-        java_obj.set("post", java_post).map_err(|e| e.to_string())?;
-
-        // java.md5(str) -> 十六进制串
-        let java_md5 = Function::new(ctx.clone(), |s: String| -> String {
-            let digest = Md5::digest(s.as_bytes());
-            digest.iter().map(|b| format!("{:02x}", b)).collect()
-        })
-        .map_err(|e| e.to_string())?;
-        java_obj.set("md5", java_md5).map_err(|e| e.to_string())?;
-
-        // java.base64Encode(str) -> base64
-        let java_b64enc = Function::new(ctx.clone(), |s: String| -> String { B64.encode(s.as_bytes()) })
-            .map_err(|e| e.to_string())?;
-        java_obj.set("base64Encode", java_b64enc).map_err(|e| e.to_string())?;
-
-        // java.base64Decode(b64) -> 文本
-        let java_b64dec = Function::new(ctx.clone(), |s: String| -> Result<String, rquickjs::Error> {
-            let bytes = B64
-                .decode(s.trim())
-                .map_err(|e| rquickjs::Error::new_into_js_message("java.base64Decode", "string", e.to_string()))?;
-            String::from_utf8(bytes)
-                .map_err(|e| rquickjs::Error::new_into_js_message("java.base64Decode", "string", e.to_string()))
-        })
-        .map_err(|e| e.to_string())?;
-        java_obj.set("base64Decode", java_b64dec).map_err(|e| e.to_string())?;
-
-        // java.stringToMap(str) -> 对象。catvod 用 "k:v#k2:v2" 形式传参。
-        let java_stm = {
-            let c = ctx.clone();
-            Function::new(ctx.clone(), move |s: String| -> Result<Object, rquickjs::Error> {
-                let obj = Object::new(c.clone())?;
-                for seg in s.split('#') {
-                    if let Some((k, v)) = seg.split_once(':') {
-                        obj.set(k.trim(), v.trim())?;
-                    }
-                }
-                Ok(obj)
-            })
-            .map_err(|e| e.to_string())?
-        };
-        java_obj.set("stringToMap", java_stm).map_err(|e| e.to_string())?;
-
-        // java.getLocation(url) -> 跟随重定向后的最终 URL
-        let java_loc = Function::new(ctx.clone(), |url: String| -> Result<String, rquickjs::Error> {
-            let client = reqwest::blocking::Client::builder()
-                .timeout(Duration::from_secs(20))
-                .build()
-                .map_err(|e| rquickjs::Error::new_into_js_message("java", "client", e.to_string()))?;
-            let resp = client
-                .get(&url)
-                .header("User-Agent", "okhttp/4.10.0")
-                .send()
-                .map_err(|e| rquickjs::Error::new_into_js_message("java.getLocation", "response", e.to_string()))?;
-            Ok(resp.url().to_string())
-        })
-        .map_err(|e| e.to_string())?;
-        java_obj.set("getLocation", java_loc).map_err(|e| e.to_string())?;
-
-        // java.getWebWaiter() -> 浏览器自动化桥（catvod 部分蜘蛛依赖）；
-        // 本端为无头 QuickJS，不实现，明确报错便于定位（而非静默失败）。
-        let java_waiter = Function::new(ctx.clone(), || -> Result<(), rquickjs::Error> {
-            Err(rquickjs::Error::new_into_js_message(
-                "java.getWebWaiter",
-                "unsupported",
-                "本端未实现 WebView 自动化（getWebWaiter），依赖它的蜘蛛功能不可用",
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-        java_obj.set("getWebWaiter", java_waiter).map_err(|e| e.to_string())?;
-
-        globals.set("java", java_obj).map_err(|e| e.to_string())?;
-
         // 执行 spider 代码（定义各函数，或定义 `spider` 类/对象）
         ctx.eval::<(), _>(code.as_str()).map_err(|e| {
             // v2.5.1：eval 失败时 dump 脚本前 12 行到 stderr，便于在 CI/日志里定位报错行
@@ -397,7 +225,7 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
         // 调用目标函数并 JSON 序列化结果。
         // 兼容两种 spider 形态：
         //  1) 全局函数 home/search/detail/play（drpy 风格单文件脚本）
-        //  2) `spider` 类/对象（TVBox csp 模型）：new spider(api, ext) 后用实例方法选路
+        //  2) `spider` 类/对象（TVBox 蜘蛛模型）：new spider(api, ext) 后用实例方法选路
         let func_lit = serde_json::to_string(&payload.func).unwrap_or_else(|_| "\"\"".to_string());
         let args_lit = serde_json::to_string(&payload.args).unwrap_or_else(|_| "[]".to_string());
         let api_lit = payload
@@ -416,7 +244,7 @@ pub fn spiderrun(payload: SpiderCall) -> Result<String, String> {
 const __api = {api};
 // ext 已是经 serde_json 序列化的合法 JSON 字面量（字符串或对象），无需再 JSON.parse。
 // 此前前端 JSON.stringify 一次、Rust 端 serde_json::to_string 又一次，导致注入的是
-// 双重转义字符串字面量，JSON.parse 抛错使依赖 ext 的 drpy2/csp 站点初始化失败。
+// 双重转义字符串字面量，JSON.parse 抛错使依赖 ext 的 drpy2 站点初始化失败。
 const __ext = {ext};
 const __global = (typeof globalThis !== 'undefined' && globalThis !== null) ? globalThis : this;
 

@@ -4,14 +4,13 @@
 // 新版：把 tvbox 配置（含 XC.json 风格整体加密配置）解析后，收集其中所有
 // 「带 spider 脚本」的源（顶层 spider / 各站点 spider / 远程脚本 api），
 // 全部委托 createJsSource 在统一 JS 引擎里执行。
-//   - 蜘蛛源（csp_* catvod 代号源：V3.8.0 起支持，顶层 spider 为远程管理器，
-//     由 Rust 端下载+md5 校验后按代号实例化子蜘蛛；原生 DEX 仅 Android 支持）
+//   - 蜘蛛源（TVBox 配置里"站点 api 是远程 .js 蜘蛛脚本"或带自有 spider 的源）
 //   - 加密源（XC.json 等整体密文）：本 App 不做第三方解密，密文配置按无源处理
 //
 // 抓取统一走 Rust 后端 fetchsource 代理，绕开 Android WebView 的 CORS 与明文 HTTP 限制。
 import { invoke } from '@tauri-apps/api/core';
 import { LiveChannelSource, MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
-import { createJsSource, getSpiderRaw, createCspSource } from './js';
+import { createJsSource, getSpiderRaw } from './js';
 import { createNormalSource } from './normal';
 
 async function fetchText(url: string): Promise<string> {
@@ -74,9 +73,8 @@ function stripJsonComments(text: string): string {
 }
 
 // 把 spider 字段归一为 {spider 内联代码 | spiderUrl 远程地址}，并拆出 md5 校验值。
-// V3.8.0：catvod csp 源的顶层 spider 形如 `https://...xxx.png;md5;<hash>`
-// （png 是伪装，真实为 JS 管理器或原生 DEX，md5 段是下载后完整性校验）。
-// 旧实现用 stripMd5 直接丢弃校验值，导致无法校验且无法区分 DEX——这里拆出来透传。
+// TVBox 蜘蛛的顶层/站点 spider 形如 `https://...xxx.png;md5;<hash>`
+// （png 是伪装，md5 段是下载后完整性校验）。这里拆出来透传。
 function spiderField(v: any): { spider?: string; spiderUrl?: string; spiderMd5?: string } {
   if (typeof v !== 'string') return { spider: JSON.stringify(v) };
   if (/^https?:\/\//i.test(v)) {
@@ -98,18 +96,7 @@ function isNormalApi(api: any): boolean {
   return /^https?:\/\//i.test(api) && /provide\/vod|api\.php|(\/|\.)php(\?|$)/i.test(api);
 }
 
-// V3.8.0：判断一个站点是否为 catvod csp 代号源。
-// 特征：`api` 以 `csp_` 开头（如 csp_Douban / csp_AppGet / csp_Duopan），
-// 既不是代码也不是 URL，且没有自有 spider（蜘蛛脚本由顶层管理器按代号统一加载）。
-function isCspSite(s: any): boolean {
-  const api = typeof s?.api === 'string' ? s.api : '';
-  if (!api.startsWith('csp_')) return false;
-  if (/\.js(\?|$)/i.test(api)) return false; // 远程 JS 蜘蛛脚本地址，不算代号
-  if (s?.spider || s?.spiderUrl) return false; // 带自有 spider 的站点走普通 js 路径
-  return true;
-}
-
-// 从 tvbox 配置收集所有可执行的 spider 源（支持 TVBox csp 模型）
+// 从 tvbox 配置收集所有可执行的 spider 源
 async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
   const text = await fetchText(cfg.baseUrl);
   let data: any;
@@ -123,30 +110,10 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
 
   // 单线路（无 sites 数组）：顶层 spider 即唯一源；
   // drpy2 单文件形态：顶层 api 直接是远程 .js 蜘蛛脚本；
-  // v2.5.9：裸接口形态（顶层 api 是标准 provide/vod 接口，或响应即 TVBox 列表）→ 普通解析源；
-  // V3.8.0：csp 单线路（顶层 api 为 csp_ 代号 + 顶层 spider 管理器）→ csp 源
+  // v2.5.9：裸接口形态（顶层 api 是标准 provide/vod 接口，或响应即 TVBox 列表）→ 普通解析源。
   if (!Array.isArray(data.sites)) {
     if (data.spider) {
       const sf = spiderField(data.spider);
-      const singleApi = typeof data.api === 'string' ? data.api : '';
-      if (singleApi.startsWith('csp_')) {
-        // csp 单线路：管理器 + csp 代号
-        const subId = `${cfg.id}::csp`;
-        return [
-          {
-            ...cfg,
-            id: subId,
-            parentId: cfg.id,
-            type: 'csp',
-            name: cfg.name,
-            spiderUrl: sf.spiderUrl,
-            spiderMd5: sf.spiderMd5,
-            spider: sf.spider,
-            api: data.api,
-            ext: data.ext ?? undefined,
-          } as SourceConfig,
-        ];
-      }
       return [{ ...cfg, type: 'js', name: cfg.name, ...sf } as SourceConfig];
     }
     if (typeof data.api === 'string' && /\.js(\?|$)/i.test(data.api)) {
@@ -162,14 +129,11 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
 
   // 多站点：顶层 spider 为共享蜘蛛（通常是一个远程 JS 脚本地址，需剥离 ;md5;），
   // 各站点通过 api(类名) + ext(站点配置) 选路；无自有 spider 的站点继承顶层 spider。
-  // V3.8.0：csp 配置的顶层 spider 是「蜘蛛管理器」（JS 或 DEX），由 Rust 端运行时
-  // 下载 + md5 校验，这里只把管理器地址/校验值随 csp 子站配置透传，不预拉取。
   const manager = data.spider ? spiderField(data.spider) : null;
   let sharedCode: string | null = null;
-  // 仅当存在「非 csp 且需要共享蜘蛛」的站点时才预拉取（避免对 csp 配置误拉 DEX/APK 管理器）
+  // 仅当存在「需要共享蜘蛛」的站点时才预拉取
   const nonCspNeedsShared = data.sites.some(
     (s: any) =>
-      !isCspSite(s) &&
       !s.spider &&
       !s.spiderUrl &&
       !(typeof s.api === 'string' && /\.js(\?|$)/i.test(s.api)),
@@ -188,26 +152,6 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
 
   const out: SourceConfig[] = [];
   for (const s of data.sites) {
-    // V3.8.0：catvod csp 代号源（api 以 csp_ 开头）。继承顶层管理器地址 + md5，
-    // 把代号(api) 与站点 ext 透传，由 Rust 端下载管理器后按代号实例化子蜘蛛。
-    if (isCspSite(s)) {
-      const subId = s.key ? `${cfg.id}::${s.key}` : `${cfg.id}::${out.length}`;
-      out.push({
-        ...cfg,
-        id: subId, // 子站唯一 id，供前端按子站过滤/标记
-        parentId: cfg.id, // 记录所属配置，便于错误归类
-        type: 'csp',
-        name: s.name || s.key || cfg.name,
-        spiderUrl: manager?.spiderUrl ?? undefined,
-        spiderMd5: manager?.spiderMd5 ?? undefined,
-        spider: manager?.spider ?? undefined,
-        api: s.api,
-        // 仅序列化一次：直接传原始 ext（字符串/对象），由 Rust 端 run_spider
-        // 统一用 serde_json::to_string 生成合法 JSON 字面量注入 QuickJS。
-        ext: s.ext ?? undefined,
-      } as SourceConfig);
-      continue;
-    }
     // drpy2 形态：站点 api 为远程 .js 蜘蛛脚本（如 ".../drpy2.min.js"），亦纳入
     const sf = s.spider
       ? spiderField(s.spider)
@@ -232,7 +176,7 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
         api: s.api,
         // 仅序列化一次：直接传原始 ext（字符串/JSON 字符串），由 Rust 端 run_spider
         // 统一用 serde_json::to_string 生成合法 JSON 字面量注入 QuickJS，避免双重序列化
-        // 导致 JSON.parse 抛错、drpy2/csp 站点（如 ext=douban.js）初始化失败（问题 #1/#2）。
+        // 导致 JSON.parse 抛错、drpy2 站点（如 ext=douban.js）初始化失败（问题 #1/#2）。
         ext: s.ext ?? undefined,
       } as SourceConfig);
       continue;
@@ -271,12 +215,11 @@ export async function expandTvboxSpiders(cfg: SourceConfig): Promise<SourceConfi
   return collectSpiders(cfg);
 }
 
-// v3.2.2：子站按真实 type 分发——normal 走 HTTP 适配器，js 走蜘蛛适配器，
-// csp 走 catvod 代号蜘蛛适配器。之前统一 createJsSource 会把正常 HTTP 接口当蜘蛛脚本
+// v3.2.2：子站按真实 type 分发——normal 走 HTTP 适配器，js 走蜘蛛适配器。
+// 之前统一 createJsSource 会把正常 HTTP 接口当蜘蛛脚本
 // 喂给 QuickJS，导致搜索/播放失败。
 function buildSubSource(c: SourceConfig): MediaSource {
   if (c.type === 'normal') return createNormalSource(c);
-  if (c.type === 'csp') return createCspSource(c as any);
   return createJsSource(c);
 }
 
@@ -290,7 +233,7 @@ export function createTvboxSource(cfg: SourceConfig): MediaSource {
     async search(keyword: string): Promise<MediaItem[]> {
       const cfgs = await collectSpidersCached(cfg);
       if (!cfgs.length) {
-        throw new Error('该 tvbox 配置无可用的 spider / csp 脚本源（顶层 spider 与子站均无法解析）');
+        throw new Error('该 tvbox 配置无可用的 spider 脚本源（顶层 spider 与子站均无法解析）');
       }
       const srcs = cfgs.map(buildSubSource);
       // v2.4.2：收集每个子站的具体错误，不再吞掉，最终抛出代表性原因，

@@ -197,11 +197,16 @@ export function createBackendLoader(extraHeaders: Record<string, string> | null 
           await loadViaFetchmedia(url, headers, context, callbacks, this.stats, t0);
           return;
         }
-        // hls.js 的 byte-range 请求（分段预取）透传 Range 给代理
+        // hls.js 的 byte-range 请求（分段预取/拖动）透传 Range 给代理。
+        // V3.8.3：hls.js 在分片无 byteRange 信息时发出畸形探测头 `bytes=0-0`
+        // （rangeStart=0、rangeEnd=0/空）。即便代理回全量 200，hls.js 仍按 1 字节解析
+        // 导致 fragParsingError → 永久转圈。这里直接不发这个头，改普通 GET 让代理回全量。
         const rangeStart = (context as any)?.rangeStart;
-        if (rangeStart != null) {
-          const rangeEnd = (context as any)?.rangeEnd != null ? (context as any).rangeEnd : '';
-          headers.Range = `bytes=${rangeStart}-${rangeEnd}`;
+        const rangeEnd = (context as any)?.rangeEnd;
+        const isProbe = rangeStart === 0 && (rangeEnd === 0 || rangeEnd === '' || rangeEnd == null);
+        if (rangeStart != null && !isProbe) {
+          const end = rangeEnd != null && rangeEnd !== '' ? rangeEnd : '';
+          headers.Range = `bytes=${rangeStart}-${end}`;
         }
         const proxied = buildProxyUrl(url, headers);
         const fetchHeaders: Record<string, string> = {};

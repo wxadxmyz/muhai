@@ -84,8 +84,10 @@ export function isDrpyRule(code: string): boolean {
   if (/^\s*var\s+rule\s*=/m.test(code)) return true;
   // drpy3 模块化形态
   if (/\bdefineSource\s*\(/.test(code)) return true;
-  // export default { meta, rule } 形态
+  // export default { meta, rule } 形态（注意：上层 catvodize 会剥掉顶层 export，
+  // 故这里用残留在对象字面量里的 meta/rule 键来兜底识别，避免 drpy3 源被误判后掉进旧沙箱）
   if (/^\s*export\s+default\s*[\{\(]/m.test(code) && /\b(meta|rule)\s*:/.test(code)) return true;
+  if (/\b(meta|rule)\s*:\s*\{/.test(code)) return true;
   return false;
 }
 

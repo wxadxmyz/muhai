@@ -242,6 +242,16 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
           }
         } catch { /* 忽略 */ }
       }
+      // V3.8.6：拿不到地址必须明确抛错，禁止把空 url 静默返回——
+      // 旧实现返回 {url:''} 会让播放器落到一句模糊的「未取到可播放地址」，无法区分
+      // "规则压根没 play 函数（脚本下载失败/被误判为非 drpy）" 还是 "源站真没返回"。
+      // 现在抛具体错误，真机反馈即可精准定位。
+      if (!url) {
+        throw new Error(
+          '该源未返回可播放地址（play/detail 均未取到选集链接）。' +
+            '常见原因：脚本下载失败/被识别为非 drpy 规则而走了旧沙箱，请检查源规则是否可正常拉取。'
+        );
+      }
       const host = extractHost((cfg as any).ext || (cfg as any).api || cfg.baseUrl);
       return { url, headers: host ? { Referer: host + '/' } : undefined };
     },

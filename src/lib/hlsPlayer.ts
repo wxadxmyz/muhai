@@ -301,19 +301,20 @@ export async function attachHlsWithBackend(
   await ensureProxyPort();
   const proxiedUrl = buildProxyUrl(url, opts.headers ?? null);
   const loader = createBackendLoader(opts.headers ?? null);
-  // V3.7.5 #2：弱网/代理逐分片转发场景下的保守缓冲策略，缓解「卡一下播一下再卡」。
-  // - startLevel:-1 让 ABR 按带宽自动起播，不盲选最高档
-  // - 限制前后向缓冲，避免上游抖动把整段塞进内存反而卡
-  // - 提高分片/清单加载重试次数与间隔，对抗代理回源不稳定
+  // V3.8.6：回退 V3.7.5 #2 的「过激缓冲收缩」。当时把 maxMaxBufferLength 从 hls.js 默认 600s
+  // 砍到 60s、前向缓冲锁 40s，本意是治卡顿，但本地媒体代理是逐分片流式转发——上游一抖，
+  // 被压扁的缓冲头很快被播完又填不满，反而造成「播两秒卡一下、起播一直转圈」的回归。
+  // 这里把预读头空间还给 hls.js（maxMaxBufferLength 回到 600、前向缓冲放宽到 60），
+  // 只保留后台裁剪（backBufferLength:30）控制长片内存，并适度提高重试次数对抗代理回源抖动。
   const hls = new Hls({
     loader,
     pLoader: loader,
     startLevel: -1,
-    maxBufferLength: 40,
-    maxMaxBufferLength: 60,
+    maxBufferLength: 60,
+    maxMaxBufferLength: 600,
     backBufferLength: 30,
-    fragLoadingMaxRetry: 4,
-    manifestLoadingMaxRetry: 4,
+    fragLoadingMaxRetry: 6,
+    manifestLoadingMaxRetry: 6,
     fragLoadingRetryDelay: 1000,
     manifestLoadingRetryDelay: 1000,
     enableWorker: true,

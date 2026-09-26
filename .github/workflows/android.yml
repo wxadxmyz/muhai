@@ -572,7 +572,9 @@ jobs:
           fi
           export BINDGEN_EXTRA_CLANG_ARGS="--sysroot $NDK_SYSROOT"
           set -o pipefail
-          pnpm tauri android build --apk --split-per-abi 2>&1 | tee /tmp/build.log
+          # V3.8.5：universal 单包（移除 --split-per-abi）。一个 APK 内含全部 ABI，
+          # 新机型(arm64-v8a)与老机型(armeabi-v7a)通用，用户一次下载安装即可，不再拆成多包。
+          pnpm tauri android build --apk 2>&1 | tee /tmp/build.log
 
       - name: Sign APK with persisted keystore (if configured)
         id: sign
@@ -591,8 +593,8 @@ jobs:
             exit 0
           fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/keystore.p12
-          # V3.8.4：启用 --split-per-abi 后产物为按 ABI 拆分的多个 unsigned APK
-          #（arm64-v8a / armeabi-v7a / x86 / x86_64），逐个签名并收集路径。
+          # V3.8.5：universal 单包（一个 APK 含全部 ABI，新机型 arm64-v8a 与老机型
+          # armeabi-v7a 通用），对唯一的 unsigned APK 签名。
           SIGNED_APKS=""
           for SRC in $(find src-tauri/gen/android -name '*unsigned*.apk' | sort); do
             ABI=$(echo "$SRC" | sed -E 's#.*/apk/([^/]+)/release/.*#\1#')
@@ -622,7 +624,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -x
-          # V3.8.4：启用 --split-per-abi 后产物为按 ABI 拆分的多个 APK（不再有 universal）。
+          # V3.8.5：universal 单包（一个 APK 覆盖新机型 arm64-v8a 与老机型 armeabi-v7a）。
           # 有签名则上传全部已签名的 ABI 包；未配置 keystore 则上传全部 release 下的未签名 ABI 包。
           APKS=""
           if [ -n "$SIGNED_APKS" ]; then

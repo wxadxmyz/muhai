@@ -18,7 +18,7 @@
 - `toItems` 改用与详情一致的 `toLineGroups`（按直链占比排序、线路名作 flag）解析自带选集，使搜索/分类卡片的首集也**直链优先**，可直接起播且省一次详情往返。
 - `getPlayUrl` 强化首集消费：当缓存首集是「分享页 / 中间地址」（`playId` 非 `.m3u8/.mp4` 直链）时，主动回退 `detail` 用 `toLineGroups` 重选直链占比最高的线路；即便首集被记成死链也能救回，不再把脏数据丢给播放器。
 
-> 沿用 V3.8.4 的 `--split-per-abi` 打包，产出 `arm64-v8a` + `armeabi-v7a` 两个真机包，覆盖新机型与老机型。
+> 改为 **universal 单包**（移除 `--split-per-abi`）：一个 APK 内含 arm64-v8a + armeabi-v7a 等全部 ABI，新机型与老机型一次下载安装即可，不再拆成两个包。
 
 ---
 

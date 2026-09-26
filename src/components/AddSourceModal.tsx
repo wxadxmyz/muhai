@@ -47,7 +47,7 @@ export function AddSourceModal({
   return (
     <div className="modal-mask" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{initial ? '编辑音源' : '添加音源'}</h3>
+        <h3>{initial ? '编辑影视源' : '添加影视源'}</h3>
 
         <label>名称</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：我的阿里云盘" />

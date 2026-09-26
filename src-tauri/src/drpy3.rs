@@ -19,7 +19,6 @@ use rquickjs::function::Rest;
 use rquickjs::{Coerced, Context, Function, Object, Runtime};
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::OnceLock;
 
@@ -101,10 +100,9 @@ struct Job {
 // 导致的排队饿死（这正是「只有 360 能搜出、其余超时」的根因）。源按 key 在各自线程的
 // context 内缓存，跨线程重复装载代价极低。
 static POOL: OnceLock<Vec<Sender<Job>>> = OnceLock::new();
-static DISPATCH: OnceLock<AtomicUsize> = OnceLock::new();
-
 // 并发度：每 worker 独立 QuickJS Runtime（内存上限 384MB 为 CAP，非预分配，实测常驻很低）。
 // 移动端取 4 即可让 7 个 drpy 源近似并发；如需更激进可调大，但注意内存水位。
+// V3.8.8 #1：worker 的选择由下面的 sticky_index 按源 key 决定，不再全局轮转。
 const POOL_SIZE: usize = 4;
 
 fn pool() -> &'static Vec<Sender<Job>> {
@@ -140,11 +138,30 @@ fn pool() -> &'static Vec<Sender<Job>> {
     })
 }
 
+/// V3.8.8 #1：按源 key 做粘性哈希，把同一个源固定路由到同一个 worker。
+///
+/// V3.7.0 A1 把单 worker 改成 4 worker 池后用的是**全局 round-robin 轮转**：同一源的
+/// detail 与 play 会被打散到不同 worker。而每个 worker 持有独立的 QuickJS Runtime/Context，
+/// 源的状态与缓存**不跨线程共享**，play 在冷上下文里执行时拿不到 detail 阶段建立的状态，
+/// 表现为「能搜到、点进去没集数 / 未取到可播放地址」——V3.6.9 的单 worker 不存在此问题
+/// （同源所有调用天然在同一上下文里顺序执行）。
+///
+/// 改为同源粘性后：单源调用回到同一上下文顺序执行（行为等价于 V3.6.9），
+/// 不同源仍按哈希分散在多个 worker 上，V3.7.0 的多源并发收益完整保留。
+fn sticky_index(key: &str, len: usize) -> usize {
+    if len == 0 { return 0; }
+    // djb2：对短字符串够均匀，且无随机种子，保证同一 key 恒映射到同一 worker
+    let mut h: u64 = 5381;
+    for b in key.as_bytes() {
+        h = h.wrapping_mul(33).wrapping_add(u64::from(*b));
+    }
+    (h % len as u64) as usize
+}
+
 /// 前端/上层调用入口（同步阻塞；由 lib.rs 的 drpy3run 命令包在 spawn_blocking 里）
 pub fn drpy3run(payload: Drpy3Call) -> Result<String, String> {
     let pool = pool();
-    let counter = DISPATCH.get_or_init(|| AtomicUsize::new(0));
-    let idx = counter.fetch_add(1, Ordering::Relaxed) % pool.len();
+    let idx = sticky_index(&payload.key, pool.len());
     let tx = &pool[idx];
     let (rtx, rrx) = mpsc::channel();
     tx.send(Job { call: payload, tx: rtx })

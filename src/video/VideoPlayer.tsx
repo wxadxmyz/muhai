@@ -489,7 +489,7 @@ export function VideoPlayer({
       if (!alive || !v) return;
       if (!it.playUrl) {
         setResolving(false);
-        setErr('该音源未返回可播放地址，换条线路或换个音源试试。');
+        setErr('该影视源未返回可播放地址，换条线路或换个影视源试试。');
         return;
       }
       await attachHlsWithBackend(v, it.playUrl, {
@@ -529,7 +529,7 @@ export function VideoPlayer({
     }).catch((e: any) => {
       if (alive) {
         setResolving(false);
-        setErr(e?.message || '解析播放地址失败，请换个音源。');
+        setErr(e?.message || '解析播放地址失败，请换个影视源。');
       }
     });
     return () => {

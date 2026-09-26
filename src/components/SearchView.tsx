@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { ProxiedImg } from './ProxiedImg';
 import { tryCoverFallback } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
+import { player } from '../lib/playerStore';
 import { devLog } from '../lib/log';
 
 type SourceState =
@@ -102,6 +103,12 @@ export function SearchView({
   useEffect(
     () =>
       pushBackHandler(() => {
+        // V3.8.8 #2：正在播放时本处理器**不消费**返回键，直接放行给播放页。
+        // 从搜索页点影片进播放页后，搜索页并未卸载（searchOpen 仍为 true），它压在返回栈里的
+        // 这个分级返回处理器就还在。若不判断前台状态，用户在播放页按返回会被这里抢先消费：
+        // 它把子站重置回「全部」并返回 true（认为已消费），播放页却没关 —— 用户再按一次才真正
+        // 退出播放，此时回到的搜索页子站已被暗中重置。这正是「播放返回后子站变回全部」的根因。
+        if (player.getState().current) return false;
         if (activeSourceRef.current !== ALL_KEY) {
           setActiveSource(ALL_KEY); clearSrcPref();
           return true; // 已逐级退一层（子站 → 全部）

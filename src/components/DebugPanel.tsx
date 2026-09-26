@@ -1,3 +1,4 @@
+import { showAlert } from '../lib/dialog';
 import { useState } from 'react';
 import { useSyncExternalStore } from 'react';
 import { debugLog, DebugEntry } from '../lib/debug';
@@ -33,7 +34,7 @@ export function DebugPanel() {
         setMediaCopied(true);
         setTimeout(() => setMediaCopied(false), 1500);
       } catch {
-        alert(text); // 剪贴板不可用（部分 WebView）→ 弹窗展示，用户长按复制
+        showAlert(text); // 剪贴板不可用（部分 WebView）→ 弹窗展示，用户长按复制
       }
     } finally {
       setMediaBusy(false);
@@ -72,13 +73,13 @@ export function DebugPanel() {
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // 剪贴板不可用时退化为弹窗展示，用户可长按选择复制
-      alert(text);
+      showAlert(text);
     }
   };
 
   return (
     <div className="debug-body">
-      <p className="muted sm">展示引擎每一次请求/响应/耗时，方便自己写音源适配器时调试。</p>
+      <p className="muted sm">展示引擎每一次请求/响应/耗时，方便自己写影视源适配器时调试。</p>
       <p className="muted sm">搜索/首页空白时点「复制报错日志」，把内容发给开发者即可定位问题（无需电脑 ADB）。</p>
 
       <div className="debug-tools">

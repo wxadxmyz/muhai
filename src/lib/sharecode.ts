@@ -1,6 +1,6 @@
 import { SourceConfig, SourceType, uuid } from '../engine';
 
-// 音源分享码：把音源配置编成一段可复制/粘贴的字符串，便于社区分享（仓库不内置具体源）
+// 影视源分享码：把影视源配置编成一段可复制/粘贴的字符串，便于社区分享（仓库不内置具体源）
 // 格式：MPS1.<base64url(json)>
 
 function b64urlEncode(s: string): string {
@@ -31,7 +31,7 @@ export function decodeSources(code: string): SourceConfig[] {
     .filter((r: any) => r && r.t && r.u)
     .map((r: any) => ({
       id: uuid(),
-      name: r.n || '导入音源',
+      name: r.n || '导入影视源',
       type: r.t as SourceType,
       baseUrl: r.u,
       token: r.k,

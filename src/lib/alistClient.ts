@@ -11,7 +11,7 @@ export interface AlistFile {
 
 const VIDEO_EXT = /\.(mp4|mkv|webm|m3u8|avi|mov|flv)$/i;
 
-// 演示用文件树（当音源为 mock 或无真实 alist 地址时回退，保证开箱可用）
+// 演示用文件树（当影视源为 mock 或无真实 alist 地址时回退，保证开箱可用）
 function mockTree(path: string): AlistFile[] {
   if (path === '/') {
     return [
@@ -143,7 +143,7 @@ export interface SyncResult {
 // alist 上传接口：PUT /api/fs/put?path=<完整文件路径>，请求体为文件原始内容。
 async function cloudBackup(cfg: SourceConfig | null, payload: string): Promise<SyncResult> {
   if (!cfg?.baseUrl) {
-    return { ok: false, where: 'none', message: '未配置 alist 源，云同步未启用（请在「音源管理」添加一个 alist 源）。' };
+    return { ok: false, where: 'none', message: '未配置 alist 源，云同步未启用（请在「影视源管理」添加一个 alist 源）。' };
   }
   const base = cfg.baseUrl.replace(/\/$/, '');
   const url = `${base}/api/fs/put?path=${encodeURIComponent('/mps_backup.json')}`;
@@ -166,7 +166,7 @@ async function cloudBackup(cfg: SourceConfig | null, payload: string): Promise<S
 // 云同步恢复：取回网盘中的 /mps_backup.json 直链并下载内容。
 async function cloudRestore(cfg: SourceConfig | null): Promise<SyncResult> {
   if (!cfg?.baseUrl) {
-    return { ok: false, where: 'none', message: '未配置 alist 源，云同步未启用（请在「音源管理」添加一个 alist 源）。' };
+    return { ok: false, where: 'none', message: '未配置 alist 源，云同步未启用（请在「影视源管理」添加一个 alist 源）。' };
   }
   const base = cfg.baseUrl.replace(/\/$/, '');
   try {

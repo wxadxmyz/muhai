@@ -33,7 +33,7 @@ export function SourceManager({
   };
 
   const doImportJson = () => {
-    const text = window.prompt('粘贴音源 JSON 数组：');
+    const text = window.prompt('粘贴影视源 JSON 数组：');
     if (!text) return;
     const r = importSources(text);
     // 导入结果里区分「新增」与「已存在被跳过」，否则用户以为导入失败
@@ -45,13 +45,13 @@ export function SourceManager({
   };
 
   const doImportShare = () => {
-    const text = window.prompt('粘贴音源分享码（MPS1. 开头）：');
+    const text = window.prompt('粘贴影视源分享码（MPS1. 开头）：');
     if (!text) return;
     try {
       const list = decodeSources(text);
-      if (list.length === 0) return setMsg('分享码中无有效音源');
+      if (list.length === 0) return setMsg('分享码中无有效影视源');
       for (const s of list) store.add({ name: s.name, type: s.type, baseUrl: s.baseUrl, token: s.token, mountPath: s.extra?.mountPath });
-      setMsg(`已从分享码导入 ${list.length} 个音源`);
+      setMsg(`已从分享码导入 ${list.length} 个影视源`);
     } catch (e: any) {
       setMsg('分享码解析失败：' + (e?.message ?? ''));
     }
@@ -65,7 +65,7 @@ export function SourceManager({
 
   const doExportJson = () => {
     navigator.clipboard?.writeText(exportSources());
-    setMsg('音源 JSON 已复制到剪贴板');
+    setMsg('影视源 JSON 已复制到剪贴板');
   };
 
   return (
@@ -73,7 +73,7 @@ export function SourceManager({
       <div className="page-title-row">
         <h2 className="page-title">仓库管理</h2>
         <div className="toolbar">
-          <button className="primary" onClick={() => setShowModal(true)}><Icon name="plus" size={16} /> 添加音源</button>
+          <button className="primary" onClick={() => setShowModal(true)}><Icon name="plus" size={16} /> 添加影视源</button>
           <button onClick={doImportJson}>导入JSON</button>
           <button onClick={doImportShare}>导入分享码</button>
           <button onClick={doExportShare}>导出分享码</button>
@@ -81,7 +81,7 @@ export function SourceManager({
           {onOpenSettings && <button onClick={onOpenSettings}><Icon name="settings" size={16} /> 设置</button>}
         </div>
       </div>
-      <p className="muted sm">自定义 API 源 · 支持音乐 JSON / 影视站(苹果CMS) / 云盘(alist)。拖拽排序决定搜索与播放优先级，连接正常时该行显示对勾。分享码可把音源一键发给朋友。</p>
+      <p className="muted sm">自定义 API 源 · 支持影视站(苹果CMS) / 直播源 / 云盘(alist)。拖拽排序决定搜索与播放优先级，连接正常时该行显示对勾。分享码可把影视源一键发给朋友。</p>
 
       <table className="src-table">
         <thead>
@@ -117,7 +117,7 @@ export function SourceManager({
             </tr>
           ))}
           {sorted.length === 0 && (
-            <tr><td colSpan={8} className="empty">还没有音源，点「+ 添加音源」开始。</td></tr>
+            <tr><td colSpan={8} className="empty">还没有影视源，点「+ 添加影视源」开始。</td></tr>
           )}
         </tbody>
       </table>

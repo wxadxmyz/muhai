@@ -1,3 +1,4 @@
+import { showAlert } from '../lib/dialog';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSkin, SKINS } from '../lib/theme';
 import { useSettings } from '../lib/settings';
@@ -130,20 +131,20 @@ export function SettingsModal({
   };
 
   const importSource = () => {
-    const text = window.prompt('粘贴音源 JSON（单个对象或数组）：');
+    const text = window.prompt('粘贴影视源 JSON（单个对象或数组）：');
     if (!text) return;
     try {
       const r = store.importSources(text);
-      alert(r.added > 0 ? `已导入 ${r.added} 个音源。` : '未导入：' + (r.errors[0] || '格式不正确'));
+      showAlert(r.added > 0 ? `已导入 ${r.added} 个影视源。` : '未导入：' + (r.errors[0] || '格式不正确'));
     } catch (e: any) {
-      alert('导入失败：' + (e?.message ?? ''));
+      showAlert('导入失败：' + (e?.message ?? ''));
     }
   };
 
   const exportAll = () => {
     const data = { version: 1, sources: store.sources, settings };
     navigator.clipboard?.writeText(JSON.stringify(data, null, 2));
-    alert('配置已复制到剪贴板（含音源与设置）。');
+    showAlert('配置已复制到剪贴板（含影视源与设置）。');
   };
 
   const importAll = () => {
@@ -153,9 +154,9 @@ export function SettingsModal({
       const data = JSON.parse(text);
       if (Array.isArray(data.sources)) for (const s of data.sources) store.importSources(JSON.stringify([s]));
       if (data.settings) update(data.settings);
-      alert('导入完成，重启页面生效。');
+      showAlert('导入完成，重启页面生效。');
     } catch (e: any) {
-      alert('导入失败：' + (e?.message ?? ''));
+      showAlert('导入失败：' + (e?.message ?? ''));
     }
   };
 
@@ -164,17 +165,17 @@ export function SettingsModal({
     if (mode === 'backup') {
       const payload = libraryPayload ? libraryPayload() : JSON.stringify({ sources: store.sources, settings });
       const r = await alistClient.backup(alistSrc || null, payload);
-      alert(r.message + (r.ok ? '可在另一台设备「从云盘恢复」。' : ''));
+      showAlert(r.message + (r.ok ? '可在另一台设备「从云盘恢复」。' : ''));
     } else {
       const r = await alistClient.restore(alistSrc || null);
-      if (!r.data) return alert(r.message);
+      if (!r.data) return showAlert(r.message);
       try {
         const data = JSON.parse(r.data);
         if (Array.isArray(data.sources)) for (const s of data.sources) store.importSources(JSON.stringify([s]));
         if (data.settings) update(data.settings);
-        alert(r.message + '（重启页面生效）。');
+        showAlert(r.message + '（重启页面生效）。');
       } catch {
-        alert('恢复失败：数据无法解析。');
+        showAlert('恢复失败：数据无法解析。');
       }
     }
   };
@@ -194,16 +195,16 @@ export function SettingsModal({
             </Group>
           )}
 
-          <Group title={isMusic ? '音源' : '源管理'}>
-            <Row icon="plug" label="音源管理" sub={isMusic ? '导入 / 切换 / 编辑 JSON 音源' : '影视源 · 直播源 · 网盘源'} onClick={onOpenSources} />
-            <Row icon="file-text" label="导入音源(JSON)" onClick={importSource} />
+          <Group title={isMusic ? '音源' : '影视源'}>
+            <Row icon="plug" label={isMusic ? '音源管理' : '影视源管理'} sub={isMusic ? '导入 / 切换 / 编辑 JSON 音源' : '影视源 · 直播源 · 网盘源'} onClick={onOpenSources} />
+            <Row icon="file-text" label={isMusic ? '导入音源(JSON)' : '导入影视源(JSON)'} onClick={importSource} />
           </Group>
 
 
           {!isMusic && (
             <Group title="网盘">
               <Row icon="folder" label="浏览网盘" sub="登录阿里/夸克/WebDAV 后查看媒体" onClick={onOpenCloud} />
-              {!hasAlist && <div className="settings-note">未检测到 alist 网盘源。先在「音源管理」添加一个 alist 源（baseUrl + Token）即可浏览。</div>}
+              {!hasAlist && <div className="settings-note">未检测到 alist 网盘源。先在「影视源管理」添加一个 alist 源（baseUrl + Token）即可浏览。</div>}
             </Group>
           )}
 
@@ -251,7 +252,7 @@ export function SettingsModal({
 
           {!isMusic && (
             <Group title="直播">
-              <div className="settings-note">直播线路来自音源 JSON 中含直播(m3u8/直播源)的条目。在「音源管理」导入含直播线路的源后，「直播」页即可观看。</div>
+              <div className="settings-note">直播线路来自影视源 JSON 中含直播(m3u8/直播源)的条目。在「影视源管理」导入含直播线路的源后，「直播」页即可观看。</div>
             </Group>
           )}
 
@@ -284,7 +285,7 @@ export function SettingsModal({
               <button disabled={!hasAlist} onClick={() => cloudSync('backup')}>备份到云盘</button>
               <button disabled={!hasAlist} onClick={() => cloudSync('restore')}>从云盘恢复</button>
             </div>
-            {!hasAlist && <div className="settings-note">云同步需先添加 alist 网盘源（或在「音源管理」配置）。未配置时不写入任何云盘。</div>}
+            {!hasAlist && <div className="settings-note">云同步需先添加 alist 网盘源（或在「影视源管理」配置）。未配置时不写入任何云盘。</div>}
             {!isTauri() && <div className="settings-note">开机自启、系统通知、自动更新 需在桌面端(Tauri 打包)内生效；当前为网页原型。</div>}
           </Group>
 

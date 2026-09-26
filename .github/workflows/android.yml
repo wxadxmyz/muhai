@@ -548,28 +548,6 @@ jobs:
           python3 -m pip install --quiet pillow
           python3 scripts/sync-android-icon.py
 
-      - name: Restrict APK to arm64-v8a + armeabi-v7a (drop x86/x86_64 emulator ABIs)
-        run: |
-          GRADLE=$(find src-tauri/gen/android -name "build.gradle" -path "*app/*" 2>/dev/null | head -1)
-          if [ -z "$GRADLE" ]; then echo "::error::app/build.gradle not found — 无法限制 ABI"; exit 1; fi
-          python3 - "$GRADLE" << 'PYEOF'
-          import sys
-          path = sys.argv[1]
-          src = open(path, encoding="utf-8").read()
-          if "abiFilters" in src:
-              print("abiFilters already present, skip")
-              sys.exit(0)
-          idx = src.find("defaultConfig")
-          if idx == -1:
-              print("::error::defaultConfig not found in " + path)
-              sys.exit(1)
-          brace = src.index("{", idx)
-          inject = '\n            ndk {\n                abiFilters "arm64-v8a", "armeabi-v7a"\n            }\n'
-          src = src[:brace + 1] + inject + src[brace + 1:]
-          open(path, "w", encoding="utf-8").write(src)
-          print("Patched " + path + " -> ndk abiFilters arm64-v8a,armeabi-v7a")
-          PYEOF
-
       - name: Build Tauri Android APK
         id: build
         if: steps.init.outcome == 'success'
@@ -594,10 +572,10 @@ jobs:
           fi
           export BINDGEN_EXTRA_CLANG_ARGS="--sysroot $NDK_SYSROOT"
           set -o pipefail
-          # V3.8.5：universal 单包（移除 --split-per-abi），并通过 gradle ndk abiFilters
-          # 只保留 arm64-v8a(新机型) + armeabi-v7a(老机型)，剔除 x86/x86_64 模拟器架构。
-          # 一个 APK 覆盖新旧机型，用户一次下载安装即可，体积也比全 ABI universal 小。
-          pnpm tauri android build --apk 2>&1 | tee /tmp/build.log
+          # V3.8.5：universal 单包（不加 --split-per-abi），并通过 --target 只编译
+          # aarch64(新机型 arm64-v8a) + armv7(老机型 armeabi-v7a)，剔除 i686/x86_64 模拟器架构。
+          # 一个 APK 内含这两种真机架构，新旧机型通用，一次下载安装即可，且体积更小。
+          pnpm tauri android build --apk --target aarch64 --target armv7 2>&1 | tee /tmp/build.log
 
       - name: Sign APK with persisted keystore (if configured)
         id: sign

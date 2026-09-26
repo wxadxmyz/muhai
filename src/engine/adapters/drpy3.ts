@@ -437,10 +437,12 @@ export function createDrpy3Source(
           devLog(`[drpy3] ${jsCfg.name} detail 兜底失败: ${e?.message ?? e}`);
         }
       }
-      // 最后一道防线：playId 仍然不是合法 URL，直接报错而不是把脏数据丢给播放器。
-      if (!isHttpUrl(playId)) {
-        throw new Error('该源未返回可播放地址（详情缺少选集链接）');
-      }
+      // V3.8.7 #5：删除 V3.8.4 在此处的提前抛错（`if (!isHttpUrl(playId)) throw`）。
+      // 那道拦截把 V3.6.7 修复④ 的核心兜底堵死了 —— 电影 / 剧场版等单集片在 detail 阶段
+      // 常常拿不到 vod_play_url，地址只能在 play 阶段现算，必须把 **vod_id 本身** 直传给
+      // play() 让源自己解析。提前抛错后这类片直接报「未取到可播放地址 / 没有选集」。
+      // 现在恢复 V3.6.7 行为：playId 保持 vod_id 交给下面的 play()，由源现算地址；
+      // play() 仍拿不到时再由二次兜底与最终报错处理（见下），不会漏报。
       const r = await call('play', [flag, playId, []]);
       if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '解析播放地址失败'));
       let url = '';

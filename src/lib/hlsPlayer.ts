@@ -284,6 +284,12 @@ export async function attachHlsWithBackend(
   url: string,
   opts: { headers?: Record<string, string>; onError?: (msg?: string) => void } = {}
 ) {
+  // V3.8.7 #3：同一 video + 同一 URL 已在加载 → 直接复用，不再重建。
+  // 诊断实测每次起播同一个 master 清单被请求两次（同一毫秒、各 142B）：播放页 effect 会因
+  // state 更新重跑，进而二次调用本函数，旧的 hls 被 detach 又重新 loadSource，
+  // 第一次已发出的 manifest 请求白费。同 URL 说明还是同一条流，直接复用即可。
+  const existingHls = INSTANCES.get(video) as any;
+  if (existingHls && existingHls.__loadedUrl === url) return;
   detachHls(video);
   if (!url) return;
   const Hls = await loadHls();
@@ -301,26 +307,15 @@ export async function attachHlsWithBackend(
   await ensureProxyPort();
   const proxiedUrl = buildProxyUrl(url, opts.headers ?? null);
   const loader = createBackendLoader(opts.headers ?? null);
-  // V3.8.6：回退 V3.7.5 #2 的「过激缓冲收缩」。当时把 maxMaxBufferLength 从 hls.js 默认 600s
-  // 砍到 60s、前向缓冲锁 40s，本意是治卡顿，但本地媒体代理是逐分片流式转发——上游一抖，
-  // 被压扁的缓冲头很快被播完又填不满，反而造成「播两秒卡一下、起播一直转圈」的回归。
-  // 这里把预读头空间还给 hls.js（maxMaxBufferLength 回到 600、前向缓冲放宽到 60），
-  // 只保留后台裁剪（backBufferLength:30）控制长片内存，并适度提高重试次数对抗代理回源抖动。
-  const hls = new Hls({
-    loader,
-    pLoader: loader,
-    startLevel: -1,
-    maxBufferLength: 60,
-    maxMaxBufferLength: 600,
-    backBufferLength: 30,
-    fragLoadingMaxRetry: 6,
-    manifestLoadingMaxRetry: 6,
-    fragLoadingRetryDelay: 1000,
-    manifestLoadingRetryDelay: 1000,
-    enableWorker: true,
-    capLevelToPlayerSize: false,
-  });
+  // V3.8.7 #4：还原 V3.6.5 的写法——只给 hls.js 传 loader，缓冲策略全部用默认值。
+  // V3.7.5 #2 曾加 startLevel/maxBufferLength/maxMaxBufferLength/backBufferLength 等
+  // 「保守缓冲」参数，把前向预读头从默认压到 60s、当前缓冲锁 40s；本地代理是逐分片
+  // 流式转发，上游一抖这点缓冲很快播完又填不满，反而「播两秒卡一下」。
+  // V3.8.6 只做了部分回退（仍留 backBufferLength:30 与自定义重试），未回到默认。
+  // 这里彻底交还 hls.js 自行管理，恢复 V3.6.5 时期的播放行为。
+  const hls = new Hls({ loader, pLoader: loader });
   (video as any).__hls = hls;
+  (hls as any).__loadedUrl = url; // #3：供上面的同 URL 复用判定
   INSTANCES.set(video, hls);
   hls.loadSource(proxiedUrl);
   hls.attachMedia(video);

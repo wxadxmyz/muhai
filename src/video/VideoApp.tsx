@@ -204,7 +204,23 @@ export default function VideoApp() {
             const cur = player.getState().current;
             const stillOnThis = cur?.id === it.id && cur?.sourceId === it.sourceId;
             if (stillOnThis) {
-              playEpisode(full, Math.max(Math.min(resumeEp, (full.episodes?.length ?? 1) - 1), 0), 0, true);
+              // V3.8.7 #2：已在播（地址已解析出来）→ 只补元数据，不重新起播。
+              // 旧实现无条件再调一次 playEpisode(full)：源站 play() 每次返回的 CDN 路径与
+              // 签名都不同（量子 lzcdn 类源每次变 hash/sign），于是第二次起播拿到的是另一个
+              // URL，播放器 detach 掉第一次、重新加载 —— 第一次已下好的 manifest 与首片全部
+              // 丢弃，白白多等约 2 秒（诊断实测两条「开始加载」相隔 2s，第一次被整个丢弃）。
+              // 这里保留当前正在播的地址，只把详情带回来的选集/简介/线路合并进去。
+              if (cur.playUrl) {
+                player.updateCurrent({
+                  ...cur,
+                  ...full,
+                  playUrl: cur.playUrl,
+                  episodes: full.episodes?.length ? full.episodes : cur.episodes,
+                });
+                setDetail(full);
+              } else {
+                playEpisode(full, Math.max(Math.min(resumeEp, (full.episodes?.length ?? 1) - 1), 0), 0, true);
+              }
             }
           }
         }

@@ -28,6 +28,15 @@ function loadSrcPref(): { src: string; kw: string } | null {
 function clearSrcPref() {
   try { sessionStorage.removeItem(MH_SRCKEY); } catch {}
 }
+// V3.8.7 #1：保留子站选中态，只把 pref 里的搜索词更新为本次实际搜索的词。
+// 用于 initialQuery 触发的自动搜索（resetSrc=false）——此时不清 pref，
+// 但要让 pref.kw 跟上真实关键词，避免下次恢复时词对不上。
+function updateSrcKw(kw: string) {
+  try {
+    const cur = JSON.parse(sessionStorage.getItem(MH_SRCKEY) || 'null');
+    if (cur && cur.src) sessionStorage.setItem(MH_SRCKEY, JSON.stringify({ src: cur.src, kw }));
+  } catch {}
+}
 
 function parentIdOf(src: SourceConfig): string {
   return ((src as any).parentId as string) || src.id;
@@ -61,9 +70,14 @@ export function SearchView({
   const [errors, setErrors] = useState<{ sourceId: string; sourceName: string; message: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  // V3.8.7 #1：不再比对关键词。旧实现 `p.kw === (initialQuery ?? '')` 依赖外部传入的
+  // initialQuery（VideoApp 的 searchQuery），而用户在搜索页内改词重搜时该值不会同步更新，
+  // 于是 pref.kw(新词) 与 initialQuery(旧词) 恒成立 false → 子站被打回「全部」，修复形同无效。
+  // sessionStorage 生命周期即当前会话，且每次新搜索 run() 都会 clearSrcPref 重置子站，
+  // 故能存下来的 pref 一定是「最近一次选中的子站」，直接恢复即可。
   const [activeSource, setActiveSource] = useState<string>(() => {
     const p = loadSrcPref();
-    return p && p.kw === (initialQuery ?? '') ? p.src : ALL_KEY;
+    return p?.src ?? ALL_KEY;
   });
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
   // V3.3.8 Bug 3/4：主源封面加载失败时，回退到豆瓣同名封面 / 其它源同名封面（按 key 局部回填）
@@ -135,6 +149,7 @@ export function SearchView({
     setLoading(true);
     setSearched(true);
     if (resetSrc) { setActiveSource(ALL_KEY); clearSrcPref(); }
+    else updateSrcKw(query); // V3.8.7 #1：保持子站选中，同步 pref 的搜索词
     setPage(1); // V3.6.5：新搜索回到第 1 页
     setProgressText('跨源搜索中…');
     library.addSearch(query);

@@ -384,7 +384,7 @@ button.fav, .fav { color: var(--danger) !important; }
 .settings-row .bl-input { flex: 1; min-width: 0; margin-left: 4px; max-width: none; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
 .bl-add { flex: 0 0 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--accent); font-size: 13px; cursor: pointer; }
 
-/* 全屏覆盖页（音源管理 / 网盘浏览 / 我的音乐）*/
+/* 全屏覆盖页（影视源管理 / 网盘浏览）*/
 .fullpage { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .15s; }
 /* V3.5.5：与原型 .subpage .sp-head 1:1 —— padding 12px 14px / 标题 16px / 返回按钮 36px 圆形。 */
 .fullpage-head { display: flex; align-items: center; gap: 8px; padding: calc(12px + var(--sat)) 14px 12px; border-bottom: 1px solid var(--border); }

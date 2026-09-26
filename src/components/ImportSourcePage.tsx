@@ -6,7 +6,7 @@ import { isValidShareCode, decodeSources } from '../lib/sharecode';
 import { Icon } from './Icon';
 import { requestDisclaimerToast } from '../lib/disclaimer';
 
-// 「导入 json 源 / 导入 json 音源」全屏子页：配置地址自动抓取 + 本地文件 + 手动粘贴。
+// 「导入 json 影视源」全屏子页：配置地址自动抓取 + 本地文件 + 手动粘贴。
 // 取代旧版的弹窗式导入。
 export function ImportSourcePage({
   mediaType,

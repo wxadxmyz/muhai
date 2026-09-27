@@ -5,6 +5,38 @@
 
 ---
 
+## V3.8.9
+
+本版以 **V3.7.0 为基准**回退 drpy 播放链路（用户实测：V3.7.0 能正常播放），并补齐 V3.8.8 遗留的 4 处输入弹窗中文化。
+
+### 修复：drpy 源不能播放（回退到 V3.7.0 的 drpy3 实现）
+
+- **定位依据**：用户实测 **V3.7.0 能播**。V3.7.0 已是 4 worker 池 + round-robin，且已含 `guardPlayable` 校验 —— 这直接排除了「worker 池是根因」与「guardPlayable 是根因」两个方向，根因范围缩到 **V3.7.4 之后新增的东西**。
+- 因此本版**不再**回退 `drpy3.rs`（V3.8.8 的按源 key 粘性哈希保留，多源搜索并发也保住了）。
+- 回退的是 `src/engine/adapters/drpy3.ts` 里 V3.7.0 之后新增的四项：
+  1. **`getPlayUrl` 整体回到 V3.7.0 版本**：去掉 V3.8.4 加的 `isHttpUrl/isDirect` 判据与 play() 后的 `throw '该源未返回可播放地址…'`、V3.7.5 加的网盘分享解析、V3.7.4 加的 guard 命中后代理重试；只保留 5 步主流程 + `guardPlayable` 直抛。
+  2. **线路解析回到 `toEpisodesWithFlag`**：`toItems` 与 `getDetail` 不再用 V3.8.4 的 `toLineGroups`（它会按「直链占比」重排线路，换掉源自己排的第一条线路）；`getDetail` 也不再写回 `lineGroups/lineNames`。
+  3. **去掉网盘解析依赖**：删除 `netdiskShare` import。
+  4. **线路数回到 1**：播放器对 `lineGroups` 缺失本就有兜底（`?? []` → `lines=1`），与 V3.7.0 行为一致，未改动播放器。
+
+### 修复：补齐 V3.8.8 遗漏的 4 处输入弹窗中文化
+
+- V3.8.8 只换了 11 处 `alert`，漏了 4 处 `window.prompt`（按钮为英文 Cancel/OK，且是单行输入框，粘贴多行 JSON/分享码极难用）。
+- `src/lib/dialog.ts` 新增 **`showPrompt()`**：与 `showAlert` 同一套浮层，按钮中文「取消 / 确定」，改用**多行 textarea**（影视源 JSON 与分享码都是多行长文本），字号 16px（低于 16px 时 iOS Safari 聚焦会放大页面顶变形输入框）。
+- 替换：`SettingsModal.tsx` 2 处（导入影视源 JSON、导入配置 JSON）+ `SourceManager.tsx` 2 处（导入影视源 JSON 数组、导入分享码）。至此**全库再无原生 alert / prompt**。
+
+### 改进：源缺失不再静默失败
+
+- `src/player.ts` 的 `resolvePlay` 原为 `if (!cfg) return item` —— 源列表里找不到 `item.sourceId` 时静默返回空 playUrl，最终在播放器里落成一句完全看不出原因的「未取到可播放地址，换个线路或换个源试试」。
+- 改为**显式抛错**，报出 `sourceId` 与当前源数量，并提示常见原因（条目来自已删除/已禁用的源，或来自展开出的子站而源列表里只有父级配置）。
+
+### 本版代价
+
+- 失去：网盘分享链接解析（V3.7.5）、线路直链优先排序（V3.8.4）、guard 命中后代理重试（V3.7.4）。
+- 保住：4 worker 多源搜索并发（V3.7.0）、防转圈 `guardPlayable`（V3.7.0）、V3.8.8 的搜索子站保留 / 弹窗中文化 / 影视源文案。
+
+---
+
 ## V3.8.8
 
 本版修复 drpy 播放与搜索子站的**真正根因**（均为查证历史版本后定位），并统一界面文案。

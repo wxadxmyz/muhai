@@ -4,6 +4,7 @@ import { useSources } from '../store';
 import { AddSourceModal } from './AddSourceModal';
 import { encodeSources, decodeSources } from '../lib/sharecode';
 import { Icon } from './Icon';
+import { showPrompt } from '../lib/dialog';
 
 const TYPE_LABEL: Record<string, string> = {
   'music-json': '音乐 API',
@@ -32,8 +33,8 @@ export function SourceManager({
     setStatus((s) => ({ ...s, [cfg.id]: ok ? 'ok' : 'fail' }));
   };
 
-  const doImportJson = () => {
-    const text = window.prompt('粘贴影视源 JSON 数组：');
+  const doImportJson = async () => {
+    const text = await showPrompt('导入影视源 JSON', '粘贴影视源 JSON 数组：', '');
     if (!text) return;
     const r = importSources(text);
     // 导入结果里区分「新增」与「已存在被跳过」，否则用户以为导入失败
@@ -44,8 +45,8 @@ export function SourceManager({
     );
   };
 
-  const doImportShare = () => {
-    const text = window.prompt('粘贴影视源分享码（MPS1. 开头）：');
+  const doImportShare = async () => {
+    const text = await showPrompt('导入影视源分享码', '粘贴以 MPS1. 开头的分享码：', '');
     if (!text) return;
     try {
       const list = decodeSources(text);

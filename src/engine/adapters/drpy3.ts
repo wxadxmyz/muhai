@@ -3,7 +3,9 @@ import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { devLog } from '../../lib/log';
 import { ensureProxyPort, buildProxyUrl } from '../../lib/hlsPlayer';
 import { isTauri } from '../../lib/tauriBridge';
-import { isNetdiskShare, resolveNetdiskShare } from '../../lib/netdiskShare';
+
+// V3.8.9：删掉 netdiskShare 依赖。网盘分享解析（V3.7.5 #4）是 V3.7.0 之后加的，
+// 不在「V3.7.0 能播」的基准里，按回退清单一并去除。
 
 // V3.6.5 #1：jx/parse 二次解析助手。把中间地址经本地流式代理 fetch（代理跟随上游重定向），
 // 用回传的 x-proxy-final-url 作为真直链。代理不可用时返回 null（调用方回退原始中间地址）。
@@ -163,6 +165,9 @@ function parseOneLine(group: string): { name: string; url: string }[] {
   return out;
 }
 
+// V3.8.9：drpy 源已回退到 toEpisodesWithFlag，本函数当前不再被 drpy 链路调用，
+// 保留仅为将来需要「线路分组」时可直接复用。苹果CMS 源用的是 normal.ts 里那份同名实现，
+// 两者互不影响。
 export function toLineGroups(raw: any): {
   lineGroups: { name: string; url: string }[][];
   lineNames: string[];
@@ -198,12 +203,10 @@ function toItems(list: any[], cfg: SourceConfig): MediaItem[] {
     const id = String(v.vod_id ?? v.id ?? '');
     // V3.6.5 #4：搜索/分类列表里若已带 vod_play_url，就地解析出集数并记住 flag 与首集。
     // 这样①列表卡片能直接显示「更新至 N 集」，②播放时可复用首集，省掉一次 detail 往返。
-    // V3.8.5 #1：列表/搜索项自带选集时，用与详情一致的 toLineGroups（按直链占比排序、
-    // 线路名作 flag）解析，而非未排序的 toEpisodesWithFlag 摊平。否则「分享页线路」会排在
-    // 「直链线路」前面（如 lzi 的 vod_play_from = "liangzi$$$lzm3u8"），firstEpMap 记成已失效
-    // 的分享页 URL → play 去死链抠 m3u8 → 「能搜不能播 / 未取到可播放地址」。直链优先后，
-    // 搜索卡片也能直接起播，省一次 detail 往返。
-    const { episodes: eps } = toLineGroups(v);
+    // V3.8.9：回退到 V3.7.0 的 toEpisodesWithFlag（按源给的原始线路顺序摊平）。
+    // V3.8.5 #1 引入的 toLineGroups 会按「直链占比」重排线路，把源自己排的第一条线路换掉——
+    // 这是 V3.7.0 之后才有的行为，不在「V3.7.0 能播」的基准内，故去除。
+    const eps = toEpisodesWithFlag(v?.vod_play_url ?? '');
     for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
     if (eps.length) rememberFirstEp(cfg.id, id, eps);
     return {
@@ -368,13 +371,14 @@ export function createDrpy3Source(
       const items = toItems(list, cfg);
       const it = items[0];
       if (it) {
-        // V3.8.4 #1：用与 normal 源一致的 lineGroups/lineNames 解析，直链线路优先，
-        // 同时把 flag 写进 episodes 供 getPlayUrl 使用。
-        const { lineGroups, lineNames, episodes: eps } = toLineGroups(it.raw);
+        // V3.8.9：回退到 V3.7.0 的 toEpisodesWithFlag，不再写回 lineGroups/lineNames。
+        // V3.8.4 #1 引入的线路重排会换掉源自己排的第一条线路，是 V3.7.0 之后才有的行为。
+        // 播放器侧（VideoApp.tsx:142 / VideoPlayer.tsx:247）对 lineGroups 缺失本就有兜底
+        // （V3.7.0 及之前 drpy 源从不产出 lineGroups，线路数恒为 1），故此处可安全去除。
+        const eps = toEpisodesWithFlag(it.raw?.vod_play_url ?? '');
         for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
         rememberFirstEp(cfg.id, itemId, eps); // #4：记住首集，播放时无需再拉详情
         it.episodes = eps.map((e) => ({ name: e.name, url: e.url }));
-        it.raw = { ...it.raw, lineGroups, lineNames };
       }
       // V3.6.7 修复④：电影 / 动漫剧场版等「单集片」在 detail 阶段常常不给 vod_play_url
       // （地址要到 play 阶段才现算）。旧实现在这里直接返回空 episodes，前端 openDetail 又
@@ -404,45 +408,34 @@ export function createDrpy3Source(
 
     async getPlayUrl(itemId: string): Promise<PlayUrl> {
       await ensureInit();
-      const isHttpUrl = (s: string) => /^https?:\/\//i.test(s);
-      const isDirect = (s: string) => /\.(m3u8|mp4)(\?|$)/i.test(s);
       let flag = flagMap.get(`${cfg.id}|${itemId}`) ?? '';
       let playId = itemId;
       // V3.6.5 #4：先查首集映射（详情页/列表已拉过集数时命中），命中即直接用，
       // 跳过下面那次 detail 往返。这是「播放慢」的一个隐性开销：每次播放都多拉一次详情。
-      const first = firstEpMap.get(`${cfg.id}|${itemId}`);
-      if (!flag && first?.url) {
-        flag = first.flag;
-        playId = first.url;
+      if (!flag) {
+        const first = firstEpMap.get(`${cfg.id}|${itemId}`);
+        if (first?.url) {
+          flag = first.flag;
+          playId = first.url;
+        }
       }
-      // V3.8.5 #1：首集缓存为空，或缓存的是「分享页 / 中间地址」（非直链）时，拉一次 detail，
-      // 用 toLineGroups 选直链占比最高的线路（与详情页一致）。否则一旦缓存的是失效分享页 URL
-      // （如 lzi 的 liangzi 线路），直接 play 必然失败 → 「能搜不能播 / 未取到可播放地址」。
-      // 直链首集则直接用，跳过这次 detail，不增加额外耗时。
-      if (!isDirect(playId)) {
+      // itemId 是 vod_id（而非集数 url）且首集映射也没命中时，才兜底拉一次详情取首集
+      if (!flag) {
         try {
           const r = await call('detail', [itemId]);
           const first = (r?.list ?? [])[0];
-          const raw = first ?? (r && (r.vod_id != null || r.vod_play_url != null) ? r : null);
-          if (raw) {
-            const { episodes: eps } = toLineGroups(raw);
+          if (first?.vod_play_url) {
+            const eps = toEpisodesWithFlag(first.vod_play_url);
             for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
             if (eps[0]) {
               flag = eps[0].flag;
               playId = eps[0].url;
-              devLog(`[drpy3] ${jsCfg.name} detail 兜底取首集: flag=${flag}, url=${playId}`);
             }
           }
-        } catch (e: any) {
-          devLog(`[drpy3] ${jsCfg.name} detail 兜底失败: ${e?.message ?? e}`);
+        } catch {
+          /* 直传 itemId 再试 */
         }
       }
-      // V3.8.7 #5：删除 V3.8.4 在此处的提前抛错（`if (!isHttpUrl(playId)) throw`）。
-      // 那道拦截把 V3.6.7 修复④ 的核心兜底堵死了 —— 电影 / 剧场版等单集片在 detail 阶段
-      // 常常拿不到 vod_play_url，地址只能在 play 阶段现算，必须把 **vod_id 本身** 直传给
-      // play() 让源自己解析。提前抛错后这类片直接报「未取到可播放地址 / 没有选集」。
-      // 现在恢复 V3.6.7 行为：playId 保持 vod_id 交给下面的 play()，由源现算地址；
-      // play() 仍拿不到时再由二次兜底与最终报错处理（见下），不会漏报。
       const r = await call('play', [flag, playId, []]);
       if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '解析播放地址失败'));
       let url = '';
@@ -452,29 +445,6 @@ export function createDrpy3Source(
         if (typeof r.url === 'string' && r.url) url = r.url;
         else if (Array.isArray(r.urls) && typeof r.urls[1] === 'string') url = r.urls[1];
         if (r.header && typeof r.header === 'object') headers = r.header;
-      }
-      // V3.8.4 #1：play() 返回的不是可播放 URL（如返回了 vod_id 字符串、空字符串），
-      // 尝试再拉一次 detail 取首集直链。仍失败则明确报错，不再把脏数据塞给播放器。
-      if (!isHttpUrl(url)) {
-        devLog(`[drpy3] ${jsCfg.name} play 返回非 URL: "${url}", 尝试 detail 兜底`);
-        try {
-          const d = await call('detail', [itemId]);
-          const first = (d?.list ?? [])[0];
-          const raw = first ?? (d && (d.vod_id != null || d.vod_play_url != null) ? d : null);
-          if (raw) {
-            const { episodes: eps } = toLineGroups(raw);
-            if (eps[0]?.url && isHttpUrl(eps[0].url)) {
-              url = eps[0].url;
-              flag = eps[0].flag;
-              devLog(`[drpy3] ${jsCfg.name} detail 兜底取到 URL: ${url}`);
-            }
-          }
-        } catch (e: any) {
-          devLog(`[drpy3] ${jsCfg.name} detail 兜底失败: ${e?.message ?? e}`);
-        }
-      }
-      if (!isHttpUrl(url)) {
-        throw new Error('该源未返回可播放地址（解析结果不是有效视频链接）');
       }
       if (!headers) {
         // #5 Referer 修正：优先用源真实 host（ext/api 是源站接口地址，ruleHost 是从规则脚本解析的媒体站 host）。
@@ -504,37 +474,11 @@ export function createDrpy3Source(
       }
       // V3.7.0 B1：最终地址可播性校验（见 guardPlayable）——网页/非媒体一律明确报错，
       // 不再把 HTML 喂给 hls.js 导致永久转圈。
-      // V3.7.4 #1：guard 命中「网页/非媒体」时，先经本地代理跟随重定向解析一次真直链
-      // （覆盖金鹰类「分享页/中间地址」源——其 play() 偶发返回中间页被误杀，重试又成功）。
-      // 解析成功且不再是网页则放行，否则保持原错误抛出，不会引入新风险。
-      // V3.7.5 #4：play() 返回的是网盘分享链接（阿里/夸克）时，先经网盘解析模块换成直链。
-      // 解析成功得到可播直链则替换 url，失败回退到 guard 的原有报错路径。
-      if (url && /^https?:\/\//i.test(url) && isNetdiskShare(url)) {
-        try {
-          await ensureProxyPort();
-          const real = await resolveNetdiskShare(url);
-          if (real) {
-            devLog(`[drpy3] 网盘分享链接 ${url} → 直链 ${real}`);
-            url = real;
-          }
-        } catch (e: any) {
-          devLog(`[drpy3] 网盘分享解析失败，回退原行为:`, e?.message ?? e);
-        }
-      }
+      // V3.8.9：回退到 V3.7.0 的直抛行为。V3.7.4 #1 的「命中后经代理再解析一次」与
+      // V3.7.5 #4 的网盘分享解析都是 V3.7.0 之后加的，不在「V3.7.0 能播」的基准内；
+      // 前者还会为每个疑似网页的地址多加一次代理往返，故一并去除。
       if (url && /^https?:\/\//i.test(url)) {
-        let guardErr = await guardPlayable(url, headers);
-        if (guardErr) {
-          try {
-            await ensureProxyPort();
-            const real = await resolveViaProxy(url, headers);
-            if (real && real !== url) {
-              const re = await guardPlayable(real, headers);
-              if (!re) { url = real; guardErr = null; }
-            }
-          } catch {
-            /* 解析失败，保持原 guardErr 继续报错 */
-          }
-        }
+        const guardErr = await guardPlayable(url, headers);
         if (guardErr) throw new Error(guardErr);
       }
       return { url, headers };

@@ -1,4 +1,4 @@
-import { showAlert } from '../lib/dialog';
+import { showAlert, showPrompt } from '../lib/dialog';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSkin, SKINS } from '../lib/theme';
 import { useSettings } from '../lib/settings';
@@ -130,8 +130,8 @@ export function SettingsModal({
     setDownloadOptions({ notifyDownload: v });
   };
 
-  const importSource = () => {
-    const text = window.prompt('粘贴影视源 JSON（单个对象或数组）：');
+  const importSource = async () => {
+    const text = await showPrompt('导入影视源', '粘贴影视源 JSON（单个对象或数组）：', '');
     if (!text) return;
     try {
       const r = store.importSources(text);
@@ -147,8 +147,8 @@ export function SettingsModal({
     showAlert('配置已复制到剪贴板（含影视源与设置）。');
   };
 
-  const importAll = () => {
-    const text = window.prompt('粘贴此前导出的配置 JSON：');
+  const importAll = async () => {
+    const text = await showPrompt('导入配置', '粘贴此前导出的配置 JSON：', '');
     if (!text) return;
     try {
       const data = JSON.parse(text);

@@ -5,6 +5,17 @@
 
 ---
 
+## V3.9.2
+
+### 修复：播放页顶部源名仍显示父级“合一”名称
+
+- **现象**：V3.9.1 已修复点进详情/播放不会串片，但播放页顶部红圈位置仍然显示「幕海点播源（苹果CMS + drpy 合一 · V3.7.1）· 线路 1」，而不是具体子站名（如「drpy_金鹰资源」「360资源」）。
+- **根因**：V3.9.1 只把详情/播放的**路由**改成 `findSourceConfig`（`VideoApp.tsx` / `engine/index.ts`），但**展示层** `src/video/VideoPlayer.tsx:213-218` 还是老逻辑：用 `allSources` 精确匹配子站 ID，匹配不到就回退到父级 ID，从而拿到父级配置、显示父级合一名字。
+- **修复**：`VideoPlayer.tsx` 也改用 `findSourceConfig(allSources, detail.sourceId)`，优先命中 `findSubConfigById` 里已注册的具体子站配置，取到正确的子站 `name`。
+- **结果**：播放页顶部标签现在是什么子站就显示什么名字，M3U8/drpy 子站不再混成一个“合一”名称。
+
+---
+
 ## V3.9.1
 
 ### 修复：tvbox 子站详情/播放不再广播到全部子站

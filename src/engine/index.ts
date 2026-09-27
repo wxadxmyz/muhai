@@ -72,6 +72,29 @@ export function createSource(cfg: SourceConfig): MediaSource {
   }
 }
 
+// V3.9.0：按 sourceId 查找源配置，兼容 tvbox 聚合源展开出的子站 ID。
+// tvbox 聚合源（如 M3U8+drpy 合在一起的配置）会在搜索/详情阶段把条目标记成
+// 子站 ID（形如 `s_xxx::drpy_jyzy`，`::` 前是父级配置 id）。但播放器/详情页持有的
+// 是所有源的**未展开**列表（只有父级 `s_xxx`），直接用子站 ID 去 find 必然匹配不到，
+// 于是走到「找不到源配置」报错（V3.7.0 及更早版本此处是静默 return，表现为
+// "未取到可播放地址"——同样播不出来，只是不报错）。
+// 这里先精确匹配，失败再按 `::` 取父级 id 回退一次：父级 tvbox 源的 getPlayUrl/
+// getDetail 自身就会遍历所有子站轮询试播，不需要知道具体是哪个子站。
+export function findSourceConfig(
+  sources: SourceConfig[],
+  sourceId: string | undefined,
+): SourceConfig | undefined {
+  if (!sourceId) return undefined;
+  const exact = sources.find((s) => s.id === sourceId);
+  if (exact) return exact;
+  const sep = sourceId.indexOf('::');
+  if (sep > 0) {
+    const parentId = sourceId.slice(0, sep);
+    return sources.find((s) => s.id === parentId);
+  }
+  return undefined;
+}
+
 // 把 tvbox 配置展开为子站列表（供搜索页左侧源栏等使用）。
 // 非 tvbox 源原样返回；limit 用于限制子站数量（首页聚合等场景）。
 export async function expandSources(

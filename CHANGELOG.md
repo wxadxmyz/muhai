@@ -5,6 +5,24 @@
 
 ---
 
+## V3.9.0
+
+本版修复 **V3.8.9 暴露的「找不到源配置」** —— 这是 tvbox 聚合源（M3U8 + drpy 合在一起的配置）展开子站后的隐藏问题，V3.7.0 及更早版本同样存在，只是被静默吞掉。
+
+### 修复：tvbox 子站 ID 找不到源配置
+
+- **现象**：用户在最新版导入 tvbox 聚合链接后，点开里面的 drpy 子站（sourceId 形如 `s_xxx::drpy_jyzy`）播放，提示「找不到源配置（sourceId=s_xxx::drpy_jyzy，当前共 N 个源）」。
+- **根因**：tvbox 聚合源在搜索/详情阶段把条目标记为**子站 ID**（父级 id + `::` + 子站 key），而播放器/详情页持有的是**未展开**的父级源列表（只有 `s_xxx`）。用子站 ID 去 `find` 必然匹配不到。V3.7.0 此处是 `if (!cfg) return item;` 静默返回，表现为「未取到可播放地址」——同样播不出来只是不报错；V3.8.9 的 C1 诊断把它显式化了。
+- **为什么 V3.7.0 测着能播**：当时导入的是 7 个**独立 drpy 源**（id 不含 `::`，精确匹配得上）。现在导入的是 tvbox 聚合源里的 drpy **子站**（id 含 `::`），V3.7.0 一样匹配不上。
+- **修复**：新增 `findSourceConfig(sources, sourceId)`（`src/engine/index.ts`），先精确匹配，失败再按 `::` 取父级 id 回退一次。父级 tvbox 源自身的 `getPlayUrl`/`getDetail` 会遍历所有子站轮询试播，不需要知道具体子站。应用到三处：
+  1. `src/player.ts` 的 `resolvePlay`（播放解析主路径）
+  2. `src/video/VideoApp.tsx` 的 `openDetail` / `playCloudFile`（拉详情 / 云盘）
+  3. `src/video/VideoPlayer.tsx` 的源名/logo 显示（仅展示层）
+
+> drpy 引擎本身在 V3.8.9 已等价回退到 V3.7.0，本版不再改动 drpy 链路；只补上 V3.7.0 也缺失的「子站 ID 回退父级」这一层。
+
+---
+
 ## V3.8.9
 
 本版以 **V3.7.0 为基准**回退 drpy 播放链路（用户实测：V3.7.0 能正常播放），并补齐 V3.8.8 遗留的 4 处输入弹窗中文化。

@@ -208,7 +208,13 @@ export function VideoPlayer({
   // （组件 props 已有 sources=当前详情的源 id，这里取名 allSources 表示「全部已启用源列表」）
   const { sources: allSources } = useSources('video');
   // V3.3.6 八·二：当前子站（用于子站指示的 logo / 名称；无 logo 用六边形兜底）
-  const curSource = allSources.find((s) => s.id === detail.sourceId);
+  // V3.9.0：detail.sourceId 可能是 tvbox 子站 ID（s_xxx::yyy），
+  // allSources 是未展开的父级列表，需按 :: 回退父级才能取到源名/logo。
+  const curSource =
+    allSources.find((s) => s.id === detail.sourceId) ??
+    (detail.sourceId && detail.sourceId.includes('::')
+      ? allSources.find((s) => s.id === detail.sourceId.split('::')[0])
+      : undefined);
   const curSourceName = curSource?.name ?? detail.sourceName ?? '';
   const [coverFallback, setCoverFallback] = useState<string | null>(null);
   const coverTried = useRef(''); // 已触发过跨源回退的 detail.id，防重复搜索

@@ -6,7 +6,7 @@ import { usePlayer, player } from '../lib/playerStore';
 import { useSettings } from '../lib/settings';
 import { useGlobalShortcuts } from '../lib/shortcuts';
 import { useSwipeBack } from '../lib/swipeBack';
-import { MediaItem, createSource } from '../engine';
+import { MediaItem, createSource, findSourceConfig } from '../engine';
 import { alistClient } from '../lib/alistClient';
 import { SearchView } from '../components/SearchView';
 import { ErrorBoundary } from '../components/ErrorBoundary';
@@ -159,7 +159,7 @@ export default function VideoApp() {
   };
 
   const playCloudFile = async (item: MediaItem) => {
-    const cfg = store.sources.find((s) => s.id === item.sourceId);
+    const cfg = findSourceConfig(store.sources, item.sourceId);
     let playUrl = item.episodes?.[0]?.url || '';
     if (cfg && item.raw?.alistPath) {
       const u = await alistClient.getUrl(cfg, item.raw.alistPath);
@@ -182,7 +182,7 @@ export default function VideoApp() {
     setDetailLoading(true);
     playEpisode(it, Math.max(Math.min(resumeEp, (it.episodes?.length ?? 1) - 1), 0), 0, true);
     // 后台拉详情：成功且数据有效 → 用完整数据重进（补齐剧集/介绍）；失败保持列表项继续
-    const cfg = store.sources.find((s) => s.id === it.sourceId);
+    const cfg = findSourceConfig(store.sources, it.sourceId);
     if (cfg) {
       try {
         const src = createSource(cfg);

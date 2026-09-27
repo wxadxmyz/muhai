@@ -200,19 +200,36 @@ async function collectSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
 // V3.3.1 #5：站点配置缓存（5 分钟）。
 // 之前每次搜索/联想都要重新下载一遍 tvbox 配置 JSON（几 KB~几十 KB + 一次完整握手），
 // 这是"点开一个东西要等一下"的隐形大头。配置改动最多 5 分钟后生效。
+// V3.9.0 #2：维护 tvbox 聚合源展开后的子站配置索引，键为子站 ID（形如 s_xxx::drpy_lzi）。
+// 这样详情/播放查找源配置时，能直接命中具体子站配置（含正确 name/spider/api），
+// 避免回退父级后父级 getDetail/getPlayUrl 广播到全部 23 个子站导致片名错乱。
+const subConfigIndex = new Map<string, SourceConfig>();
+export function findSubConfigById(subId: string): SourceConfig | undefined {
+  return subConfigIndex.get(subId);
+}
+
 const spiderCache = new Map<string, { at: number; cfgs: SourceConfig[] }>();
 const SPIDER_TTL = 5 * 60 * 1000;
 async function collectSpidersCached(cfg: SourceConfig): Promise<SourceConfig[]> {
   const hit = spiderCache.get(cfg.id);
-  if (hit && Date.now() - hit.at < SPIDER_TTL && hit.cfgs.length) return hit.cfgs;
+  if (hit && Date.now() - hit.at < SPIDER_TTL && hit.cfgs.length) {
+    // 把缓存里的子站配置也注册到全局索引，供 findSourceConfig 命中具体子站。
+    for (const c of hit.cfgs) subConfigIndex.set(c.id, c);
+    return hit.cfgs;
+  }
   const cfgs = await collectSpiders(cfg);
-  if (cfgs.length) spiderCache.set(cfg.id, { at: Date.now(), cfgs });
+  if (cfgs.length) {
+    spiderCache.set(cfg.id, { at: Date.now(), cfgs });
+    for (const c of cfgs) subConfigIndex.set(c.id, c);
+  }
   return cfgs;
 }
 
 // 供前端使用的子站展开入口（无缓存版本，需上层做整体缓存）
 export async function expandTvboxSpiders(cfg: SourceConfig): Promise<SourceConfig[]> {
-  return collectSpiders(cfg);
+  const cfgs = await collectSpiders(cfg);
+  for (const c of cfgs) subConfigIndex.set(c.id, c);
+  return cfgs;
 }
 
 // v3.2.2：子站按真实 type 分发——normal 走 HTTP 适配器，js 走蜘蛛适配器。

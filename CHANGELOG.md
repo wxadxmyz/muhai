@@ -5,6 +5,19 @@
 
 ---
 
+## V3.9.1
+
+### 修复：tvbox 子站详情/播放不再广播到全部子站
+
+- **现象**：tvbox 聚合源里，用 drpy 子站搜到一部片，点进详情/播放页却变成**另一部片**；同时播放页顶部统一显示父级名「幕海点播源（苹果CMS + drpy 合一 · V3.7.1）· 线路 1」，而不是具体的子站名（如「量子资源(drpy规则)」「360资源」）。
+- **根因**：V3.9.0 的 `findSourceConfig` 把子站 ID 回退到**父级 tvbox 源**。父级的 `getDetail`/`getPlayUrl` 内部会遍历全部 23 个子站，「谁先返回就用谁」——于是用 drpy 子站的 `itemId` 去问苹果 CMS 子站，可能拿到另一部片；名字自然也显示父级合一源名。
+- **修复**：`findSourceConfig` 现在**优先命中已展开的具体子站配置**（含正确的 name / api / spider），让详情/播放精确路由到那个子站，不再广播。
+  - `src/engine/adapters/tvbox.ts`：新增 `subConfigIndex` 全局索引，在 `collectSpidersCached` / `expandTvboxSpiders` 展开 tvbox 时把每个子站配置（id = `s_xxx::子站key`）注册进去；导出 `findSubConfigById(subId)`。
+  - `src/engine/index.ts`：`findSourceConfig` 在 `::` 分支里先 `findSubConfigById(sourceId)`，命中则返回具体子站配置；未命中才回退父级兜底。
+- **结果**：搜索页左侧本来就把 M3U8 / drpy 展开成单独子站；现在点进去**详情/播放/源名**也精确对位到那个子站，回到「M3U8 和 drpy 分开」的体验。
+
+---
+
 ## V3.9.0
 
 本版修复 **V3.8.9 暴露的「找不到源配置」** —— 这是 tvbox 聚合源（M3U8 + drpy 合在一起的配置）展开子站后的隐藏问题，V3.7.0 及更早版本同样存在，只是被静默吞掉。

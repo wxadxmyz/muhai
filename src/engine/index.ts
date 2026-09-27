@@ -2,7 +2,7 @@
 import { createMusicJsonSource } from './adapters/musicJson';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
-import { createTvboxSource, expandTvboxSpiders } from './adapters/tvbox';
+import { createTvboxSource, expandTvboxSpiders, findSubConfigById } from './adapters/tvbox';
 import { createJsSource } from './adapters/js';
 import { createNormalSource } from './adapters/normal';
 import { withTimeout } from './http';
@@ -72,14 +72,11 @@ export function createSource(cfg: SourceConfig): MediaSource {
   }
 }
 
-// V3.9.0：按 sourceId 查找源配置，兼容 tvbox 聚合源展开出的子站 ID。
+// V3.9.0 #2：按 sourceId 查找源配置，兼容 tvbox 聚合源展开出的子站 ID。
 // tvbox 聚合源（如 M3U8+drpy 合在一起的配置）会在搜索/详情阶段把条目标记成
-// 子站 ID（形如 `s_xxx::drpy_jyzy`，`::` 前是父级配置 id）。但播放器/详情页持有的
-// 是所有源的**未展开**列表（只有父级 `s_xxx`），直接用子站 ID 去 find 必然匹配不到，
-// 于是走到「找不到源配置」报错（V3.7.0 及更早版本此处是静默 return，表现为
-// "未取到可播放地址"——同样播不出来，只是不报错）。
-// 这里先精确匹配，失败再按 `::` 取父级 id 回退一次：父级 tvbox 源的 getPlayUrl/
-// getDetail 自身就会遍历所有子站轮询试播，不需要知道具体是哪个子站。
+// 子站 ID（形如 `s_xxx::drpy_jyzy`，`::` 前是父级配置 id）。
+// 这里优先返回**具体子站配置**（name / api / spider 都对位），让详情/播放精确路由；
+// 子站索引未命中时回退父级，保留兜底。
 export function findSourceConfig(
   sources: SourceConfig[],
   sourceId: string | undefined,
@@ -89,6 +86,9 @@ export function findSourceConfig(
   if (exact) return exact;
   const sep = sourceId.indexOf('::');
   if (sep > 0) {
+    // 优先命中已展开的具体子站（详情/播放路由到该子站，不会广播到其它子站）
+    const sub = findSubConfigById(sourceId);
+    if (sub) return sub;
     const parentId = sourceId.slice(0, sep);
     return sources.find((s) => s.id === parentId);
   }

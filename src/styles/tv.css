@@ -1,0 +1,247 @@
+/* ============================================================================
+   电视端（Android TV / Leanback）专属样式
+   仅作用于 .tv 容器，对手机/平板/桌面完全无副作用（清单 §3.10 / §3.11）。
+   设计要点：48px 过扫描安全边距、10 英尺大密度、焦点环替代 hover。
+   ============================================================================ */
+
+.tv {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  /* §3.10 过扫描：电视约 5% 过扫描，env(safe-area-inset-*) 在电视上常为 0，
+     固定 48px 安全边距，保证内容不被屏幕切边裁掉。 */
+  --tv-safe: 48px;
+}
+
+/* ---------- 左竖导航（首页/搜索/直播/历史/设置） ---------- */
+.tv-nav {
+  width: 132px;
+  flex: 0 0 132px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 40px 14px 40px;
+  box-sizing: border-box;
+}
+.tv-nav .brand {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 22px; font-weight: 800; margin-bottom: 22px; padding-left: 8px;
+}
+.tv-nav .brand .logo {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border-radius: 9px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+}
+.tv-nav-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 18px 6px; border-radius: 14px; color: var(--muted);
+  background: transparent; border: none; cursor: pointer; transition: .15s var(--ease);
+  font-size: 15px;
+}
+.tv-nav-item svg { width: 30px; height: 30px; }
+.tv-nav-item.active {
+  color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2));
+}
+
+/* ---------- 内容区 ---------- */
+.tv-main {
+  flex: 1; min-width: 0; position: relative;
+  padding: var(--tv-safe);
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.tv-scroll {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  box-sizing: border-box;
+}
+.tv-scroll::-webkit-scrollbar { width: 8px; }
+.tv-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ---------- 焦点环（替代 hover，电视无鼠标） ---------- */
+.tv [data-focusable]:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent), 0 0 22px 4px color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: scale(1.06);
+  z-index: 2;
+  transition: transform .12s var(--ease), box-shadow .12s var(--ease);
+}
+.tv .tv-card:focus, .tv .tv-poster:focus {
+  box-shadow: 0 0 0 4px var(--accent), 0 12px 34px rgba(0,0,0,.55);
+}
+
+/* ---------- 通用 TV 卡片 / 海报 ---------- */
+.tv-poster {
+  position: relative; border-radius: 12px; overflow: hidden; background: var(--panel2);
+  aspect-ratio: 3 / 4; cursor: pointer; flex: 0 0 auto;
+}
+.tv-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tv-poster .ph-big {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 30px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #2a2f3a, #1a1d24);
+}
+.tv-poster .tv-pname {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 10px 8px;
+  font-size: 13px; line-height: 1.3; color: #fff;
+  background: linear-gradient(transparent, rgba(0,0,0,.82));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tv-poster .tv-tag {
+  position: absolute; top: 6px; left: 6px; padding: 2px 7px; border-radius: 6px;
+  font-size: 11px; background: rgba(0,0,0,.6); color: #fff;
+}
+.tv-poster .tv-score {
+  position: absolute; top: 6px; right: 6px; padding: 2px 7px; border-radius: 6px;
+  font-size: 11px; background: rgba(0,0,0,.6); color: #ffd54a;
+}
+
+/* ---------- 首页 TV ---------- */
+.tv-home-cats {
+  display: flex; gap: 12px; margin-bottom: 22px; flex-wrap: wrap;
+}
+.tv-cat {
+  padding: 10px 20px; border-radius: 10px; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); cursor: pointer; font-size: 16px; white-space: nowrap;
+}
+.tv-cat.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-color: transparent; }
+
+.tv-row-title { font-size: 20px; font-weight: 700; margin: 4px 0 14px; }
+.tv-corridor {
+  display: flex; gap: 18px; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px;
+  scroll-snap-type: x proximity;
+}
+.tv-corridor .tv-poster { width: 168px; scroll-snap-align: start; }
+.tv-corridor .tv-poster:focus { transform: scale(1.12); }
+
+/* ---------- 搜索 TV ---------- */
+.tv-search { display: flex; gap: 28px; height: 100%; min-height: 0; }
+.tv-keyboard-wrap { width: 360px; flex: 0 0 360px; display: flex; flex-direction: column; }
+.tv-kb-text {
+  min-height: 56px; background: var(--panel2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 16px; font-size: 24px; line-height: 1.3; margin-bottom: 16px; word-break: break-all;
+}
+.tv-kb-text .caret { display: inline-block; width: 2px; height: 24px; background: var(--accent); vertical-align: middle; animation: tvblink 1s steps(2) infinite; }
+@keyframes tvblink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
+.tv-kb-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.tv-key {
+  height: 56px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); font-size: 22px; font-weight: 700; cursor: pointer; display: grid; place-items: center;
+}
+.tv-key.fn { font-size: 15px; background: var(--panel); }
+.tv-key.danger { color: var(--danger); }
+.tv-key.primary { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; }
+
+.tv-search-right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tv-chips { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.tv-chip { padding: 8px 16px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); font-size: 14px; cursor: pointer; }
+.tv-chip.active { background: var(--accent-soft); border-color: var(--accent); color: #fff; }
+.tv-suggest { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.tv-suggest-item {
+  padding: 14px 18px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
+  font-size: 18px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+}
+.tv-suggest-item .sm { color: var(--muted); font-size: 13px; }
+
+/* ---------- 搜索结果 TV ---------- */
+.tv-result { display: flex; gap: 24px; height: 100%; min-height: 0; }
+.tv-result-srcs { width: 230px; flex: 0 0 230px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.tv-result-src {
+  display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 10px;
+  background: var(--panel2); border: 1px solid var(--border); font-size: 16px; cursor: pointer;
+}
+.tv-result-src.active { background: var(--accent-soft); border-color: var(--accent); color: #fff; }
+.tv-result-src .cnt { color: var(--muted); font-size: 13px; }
+.tv-result-grid {
+  flex: 1; min-width: 0; overflow-y: auto; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; align-content: start;
+}
+.tv-result-grid .tv-poster { width: 100%; }
+.tv-empty { color: var(--muted); font-size: 18px; padding: 40px; text-align: center; }
+
+/* ---------- 详情 TV ---------- */
+.tv-detail { display: flex; gap: 36px; height: 100%; min-height: 0; overflow-y: auto; }
+.tv-detail-poster { width: 280px; flex: 0 0 280px; border-radius: 16px; overflow: hidden; background: var(--panel2); aspect-ratio: 3 / 4; }
+.tv-detail-poster img { width: 100%; height: 100%; object-fit: cover; }
+.tv-detail-body { flex: 1; min-width: 0; }
+.tv-detail-title { font-size: 32px; font-weight: 800; margin: 0 0 10px; }
+.tv-detail-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 15px; margin-bottom: 22px; }
+.tv-detail-meta b { color: var(--text); font-weight: 600; }
+.tv-detail-actions { display: flex; gap: 16px; margin-bottom: 24px; }
+.tv-action-btn {
+  display: flex; align-items: center; gap: 10px; padding: 16px 28px; border-radius: 12px; font-size: 18px;
+  background: var(--panel2); border: 1px solid var(--border); color: var(--text); cursor: pointer;
+}
+.tv-action-btn.primary { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; }
+.tv-action-btn.active { border-color: var(--accent); }
+.tv-detail-desc { background: var(--panel2); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; font-size: 15px; line-height: 1.7; color: var(--text); max-width: 760px; }
+.tv-detail-desc.empty { color: var(--muted); }
+
+.tv-line-row { display: flex; gap: 10px; align-items: center; margin: 18px 0; flex-wrap: wrap; }
+.tv-line-row .lbl { color: var(--muted); font-size: 14px; margin-right: 4px; }
+.tv-line-pill { padding: 9px 18px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); font-size: 14px; cursor: pointer; }
+.tv-line-pill.active { background: var(--accent-soft); border-color: var(--accent); color: #fff; }
+
+.tv-ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 12px; margin-top: 8px; }
+.tv-ep {
+  padding: 16px 0; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
+  text-align: center; font-size: 16px; cursor: pointer;
+}
+.tv-ep.active { background: var(--accent-soft); border-color: var(--accent); color: #fff; }
+
+/* ---------- 设置 TV ---------- */
+.tv-settings { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.tv-set-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.tv-set-card {
+  display: flex; flex-direction: column; gap: 8px; padding: 22px; border-radius: 16px;
+  background: var(--panel2); border: 1px solid var(--border); cursor: pointer; min-height: 110px;
+}
+.tv-set-card .ic { color: var(--accent); }
+.tv-set-card .t { font-size: 18px; font-weight: 600; }
+.tv-set-card .v { font-size: 14px; color: var(--muted); }
+.tv-set-card.danger .t { color: var(--danger); }
+.tv-set-group-title { font-size: 16px; color: var(--muted); margin: 18px 0 10px; }
+
+/* ---------- 历史 TV ---------- */
+.tv-history-tabs { display: flex; gap: 12px; margin-bottom: 18px; }
+.tv-history-tabs .tv-cat { font-size: 16px; }
+.tv-history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 18px; }
+
+/* ---------- 直播 TV ---------- */
+.tv-live-list { display: flex; flex-direction: column; gap: 10px; }
+.tv-live-src { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--border); font-size: 18px; cursor: pointer; }
+.tv-live-src .sm { color: var(--muted); font-size: 13px; }
+.tv-live-body { display: flex; gap: 24px; height: 100%; min-height: 0; }
+.tv-live-cats { width: 150px; flex: 0 0 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.tv-live-cats .tv-cat { text-align: center; }
+.tv-live-chs { flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; align-content: start; }
+.tv-live-ch { padding: 16px 18px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border); font-size: 16px; cursor: pointer; }
+.tv-live-ch.on { background: var(--accent-soft); border-color: var(--accent); color: #fff; }
+
+/* ---------- 扫码推送 TV ---------- */
+.tv-push { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 22px; text-align: center; }
+.tv-push h2 { font-size: 26px; margin: 0; }
+.tv-push .qr { width: 280px; height: 280px; background: #fff; border-radius: 16px; padding: 14px; box-sizing: border-box; }
+.tv-push .qr img { width: 100%; height: 100%; display: block; }
+.tv-push .hint { color: var(--muted); font-size: 15px; max-width: 520px; line-height: 1.6; }
+.tv-push .status { font-size: 16px; color: var(--ok); }
+
+/* ---------- TV 浮层（焦点陷阱） ---------- */
+.tv-overlay {
+  position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.72);
+  display: flex; align-items: center; justify-content: center; padding: var(--tv-safe);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.tv-sheet {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 18px;
+  width: min(720px, 92vw); max-height: 84vh; overflow: hidden; display: flex; flex-direction: column;
+}
+.tv-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.tv-sheet-head h3 { margin: 0; font-size: 22px; }
+.tv-sheet-body { padding: 22px 24px; overflow-y: auto; }
+
+/* TV 下播放器：隐藏画中画（小屏概念）/ 锁屏按钮——清单 §3.12。由 .tv 作用域约束，不影响手机。 */
+.tv .bb[title="画中画"], .tv .lp-pip, .tv button[title="画中画"] { display: none !important; }

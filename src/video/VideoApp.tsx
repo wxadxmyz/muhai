@@ -22,6 +22,9 @@ import SplashScreen from '../components/SplashScreen';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { invoke } from '@tauri-apps/api/core';
 import { dispatchBack } from '../lib/backStack';
+import { getDeviceMode, onDeviceModeChange, isDesktop } from '../lib/deviceMode';
+import { TVShell } from './tv/TVShell';
+import { SettingsPageDesktop } from './SettingsPageDesktop';
 
 type Tab = 'home' | 'live' | 'history' | 'settings';
 
@@ -33,6 +36,10 @@ export default function VideoApp() {
   const state = usePlayer();
   useGlobalShortcuts();
   useSwipeBack();
+
+  // 形态切换（电视/桌面/手机）：变化时重渲染，使 TV 界面 / 桌面设置页即时切换
+  const [mode, setMode] = useState(getDeviceMode());
+  useEffect(() => onDeviceModeChange(setMode), []);
 
   const [tab, setTab] = useState<Tab>('home');
   const mainRef = useRef<HTMLElement>(null);
@@ -263,6 +270,11 @@ export default function VideoApp() {
   const cloudPayload = () =>
     JSON.stringify({ kind: 'video', favorites: library.lib.favorites, history: library.lib.history, watchProgress: library.lib.watchProgress });
 
+  // 电视形态：整包复用，按 deviceMode 切到独立 Leanback 大屏界面（清单工作二）
+  if (mode === 'tv') {
+    return <TVShell sources={store.sources} library={library} settings={settings} onReset={doReset} />;
+  }
+
   return (
     <>
       <SplashScreen appName="幕海" />
@@ -359,7 +371,11 @@ export default function VideoApp() {
 
         {tab === 'settings' && (
           <ErrorBoundary name="设置">
-          <SettingsPage sub={settingsSub} setSub={setSettingsSub} onReset={doReset} />
+          {isDesktop() ? (
+            <SettingsPageDesktop sub={settingsSub} setSub={setSettingsSub} onReset={doReset} />
+          ) : (
+            <SettingsPage sub={settingsSub} setSub={setSettingsSub} onReset={doReset} />
+          )}
           </ErrorBoundary>
         )}
 

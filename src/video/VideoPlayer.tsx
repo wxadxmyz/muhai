@@ -11,6 +11,7 @@ import { downloadStore } from '../lib/downloads';
 import { attachHlsWithBackend, detachHls, getLevels, getCurrentLevel, setLevel, type HlsLevel } from '../lib/hlsPlayer';
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
+import { getDeviceMode } from '../lib/deviceMode';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { MediaProbeOverlay } from '../components/MediaProbe';
@@ -379,7 +380,8 @@ export function VideoPlayer({
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (tapTimer.current) window.clearTimeout(tapTimer.current);
       if (singleHideTimer.current) window.clearTimeout(singleHideTimer.current);
-      requestOrientation('portrait');
+      // 横屏放开（清单§2）：仅手机退出播放器回竖屏；平板(横屏平板=电脑版)/电视保持横屏(走 sensor)，不再无条件强制竖屏
+      requestOrientation(getDeviceMode() === 'phone' ? 'portrait' : 'sensor');
     };
   }, []);
 

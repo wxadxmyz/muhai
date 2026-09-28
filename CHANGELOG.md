@@ -5,6 +5,37 @@
 
 ---
 
+## V4.0.0
+
+**形态重构大版本**：同一 APK 现在是「手机 / 电脑(横屏平板·桌面) / 电视」三形态，电视端有了独立大屏界面，不再是手机 UI 的等比放大。
+
+### 一、连续自适应布局（统一形态判定）
+
+- 新增 `src/lib/deviceMode.ts`：全站唯一的形态出口，判定 `phone | desktop | tv`。优先级：**手动「电视模式」开关 > TV 启发式 > 宽度+触摸**（有触摸宽 >820 → 电脑版；无触摸 Android 大屏 → TV；其余 → 手机）。
+  - 之所以把手动开关放最高：不少电视盒子的 UA 不暴露 Leanback 字样（风险清单 #2），纯 UA 探测不可靠，用户一旦在设置里打开开关就稳定走 TV。
+- `VideoApp` 订阅形态变更并重渲染（`onDeviceModeChange`）；`main.tsx` 启动安装 `installDeviceMode()`。
+- 横屏放开：`orientation.ts` 不再硬性锁竖屏，由形态决定（TV 强制横屏）。
+
+### 二、TV Leanback 独立界面层（新增 `src/video/tv/`）
+
+- **`TVShell.tsx`**：左竖导航 5 项（首页 / 搜索 / 直播 / 历史 / 设置）+ 内容区路由；三级返回栈（播放器 → 详情 → 推送浮层 → 搜索 → 导航页 → 放行系统返回）。
+- 页面组件：`HomeTV`（分类长方格 + 卡片走廊）、`SearchTV`（6×6 拼音软键盘 + 实时联想）、`SearchResultTV`（左源筛选 + 右结果网格）、`DetailTV`（海报 + 立即播放/离线缓存/收藏 + 线路切换 + 剧集网格）、`HistoryTV`、`LiveTV`、`SettingsTV`（3 列网格大按钮）、`RemotePushTV`（扫码推送）。
+- **`focusNav.ts`**：遥控器 DPAD 焦点底座——方向键空间导航、Enter 确认、返回键走 `dispatchBack`、`scroll-into-view`、浮层焦点陷阱（`data-focus-root`）；**对触屏完全透明**（`isTV() && !isTouchDevice()`）。
+- **拼音联想**：`pinyinSearch.ts` 基于 `pinyin-pro`，软键盘只输首字母也能命中剧名（如 `qyny` → 庆余年）。
+- **`tv.css`**：10 英尺密度、过扫描安全边距 48px、焦点环（替代 hover：描边 + 放大 1.06），电视端隐藏 PiP 等触屏专属按钮。
+
+### 三、电脑版差异化设置页
+
+- 新增 `SettingsPageDesktop.tsx`：左分类栏 + 右分组面板的**双栏/网格**布局（区别于手机端竖向卡片列表），新增电脑专属项：**快捷键说明**、**开机自启**、窗口行为说明；危险项沿用电脑语境命名**「重置软件（清除数据）」**（手机端为「重置 APP」）。
+
+### 四、TV 清单补丁（CI）
+
+- `.github/workflows/android.yml` 仿现有 PiP 补丁新增 `Patch AndroidManifest for Android TV`：注入 `uses-feature android.hardware.type.television (required=false)`、`LEANBACK_LAUNCHER` 分类、`android:banner`（并生成 320×180 banner 矢量兜底）。三项缺失即构建中止，不静默跳过。
+
+> ⚠️ **待真机验证（风险清单 #1 / #4）**：TV 目标实机/盒子表现、以及「扫码远程推送」的后端承接（`start_push_listener` / `poll_push_result` / `stop_push_listener` 三个 Tauri 命令）本次未能验证。`RemotePushTV` 已按契约实现并**优雅降级**——后端命令缺失时显示说明文案，不崩溃、不阻塞电视端正常使用。
+
+---
+
 ## V3.9.2
 
 ### 修复：播放页顶部源名仍显示父级“合一”名称

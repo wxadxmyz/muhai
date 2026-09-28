@@ -505,6 +505,96 @@ jobs:
           print("Patched manifest for PiP: android:supportsPictureInPicture=true")
           PYEOF
 
+      - name: Patch AndroidManifest for Android TV (Leanback launcher + banner)
+        run: |
+          # 平板电视适配 V4.0.0：让同一 APK 在 Android TV / 电视盒子的「应用」与「主屏」出现。
+          # 仿上方 PiP 清单补丁，用 Python 注入，缺失关键项则构建中止（不静默跳过）。
+          # 说明：required=false 保证手机/平板仍能装；TV 端 UI 由前端 deviceMode 切换，不依赖单独 activity。
+          MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)
+          if [ -z "$MANIFEST" ]; then echo "::error::AndroidManifest not found under src-tauri/gen/android — TV 清单补丁无法应用，构建中止"; exit 1; fi
+          python3 - "$MANIFEST" << 'PYEOF'
+          import sys, re, os
+          path = sys.argv[1]
+          src = open(path, encoding="utf-8").read()
+
+          # 0) 确保 xmlns:android 在 <manifest> 上（uses-feature / banner 依赖该命名空间）
+          if "xmlns:android" not in src:
+              m = re.search(r'<manifest\b', src)
+              if m:
+                  end = src.index('>', m.start())
+                  src = src[:end] + ' xmlns:android="http://schemas.android.com/apk/res/android"' + src[end:]
+
+          # 1) 声明电视硬件特性（required=false：TV/盒子识别为 TV 应用，但手机/平板仍可安装）
+          if "android.hardware.type.television" not in src:
+              m = re.search(r'<manifest\b', src)
+              if m:
+                  end = src.index('>', m.start())
+                  src = src[:end + 1] + '\n    <uses-feature android:name="android.hardware.type.television" android:required="false" />' + src[end + 1:]
+              print("TV uses-feature injected")
+          else:
+              print("TV uses-feature already present, skip")
+
+          # 2) LEANBACK_LAUNCHER：注入到含 LAUNCHER 的 intent-filter，使应用出现在 TV 主屏
+          if "LEANBACK_LAUNCHER" not in src:
+              m = re.search(r'<category android:name="android.intent.category.LAUNCHER"\s*/>', src)
+              if m:
+                  inject = m.group(0) + '\n                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />'
+                  src = src[:m.start()] + inject + src[m.end():]
+                  print("LEANBACK_LAUNCHER injected into existing LAUNCHER filter")
+              else:
+                  # 兜底：清单里没找到 LAUNCHER 分类（格式差异）时，在 MainActivity 内追加独立 intent-filter，
+                  # 保证 LEANBACK 一定存在——否则末尾强校验会让整条 CI 出包失败。
+                  am = re.search(r'<activity\b[^>]*android:name="[^"]*MainActivity"[^>]*>', src, re.S)
+                  close = src.find('</activity>', am.end()) if am else -1
+                  if am and close != -1:
+                      nf = ('\n            <intent-filter>\n'
+                            '                <action android:name="android.intent.action.MAIN" />\n'
+                            '                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n'
+                            '            </intent-filter>\n        ')
+                      src = src[:close] + nf + src[close:]
+                      print("LEANBACK_LAUNCHER injected as new intent-filter (fallback)")
+                  else:
+                      print("::warning::LAUNCHER category and MainActivity not found — skip LEANBACK_LAUNCHER")
+          else:
+              print("LEANBACK_LAUNCHER already present, skip")
+
+          # 3) android:banner：在 MainActivity 的 <activity> 上挂 320x180 横幅（TV 主屏展示）
+          if "android:banner" not in src:
+              m = re.search(r'<activity\b[^>]*android:name="[^"]*MainActivity"[^>]*>', src, re.S)
+              if m:
+                  tag = m.group(0)
+                  new = tag.rstrip('>') + ' android:banner="@drawable/banner">'
+                  src = src[:m.start()] + new + src[m.end():]
+                  print("banner attr injected")
+              else:
+                  print("::warning::MainActivity <activity> not found — skip banner attr")
+          else:
+              print("banner already present, skip")
+
+          # 4) 生成 banner drawable（320x180 矢量兜底：深色底 + 启动图标靠左，文字由 TV 启动器按 label 渲染）
+          res_dir = os.path.join(os.path.dirname(path), "res", "drawable")
+          os.makedirs(res_dir, exist_ok=True)
+          banner_xml = os.path.join(res_dir, "banner.xml")
+          if not os.path.exists(banner_xml):
+              with open(banner_xml, "w", encoding="utf-8") as f:
+                  f.write(
+                      '<?xml version="1.0" encoding="utf-8"?>\n'
+                      '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                      '    <item android:drawable="@android:color/background_dark" />\n'
+                      '    <item android:drawable="@mipmap/ic_launcher" android:gravity="center_vertical|start" android:left="40dp" />\n'
+                      '</layer-list>\n'
+                  )
+              print("banner drawable written: " + banner_xml)
+
+          open(path, "w", encoding="utf-8").write(src)
+
+          # 校验：三项必须都存在，否则视为失败
+          if "android.hardware.type.television" not in src or "LEANBACK_LAUNCHER" not in src or "android:banner" not in src:
+              print("::error::TV manifest patch applied but required entries missing — abort")
+              sys.exit(1)
+          print("Patched manifest for Android TV: uses-feature television + LEANBACK_LAUNCHER + banner")
+          PYEOF
+
       - name: Patch network security config for local proxy (127.0.0.1 cleartext)
         run: |
           # V3.6.5：Rust 流式媒体代理监听 127.0.0.1:<port>，WebView 需以 http 明文回环访问。

@@ -259,10 +259,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [systemDark, setSystemDark] = useState<boolean>(getSystemDark);
 
   // 跟随系统时：按系统明暗选用记忆的暗/亮色皮肤；手动选择：用所选皮肤
+  // 用户要求：系统深色→暗夜黑、系统浅色→简洁白（白色）。记忆值优先，仅在从未手动选过时回落到这两个默认。
   const resolvedId = selectedId === 'auto'
     ? (systemDark
         ? localStorage.getItem(KEY_DARK) || 'night'
-        : localStorage.getItem(KEY_LIGHT) || 'sakura')
+        : localStorage.getItem(KEY_LIGHT) || 'clean')
     : selectedId;
   const skin = SKINS.find((s) => s.id === resolvedId) || SKINS[0];
 

@@ -1392,16 +1392,10 @@ export function VideoPlayer({
               <span>正在解析播放地址…</span>
             </div>
           )}
-          {resolving && !err && (
-            <div className="vp-loading">
-              {landscape ? (
-                <button className="ctrl main" disabled><span className="vp-spinner" /></button>
-              ) : (
-                <button className="big-btn" disabled><span className="vp-spinner" /></button>
-              )}
-              <span>加载中…</span>
-            </div>
-          )}
+          {/* resolving 仅作暗化背板（z-index 低于 overlay，使中央转圈与顶栏可见）；
+              真正的转圈+文字改到下方 .center / .land-center 内渲染，与播放/暂停按钮同一点定位，
+              消除「加载时低、播放时高」的上下跳动。 */}
+          {resolving && !err && <div className="vp-loading" />}
           {err && (
             <div className="vp-error">
               <p>{err}</p>
@@ -1495,6 +1489,13 @@ export function VideoPlayer({
                   仅在总集数 > 1 时显示上下集（单集影片不显示，避免误点）。
                   当前集为首集时「上一集」置灰禁用，末集时「下一集」禁用。 */}
               <div className="center">
+                {resolving && !err ? (
+                  <div className="vp-center-load">
+                    <button className="big-btn" disabled><span className="vp-spinner" /></button>
+                    <span className="vp-loading-text">加载中…</span>
+                  </div>
+                ) : (
+                  <>
                 {hasMultiEp && (
                   <button
                     className="ctrl small"
@@ -1518,6 +1519,8 @@ export function VideoPlayer({
                   >
                     <Icon name="next" size={22} />
                   </button>
+                )}
+                  </>
                 )}
               </div>
               <div className="bottom">
@@ -1579,12 +1582,21 @@ export function VideoPlayer({
 
             {/* .l-center：上一集 / 播放（64px 渐变主钮）/ 下一集，gap 34px */}
             <div className="land-center">
+              {resolving && !err ? (
+                <div className="vp-center-load">
+                  <button className="ctrl main" disabled><span className="vp-spinner" /></button>
+                  <span className="vp-loading-text">加载中…</span>
+                </div>
+              ) : (
+                <>
               <button className="ctrl" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)} title="上一集"><Icon name="prev" size={28} /></button>
               <button className="ctrl main" onClick={() => player.toggle()} title={state.isPlaying ? '暂停' : '播放'}>
                 {/* 缓冲转圈统一由 vp-buf-loader 呈现，主播放键只显图标 */}
                 <Icon name={state.isPlaying ? 'pause' : 'play'} size={30} />
               </button>
               <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={28} /></button>
+                </>
+              )}
             </div>
 
             {/* .l-bottom：进度条（当前时间 + 拖动条 + 总时间）+ 9 个工具钮

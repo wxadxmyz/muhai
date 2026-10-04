@@ -1762,8 +1762,9 @@ body.live-in-room .bottom-nav { display: none; }
 .player-card .screen { position: absolute; inset: 0; background: linear-gradient(180deg, #1a2330 0%, #0f141d 100%); display: flex; flex-direction: column; }
 .player-card.land .screen { position: relative; flex: 1; }
 /* P5-3：横屏下选「16:9」「4:3」—— 容器在屏幕正中锁成该比例，四周留黑（符合字面语义）。
-   flex:none + margin:auto 让它在 .player-card.land（flex 列布局）里居中，比例由内联 style 给。 */
-.player-card.land .screen.locked-ratio { flex: none; max-width: 100%; max-height: 100%; margin: auto; }
+   修复黑屏：原来 flex:none + 子元素全绝对定位 → 内容高度 0 → 容器塌成 0 高 → 视频填进 0 尺寸框变黑。
+   现给确定高度(100%)，比例由内联 style 给，max-width/align-self 保证在更宽屏幕上不溢出并居中留黑。 */
+.player-card.land .screen.locked-ratio { flex: none; height: 100%; max-width: 100%; align-self: center; margin: auto; }
 .player-card .poster { position: absolute; inset: 0; opacity: .35; background: radial-gradient(circle at 50% 40%, #1c3344, #0a1119); }
 .player-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; display: block; z-index: 1; }
 

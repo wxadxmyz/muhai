@@ -1251,8 +1251,11 @@ export function VideoPlayer({
   //   填充  fill                 拉伸铺满，画面**会变形**（人会变矮胖）
   //   原始  none                 1:1 像素不放大，居中显示，四周留白
   //   裁剪  cover                铺满容器，裁掉溢出部分，不变形
+  // P5-6：播放器抽屉「画面缩放」优先于全局播放设置；抽屉选「默认」时才回落到全局设置。
+  //      修复之前全局 settings.videoScale 恒为 'contain'，导致抽屉里除「默认」外全部按钮失效的 bug。
+  const objectFitFromSettings = settings.videoScale === 'cover' ? 'cover' : settings.videoScale === 'stretch' ? 'fill' : 'contain';
   const videoStyle: React.CSSProperties = {
-    objectFit: (settings.videoScale ? (settings.videoScale === 'cover' ? 'cover' : settings.videoScale === 'stretch' ? 'fill' : 'contain') : (SCALE_FIT[scaleMode] ?? 'contain')) as React.CSSProperties['objectFit'],
+    objectFit: (scaleMode !== '默认' ? (SCALE_FIT[scaleMode] ?? 'contain') : objectFitFromSettings) as React.CSSProperties['objectFit'],
     objectPosition: 'center', // P5-2：「原始」不放大时居中
     filter: brightness < 1 ? `brightness(${brightness})` : undefined,
   };

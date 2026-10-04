@@ -1904,8 +1904,10 @@ body.live-in-room .bottom-nav { display: none; }
   font-size: 11px; color: rgba(255, 255, 255, .88); letter-spacing: .3px;
   font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
 }
-.player-card .overlay.locked .times,
-.player-card .overlay.loading .times { display: none !important; }
+.player-card .overlay.locked .times { display: none !important; }
+/* 加载态保留 .times 占位（visibility 而非 display），使 .center 几何中心与播放态完全一致，
+   加载转圈与播放/暂停按钮严格同点、不再上下跳动。 */
+.player-card .overlay.loading .times { visibility: hidden; }
 /* 进度条可点：整条 bar 接收点击/触摸，不再覆盖透明 range 拦截 */
 /* T7：底栏横屏键 38→44px */
 .player-card .bottom .land { width: 34px; height: 34px; border-radius: 50%; background: rgba(0,0,0,.4); border: none; color: #fff; cursor: pointer; flex: 0 0 auto; }

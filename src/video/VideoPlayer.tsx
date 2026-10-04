@@ -1340,7 +1340,7 @@ export function VideoPlayer({
             onSeeking={() => { if (!autoSeekingRef.current) resumedRef.current = true; markBuffering(); }}
             onPlaying={() => { clearBuffering(); clearSeekLoadingOnSettled(); }}
             onCanPlay={() => { clearBuffering(); tryApplyResume(); }}
-            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); trySkipIntro(); clearSeekLoadingOnSettled(); }}
+            onSeeked={() => { saveProgress(true); clearBuffering(); tryApplyResume(); clearSeekLoadingOnSettled(); }}
             onTimeUpdate={(e) => {
               const v = e.target as HTMLVideoElement;
               setLiveCur(v.currentTime);
@@ -1356,7 +1356,7 @@ export function VideoPlayer({
               } catch { /* ignore */ }
               saveProgress(); // N4：内部 5 秒节流
               tryApplyResume(); // P3：只要还没真正跳到目标位置就继续重试
-              trySkipIntro();
+              // 片头跳过只在视频初始化/切集时执行一次，不在播放中持续干预，避免拖动进度条被拉回片头
               trySkipOutro();
             }}
             onLoadedMetadata={(e) => {
@@ -1394,7 +1394,11 @@ export function VideoPlayer({
           )}
           {resolving && !err && (
             <div className="vp-loading">
-              <div className="vp-spinner" />
+              {landscape ? (
+                <button className="ctrl main" disabled><span className="vp-spinner" /></button>
+              ) : (
+                <button className="big-btn" disabled><span className="vp-spinner" /></button>
+              )}
               <span>加载中…</span>
             </div>
           )}
@@ -1483,6 +1487,7 @@ export function VideoPlayer({
                   <span className="res" onClick={() => setLevelOpen(true)} title="选择清晰度">{qualityLabel || resText || '自动'}</span>
                 </div>
                 <div className="acts">
+                  {clock && <span className="clock">{clock}</span>}
                   <button className={'icon lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={16} /></button>
                 </div>
               </div>
@@ -1558,6 +1563,7 @@ export function VideoPlayer({
                 <span className="name">{detail.title} 第{epName}集</span>
                 <span className="qlt">{qualityLabel || resText || '自动'}</span>
               </div>
+              {clock && <span className="clock">{clock}</span>}
               <button className={'icon rt lock-btn' + (locked ? ' on' : '') + (lockHidden ? ' lock-hidden' : '')} onClick={() => toggleLock()} title={locked ? '已锁定' : '锁定屏幕'}><Icon name={locked ? 'lock' : 'lock-open'} size={18} /></button>
               <button className="icon rt" onClick={(e) => { e.stopPropagation(); setShowCast(true); }} title="投屏"><Icon name="tv" size={18} /></button>
             </div>
@@ -1611,8 +1617,8 @@ export function VideoPlayer({
                        · 已设过时间 → 点击直接跳到该时间点
                        · 未设过    → 点击用当前播放进度一键设定（与竖屏设置浮层同一套 setSkipOneTap 逻辑）
                     并补时间显示：设好后按钮上带出对应时间（竖向小字，见 .land-bottom .bb .skip-num） */}
-                <button className="bb" onClick={() => { const v = videoRef.current; if (introSec > 0) { if (v) { v.currentTime = introSec; player.seek(introSec); } } else { setSkipOneTap('intro'); } }} title={introSec ? `跳过片头（${fmtTime(introSec)}）` : '点击设片头'}><Icon name="skip-back" size={22} /><span>片头</span>{introSec > 0 && <span className="skip-num">{fmtTime(introSec)}</span>}</button>
-                <button className="bb" onClick={() => { const v = videoRef.current; if (outroSec <= 0) { setSkipOneTap('outro'); return; } const d = v && isFinite(v.duration) && v.duration > 0 ? v.duration : (state.duration || 0); if (d > 0) { const t = Math.max(0, d - outroSec); if (v) v.currentTime = t; player.seek(t); } }} title={outroSec ? `跳过片尾（${fmtTime(outroSec)}）` : '点击设片尾'}><Icon name="skip-forward" size={22} /><span>片尾</span>{outroSec > 0 && <span className="skip-num">{fmtTime(outroSec)}</span>}</button>
+                <button className={'bb' + (introSec > 0 ? ' on' : '')} onClick={() => setSkipOneTap('intro')} title={introSec ? `点击取消片头（${fmtTime(introSec)}）` : '点击设定片头'}><Icon name="skip-back" size={22} /><span>{introSec > 0 ? fmtTime(introSec) : '片头'}</span></button>
+                <button className={'bb' + (outroSec > 0 ? ' on' : '')} onClick={() => setSkipOneTap('outro')} title={outroSec ? `点击取消片尾（${fmtTime(outroSec)}）` : '点击设定片尾'}><Icon name="skip-forward" size={22} /><span>{outroSec > 0 ? fmtTime(outroSec) : '片尾'}</span></button>
                 <button className="bb" onClick={() => setEpOpen(true)} title="选集"><Icon name="list" size={22} /><span>选集</span></button>
                 <button className="bb" onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={22} /><span>设置</span></button>
               </div>

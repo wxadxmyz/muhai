@@ -1833,6 +1833,12 @@ body.live-in-room .bottom-nav { display: none; }
 .player-card .top .ttl .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
 .player-card .top .ttl .res { font-size: 10px; color: #fff; background: var(--accent); padding: 2px 7px; border-radius: 999px; font-weight: 700; flex: 0 0 auto; }
 .player-card .top .acts { display: flex; gap: 10px; }
+.player-card .top .acts .clock,
+.landscape .land-top .clock {
+  font-size: 13px; color: #fff; font-weight: 600;
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  display: flex; align-items: center; padding: 0 4px;
+}
 .player-card .top .acts .icon { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,.4); border: none; color: #fff; display: grid; place-items: center; cursor: pointer; }
 .player-card .top .acts .icon.on { color: var(--accent); }
 .player-card .top .acts .icon:disabled { opacity: .35; cursor: not-allowed; }

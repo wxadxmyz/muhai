@@ -386,6 +386,11 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* 全屏覆盖页（影视源管理 / 网盘浏览）*/
 .fullpage { position: fixed; inset: 0; z-index: 90; background: var(--bg); display: flex; flex-direction: column; animation: fade .15s; }
+/* 底部手势条/虚拟导航键避让：全屏浮层（搜索页、网盘页等）补底部安全区。
+   排除 .player-page（播放器自身已用 .vp-bottom 处理安全区，避免压缩全屏视频）。 */
+.fullpage:not(.player-page) { padding-bottom: calc(var(--sab) + 24px); }
+/* 搜索页 SearchView 不是 head/body 结构，需让其内部独立滚动，避免溢出到安全区留白 */
+.fullpage:not(.player-page) .view.searchview { flex: 1; min-height: 0; overflow-y: auto; }
 /* V3.5.5：与原型 .subpage .sp-head 1:1 —— padding 12px 14px / 标题 16px / 返回按钮 36px 圆形。 */
 .fullpage-head { display: flex; align-items: center; gap: 8px; padding: calc(12px + var(--sat)) 14px 12px; border-bottom: 1px solid var(--border); }
 .fullpage-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
@@ -1193,11 +1198,18 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .searchview{flex:1;overflow-y:auto;background:var(--bg);}
 .searchview .searchtop{position:sticky;top:0;z-index:6;background:var(--bg);display:flex;align-items:center;gap:10px;padding:calc(10px + var(--sat)) 14px 8px;border-bottom:1px solid var(--border);}
 .searchview .searchtop .sback{width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--text);background:transparent;border:none;padding:0;flex:none;}
-.searchview .searchtop .sinput{flex:1;min-width:0;height:38px;border-radius:19px;background:var(--panel2);border:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px;}
+.searchview .searchtop .sinput{flex:1;min-width:0;height:38px;border-radius:19px;background:var(--panel2);border:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 12px;position:relative;}
 .searchview .searchtop .primary{height:38px;padding:0 18px;white-space:nowrap;font-size:14px;border-radius:19px;flex-shrink:0;}
 .searchview .searchtop .sinput input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;min-width:0;padding:0;height:auto;box-shadow:none;}
 .searchview .searchtop .sinput .search-ico{color:var(--muted);display:flex;}
 .searchview .searchtop .sclear{width:18px;height:18px;border-radius:50%;background:#3a3a42;color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none;border:none;cursor:pointer;padding:0;line-height:1;}
+/* 搜索联想下拉（方案 A）：定位在搜索框正下方，浮于结果之上 */
+.searchview .search-suggest{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;background:var(--panel);border:1px solid var(--glass-line);border-radius:12px;max-height:min(50vh,320px);overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.35);}
+.searchview .search-suggest .sg-item{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:14px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--border);}
+.searchview .search-suggest .sg-item:last-child{border-bottom:none;}
+.searchview .search-suggest .sg-item:active{background:var(--panel2);}
+.searchview .search-suggest .sg-ico{color:var(--muted);display:flex;flex:none;}
+.searchview .search-suggest .sg-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* 无源空态：进入搜索页且当前没有任何源时出现（正文区居中，复用软件 .empty 视觉语言）。
    仅描述状态、不引导配置第三方接口；「去添加」跳源管理让用户自行配置合法源。 */

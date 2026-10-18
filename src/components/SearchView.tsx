@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { aggregateSearch, expandSources, MediaItem, MediaType, SourceConfig } from '../engine';
+import { aggregateSearch, expandSources, createSource, MediaItem, MediaType, SourceConfig } from '../engine';
 import { useLibrary } from '../lib/library';
 import { downloadStore } from '../lib/downloads';
 import { Icon } from './Icon';
@@ -71,6 +71,11 @@ export function SearchView({
   const [errors, setErrors] = useState<{ sourceId: string; sourceName: string; message: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  // 搜索联想（方案 A）：输入时调用各源 search() 把返回片名当候选词。
+  // 仅 sources.length>0（已添加源）时启用；无源时禁用（复用现有「无源」空态）。
+  const [suggest, setSuggest] = useState<string[]>([]);
+  const suggestSeqRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
   // V3.8.7 #1：不再比对关键词。旧实现 `p.kw === (initialQuery ?? '')` 依赖外部传入的
   // initialQuery（VideoApp 的 searchQuery），而用户在搜索页内改词重搜时该值不会同步更新，
   // 于是 pref.kw(新词) 与 initialQuery(旧词) 恒成立 false → 子站被打回「全部」，修复形同无效。
@@ -255,6 +260,51 @@ export function SearchView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 搜索联想（方案 A）：输入时（kw 非空）调用各源 search() 把返回片名当候选词。
+  // 仅 sources.length>0（已添加源）启用；无源时直接清空、不请求。
+  // 竞态守卫用 suggestSeqRef 只认最新一次；300ms 防抖 + 单源 4s 超时，控制请求量与延迟。
+  useEffect(() => {
+    const q = kw.trim();
+    if (!q || sources.length === 0) { setSuggest([]); return; }
+    // 带初始词进入（点热榜/历史卡片直搜）：run() 已立即搜索，跳过这次联想请求避免重复打源
+    if (initialQuery && q === (initialQuery ?? '').trim()) { setSuggest([]); return; }
+    const mySeq = ++suggestSeqRef.current;
+    const timer = window.setTimeout(async () => {
+      try {
+        const ex = await expandSources(sources);
+        if (mySeq !== suggestSeqRef.current) return;
+        const picked = ex.slice(0, 8); // 限前 8 个源，避免请求爆炸
+        const results = await Promise.allSettled(
+          picked.map((s) =>
+            Promise.race<any>([
+              createSource(s).search(q, 1),
+              new Promise((_, rej) => window.setTimeout(() => rej(new Error('timeout')), 4000)),
+            ])
+          )
+        );
+        if (mySeq !== suggestSeqRef.current) return;
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const r of results) {
+          if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+            for (const it of r.value as MediaItem[]) {
+              if (it.title && !seen.has(it.title)) { seen.add(it.title); out.push(it.title); }
+            }
+          }
+        }
+        setSuggest(out.slice(0, 10));
+      } catch {
+        /* 源展开失败等：静默降级，不影响主搜索 */
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [kw, sources]);
+
+  // 进入搜索页即聚焦并弹软键盘。autoFocus 在已有组件树首次挂载偶尔不触发，手动兜底。
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   return (
     <div className="view searchview">
       <div className="searchtop">
@@ -273,6 +323,8 @@ export function SearchView({
               避免拿 "zhongguo" 这种拼音去搜（旧版会搜出一堆空结果）
           */}
           <input
+            ref={inputRef}
+            autoFocus
             type="search"
             enterKeyHint="search"
             inputMode="search"
@@ -280,7 +332,7 @@ export function SearchView({
             autoCapitalize="off"
             spellCheck={false}
             value={kw}
-            onChange={(e) => setKw(e.target.value)}
+            onChange={(e) => { setKw(e.target.value); setSuggest([]); }}
             onCompositionStart={() => { composingRef.current = true; }}
             onCompositionEnd={() => { composingRef.current = false; }}
             onKeyDown={(e) => {
@@ -292,7 +344,22 @@ export function SearchView({
             }}
             placeholder={placeholder}
           />
-          {kw ? <span className="sclear" onClick={() => setKw('')}>×</span> : null}
+          {kw ? <span className="sclear" onClick={() => { setKw(''); setSuggest([]); }}>×</span> : null}
+          {/* 搜索联想（方案 A）：实时调用各源 search()，把返回片名当候选词。仅 kw 非空且未搜索时显示 */}
+          {suggest.length > 0 && !searched && (
+            <div className="search-suggest">
+              {suggest.map((s) => (
+                <div
+                  key={s}
+                  className="sg-item"
+                  onClick={() => { setKw(s); setSuggest([]); run(s); }}
+                >
+                  <span className="sg-ico"><Icon name="search" size={15} /></span>
+                  <span className="sg-txt">{s}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <button className="primary" onClick={() => run()}>搜索</button>
       </div>

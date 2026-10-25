@@ -20,7 +20,10 @@
 @supports (top: max(1px, 2px)) {
   :root {
     --sat: max(env(safe-area-inset-top, 0px), 26px);
-    --sab: max(env(safe-area-inset-bottom, 0px), 12px);
+    /* V4.0.10 #4/7/8/10：并入原生注入的 --navbar（MainActivity 读 WindowInsets.navigationBars）。
+       WebView 不派发底部 inset 的机型（三大金刚导航键）env() 恒 0，靠这个变量拿到真实导航栏高度；
+       未注入（桌面/补丁跳过）时 var 兜底 0px，行为与旧版一致。 */
+    --sab: max(env(safe-area-inset-bottom, 0px), 12px, var(--navbar, 0px));
   }
 }
 /* 每套皮肤的 --bg/--panel/--accent 等由 theme.tsx 写到 documentElement；
@@ -700,7 +703,7 @@ button.fav, .fav { color: var(--danger) !important; }
 
 /* 播放器设置抽屉（底部弹出） */
 .vp-drawer-mask { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; animation: fade .15s; }
-.vp-drawer { width: 100%; max-height: 82vh; overflow: auto; background: var(--panel); border-radius: 16px 16px 0 0; padding: 10px 18px calc(22px + env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px rgba(0,0,0,.3); animation: slideup .2s ease; }
+.vp-drawer { width: 100%; max-height: 82vh; overflow: auto; background: var(--panel); border-radius: 16px 16px 0 0; padding: 10px 18px calc(22px + var(--sab)); box-shadow: 0 -10px 40px rgba(0,0,0,.3); animation: slideup .2s ease; }
 @keyframes slideup { from { transform: translateY(100%); } to { transform: none; } }
 .vp-drawer-handle { width: 38px; height: 4px; border-radius: 2px; background: var(--border); margin: 4px auto 10px; }
 .vp-drawer-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
@@ -749,7 +752,7 @@ button.fav, .fav { color: var(--danger) !important; }
    选择器永不命中、面板被 z-index:100 播放层盖住。改为独立遮罩+抽屉结构，脱离嵌套依赖。 */
 .vp-drawer-mask { position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; }
 /* V3.3.7 六：蓝灰渐变 → 与选集/设置抽屉一致用 var(--panel) */
-.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: var(--panel); color: var(--text); border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
+.vp-sub-drawer { width: 100%; max-width: 430px; max-height: 82vh; overflow: auto; background: var(--panel); color: var(--text); border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + var(--sab)); box-shadow: 0 -12px 40px rgba(0,0,0,.45); animation: pop .18s ease; }
 .vp-sub-drawer::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 4px; background: rgba(255,255,255,.22); margin: 4px auto 12px; }
 .player-root.landscape .vp-sub-drawer::before { display: none; }
 .vp-panel-head { display: flex; align-items: center; justify-content: space-between; font-size: 17px; font-weight: 700; margin: 2px 2px 14px; color: var(--text); }
@@ -2333,8 +2336,11 @@ button.on > .skip-num { color: currentColor; }
 /* 旧 .ep-mask/.ep-panel 已废弃，改用原型 #playerLandEp 同款 .epsheet + 专属定位类。
    用 .player-root 前缀提高特异度，防止被文件后部的通用 .epsheet 覆盖（同直播抽屉的坑）。 */
 /* V3.5.8 #3：width 74% → 统一档位 */
+/* V4.0.10 #6：横屏选集面板改为与弹幕面板（.player-root.landscape .drawer）和设置抽屉
+   （.player-root.landscape .epsheet.settings-drawer）一致的右侧全高侧栏——上下拉伸贴边。
+   旧值 top:auto + bottom:0 + height:auto 是「右下角内容高小面板」（用户反馈：紧急按钮点出来太小）。 */
 .player-root .epsheet.land-ep-sheet {
-  left: auto; right: 0; top: auto; bottom: 0;
+  left: auto; right: 0; top: 0; bottom: 0;
   width: var(--land-sheet-w); min-width: var(--land-sheet-min-w); max-width: var(--land-sheet-max-w);
   max-height: 100%; height: auto; border-radius: var(--r-xl, 22px) 0 0 var(--r-xl);
 }

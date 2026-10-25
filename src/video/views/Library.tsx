@@ -6,6 +6,7 @@ import { ProxiedImg } from '../../components/ProxiedImg';
 import { tryCoverFallback } from '../../lib/crossCover';
 import { useSources } from '../../store';
 import { fmtTime } from '../../lib/playerStore';
+import { useCardGrid } from '../../lib/useCardGrid';
 
 // 影视仓风格：顶部 Tab 切换「观看历史 / 影视收藏」+ 海报卡片网格
 export function VideoLibrary({
@@ -21,6 +22,12 @@ export function VideoLibrary({
   const { sources } = useSources('video');
   const pressTimer = useRef<number | undefined>(undefined);
   const longPressedAt = useRef(0); // V3.3.4：长按删除时刻——抑制紧随其后的合成 click
+
+  // V4.0.10 #11：海报盒高改 JS 实测 px（与主页 useCardGrid 同一套路）。
+  // 根因：.pcover 的 aspect-ratio:3/4 在该真机 WebView 上不可靠（styles.css 注释自证
+  // 「flex item 上的 aspect-ratio 失效」），从播放页返回触发重排后盒高与图高脱节、
+  // 盒底露出面板底色——就是用户看到的「卡片下面白块」。内联 px 高让盒高确定，根治。
+  const grid = useCardGrid({ cols: 3, gap: 8 });
 
   const historyItems = library.lib.history.filter((i) => i.mediaType === 'video');
   const favItems = library.lib.favorites.filter((i) => i.mediaType === 'video');
@@ -56,7 +63,7 @@ export function VideoLibrary({
           {tab === 'history' ? '还没有观看记录，去搜部剧看吧～' : '还没有收藏，详情页点 ♡ 即可收藏。'}
         </div>
       ) : (
-        <div className="poster-grid">
+        <div className="poster-grid" ref={grid.ref}>
           {list.map((it) => {
             const key = `${it.sourceId}:${it.id}`;
             // P7：进度是按「剧:集序号」存的，旧代码用不带集数的 key 去读 → 永远读到 0。
@@ -74,7 +81,11 @@ export function VideoLibrary({
                   className="pcover"
                   // V3.5.2②：有封面时背景改 transparent —— 否则 CSS 的 --panel2 米白会垫在图后，
                   // 返回列表重绘瞬间露白块；无封面时仍落片名渐变卡。
-                  style={{ background: lhas ? 'transparent' : gradientFor(it.title) }}
+                  // V4.0.10 #11：再叠 JS 实测 px 盒高（ready 前回落 CSS aspect-ratio，首帧不塌）。
+                  style={{
+                    ...(grid.ready ? { width: grid.cardW, height: grid.cardH } : null),
+                    background: lhas ? 'transparent' : gradientFor(it.title),
+                  }}
                   onClick={() => {
                     // V3.3.4：长按删除后手指抬起仍会合成一次 click，且列表已移位——
                     // 这个 click 可能落在旁边卡片上误开别的剧。700ms 内一律吞掉（同 VideoPlayer 模式）。

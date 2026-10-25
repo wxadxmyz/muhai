@@ -4,7 +4,7 @@ import { gradientFor, initial } from '../../lib/cover';
 import { Icon } from '../../components/Icon';
 import { ProxiedImg } from '../../components/ProxiedImg';
 import { pushBackHandler } from '../../lib/backStack';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   hasShownDisclaimer,
   markDisclaimerShown,
@@ -231,6 +231,9 @@ export function Home({
   // V3.6.6 B3：模块缓存未命中时再退一层读 localStorage 过期缓存（忽略 TTL）——
   //   冷启动首帧就能渲染上次的热榜，不白屏；TTL 过期由下面的 effect 静默刷新。
   const [hotData, setHotData] = useState<HotData | null>(() => hotCache ?? cacheReadStale());
+  // V4.0.10 #5：拉取失败态。没网 / 主备两条链都挂且无任何缓存时，fetchHot 返回 null，
+  // 旧版到这里静默吞掉 → hotData 恒为 null → 转圈永无止境。现在落失败态 + 重试按钮。
+  const [hotFailed, setHotFailed] = useState(false);
   const [bannerIdx, setBannerIdx] = useState(0);
   // banner 图预加载缓存（base64）——显示层任意时刻都有一张实心图，杜绝切换空窗闪黑
   const [bannerImgs, setBannerImgs] = useState<Record<string, string>>(() => bannerImgCache);
@@ -312,12 +315,9 @@ export function Home({
       ? '全部站点'
       : stations.find((s) => s.id === activeStation)?.name ?? '全部站点';
 
-  useEffect(() => {
-    let alive = true;
-    // V3.3.0 #6：模块缓存命中就不再整页重拉（回主页不再闪"从空到有"）。
-    // 模块缓存只在新拉取成功时写入，故命中即代表本次进程内数据是新鲜的；
-    // 若首帧数据来自 localStorage 过期缓存（hotCache 为空），则必须继续走一次刷新。
-    if (hotCache) return;
+  // V4.0.10 #5：拉取逻辑抽成 loadHot——失败置 hotFailed，供首屏 effect 与「重新加载」按钮共用。
+  const loadHot = useCallback(() => {
+    setHotFailed(false);
     // V3.6.6 B4：最小显示时长 300ms —— 数据秒回时不让加载动画"闪一下就没"（比慢更显廉价）。
     // 用 Promise.all 与动画节拍对齐：至少完整播一个循环再切内容。
     const started = Date.now();
@@ -328,14 +328,24 @@ export function Home({
         return d;
       })
       .then((d) => {
-        if (alive && d) {
+        if (d) {
           hotCache = d;
           setHotData(d);
+        } else {
+          // 全链路失败且无任何缓存：展示失败空态，不再假装"还在加载"
+          setHotFailed(true);
         }
       })
-      .catch(() => {});
-    return () => { alive = false; };
+      .catch(() => setHotFailed(true));
   }, []);
+
+  useEffect(() => {
+    // V3.3.0 #6：模块缓存命中就不再整页重拉（回主页不再闪"从空到有"）。
+    // 模块缓存只在新拉取成功时写入，故命中即代表本次进程内数据是新鲜的；
+    // 若首帧数据来自 localStorage 过期缓存（hotCache 为空），则必须继续走一次刷新。
+    if (hotCache) return;
+    loadHot();
+  }, [loadHot]);
 
   // A12：Banner 自动轮播调度入口（切数据源时重排；scheduleAuto 可被手动横滑重置）
   useEffect(() => {
@@ -398,6 +408,7 @@ export function Home({
 
       {/* A12：豆瓣热门推荐（顶部 Banner 轮播 + 四行热门） */}
       {/* V3.6.6 B：三态——有数据渲染内容；无数据显示加载动画（取代原来的整块空白） */}
+      {/* V4.0.10 #5：补第四态——拉取失败（没网/双链挂）显示失败空态 + 重试，不再永久转圈 */}
       {hotData ? (
         <>
           <BannerBlock
@@ -412,6 +423,12 @@ export function Home({
           <HotRow title="热门综艺" items={hotData.categories.variety} onMore={() => setMoreView({ cat: 'variety', title: '热门综艺' })} onSearch={onSearch} />
           <HotRow title="热门动漫" items={hotData.categories.anime} onMore={() => setMoreView({ cat: 'anime', title: '热门动漫' })} onSearch={onSearch} />
         </>
+      ) : hotFailed ? (
+        <div className="empty" style={{ minHeight: 320 }}>
+          <div className="big">内容加载失败</div>
+          <div className="sm">网络似乎不稳定，检查一下连接后重试吧</div>
+          <button className="act" onClick={loadHot}>重新加载</button>
+        </div>
       ) : (
         <LoadingSpinner label="正在加载内容…" minHeight={320} />
       )}

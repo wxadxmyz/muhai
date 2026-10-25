@@ -423,12 +423,71 @@ jobs:
 
               '''
               src = src[:brace + 1] + bridge + src[brace + 1:]
+          # ===== V4.0.10 #4/7/8/10：系统导航栏高度 → 前端 CSS 变量 --navbar =====
+          # 根因：部分机型/ROM 的 WebView 在 edge-to-edge 下不派发 env(safe-area-inset-bottom)（恒 0），
+          # 前端 --sab 只能吃 12px 兜底 → Tab 栏 / 离线缓存抽屉 / 启动页跳过按钮被三大金刚导航键盖住。
+          # 原生 WindowInsets.navigationBars 是权威高度：读出来写进 documentElement 的 --navbar，
+          # CSS 侧 --sab 升级为 max(env(), 12px, var(--navbar, 0px))，手势机与三键机全覆盖。
+          if "_injectNavBarInset" not in src:
+              navbar = '''
+              private var _navbarInjected = false
+              @Suppress("DEPRECATION")
+              private fun _navBarBottomFrom(insets: android.view.WindowInsets): Int {
+                  return try {
+                      if (android.os.Build.VERSION.SDK_INT >= 30) {
+                          insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
+                      } else {
+                          insets.systemWindowInsets.bottom
+                      }
+                  } catch (e: Exception) { 0 }
+              }
+              private fun _pushNavBarToWebView() {
+                  try {
+                      val decor = window.decorView ?: return
+                      val bottom = _navBarBottomFrom(decor.rootWindowInsets ?: return)
+                      val wv = _backWebView ?: findBackWebView(decor as? android.view.ViewGroup)
+                      _backWebView = wv
+                      wv?.evaluateJavascript(
+                          "(function(){ try { document.documentElement.style.setProperty('--navbar', '" + bottom + "px'); } catch(e) {} })()",
+                          null
+                      )
+                  } catch (e: Exception) { /* ignore */ }
+              }
+              private fun _injectNavBarInset() {
+                  if (_navbarInjected) return
+                  val decor = window.decorView ?: return
+                  _navbarInjected = true
+                  // 首屏 + WebView 晚挂载兜底：多排几枪，保证前端一定拿到首值
+                  decor.post { _pushNavBarToWebView() }
+                  decor.postDelayed({ _pushNavBarToWebView() }, 300)
+                  decor.postDelayed({ _pushNavBarToWebView() }, 1500)
+                  // 后续变化（旋转 / 导航栏显隐）实时跟推；不消费 insets，原样返回给系统
+                  decor.setOnApplyWindowInsetsListener(object : android.view.View.OnApplyWindowInsetsListener {
+                      override fun onApplyWindowInsets(v: android.view.View, insets: android.view.WindowInsets): android.view.WindowInsets {
+                          try {
+                              val bottom = _navBarBottomFrom(insets)
+                              val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
+                              _backWebView = wv
+                              wv?.evaluateJavascript(
+                                  "(function(){ try { document.documentElement.style.setProperty('--navbar', '" + bottom + "px'); } catch(e) {} })()",
+                                  null
+                              )
+                          } catch (e: Exception) { /* ignore */ }
+                          return insets
+                      }
+                  })
+                  decor.requestApplyInsets()
+              }
+
+              '''
+              src = src[:brace + 1] + navbar + src[brace + 1:]
           # 绑桥时机：onStart 内 postDelayed 重试（WebView 在 onCreate 后才挂进 decorView），
           # onResume 再兜底一次，确保 window.MuHaiAndroid 一定存在。不新增 onCreate，避免与 Tauri 自带 onCreate 冲突。
           # Q20：更长的重试序列；V3.3.0 #7：加长到 600/1500/3000/6000/10000ms——
           #      慢机型 WebView 挂载可晚于 3s，之前 3s 内绑不上，点横屏就只剩 CSS 放大。
           bind_code = '''
                   _muhaiHealStart()
+                  _injectNavBarInset()
 
           '''
           if "fun onStart(" not in src:
@@ -436,6 +495,7 @@ jobs:
               override fun onStart() {
                   super.onStart()
                   _muhaiHealStart()
+                  _injectNavBarInset()
               }
 
               '''
@@ -448,6 +508,7 @@ jobs:
               override fun onResume() {
                   super.onResume()
                   _muhaiHealStart()
+                  _injectNavBarInset()
               }
 
               '''

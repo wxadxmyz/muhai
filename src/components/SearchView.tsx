@@ -300,9 +300,11 @@ export function SearchView({
     return () => window.clearTimeout(timer);
   }, [kw, sources]);
 
-  // 进入搜索页即聚焦并弹软键盘。autoFocus 在已有组件树首次挂载偶尔不触发，手动兜底。
+  // V4.0.10 #3：只有「空手进搜索页」（点主页搜索框）才聚焦弹软键盘；
+  // 带 initialQuery 进来（点主页卡片/热门直接搜）是奔着结果去的，弹键盘反而挡住结果——
+  // v4.0.9 无条件 focus()+autoFocus 导致的回归，现改为条件聚焦并去掉 autoFocus。
   useEffect(() => {
-    inputRef.current?.focus();
+    if (!initialQuery) inputRef.current?.focus();
   }, []);
 
   return (
@@ -324,7 +326,6 @@ export function SearchView({
           */}
           <input
             ref={inputRef}
-            autoFocus
             type="search"
             enterKeyHint="search"
             inputMode="search"

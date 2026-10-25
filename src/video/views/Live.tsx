@@ -618,6 +618,15 @@ function qualityFromHeight(h: number): string {
             <div className="big">正在加载直播源…</div>
             <div className="sm">正在从你导入的 tvbox 配置拉取直播线路，请稍候</div>
           </div>
+        ) : loading ? (
+          /* V4.0.10 #12：点直播源拉 m3u 期间的加载态。
+             旧版 {loading && ...} 渲染在整个 view 内容流末尾（选台两栏之后），
+             源列表一长就沉到屏幕底下看不见。改为与 livesLoading 同款的居中空态。 */
+          <div className="empty fill">
+            <span className="ic"><Icon name="cast" size={48} /></span>
+            <div className="big">正在加载直播频道…</div>
+            <div className="sm">正在拉取该线路的频道列表，请稍候</div>
+          </div>
         ) : lives.length ? (
           /* 一级：直播源列表（对齐原型 .live-list / .live-src） */
           <div className="live-list">
@@ -738,8 +747,6 @@ function qualityFromHeight(h: number): string {
           </div>
         </div>
       )}
-
-      {loading && <div className="empty sm">正在加载直播频道…</div>}
 
       {/* 真实 DLNA 投屏浮层 */}
       {showCast && (

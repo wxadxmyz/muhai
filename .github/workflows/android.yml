@@ -133,9 +133,12 @@ jobs:
               // 都无响应（返回键失灵）。2s 后无条件复位，保证返回键永远可按。
               private val _backReset = Runnable { _backDispatching = false }
 
-              // 统一的返回分发：调用 WebView 里的 window.__onAndroidBack()；
-              // 若 JS 返回 true（已消费，例如关闭播放器/弹层/逐级返回），则拦截系统返回；
-              // 返回 false/异常则放行系统返回。
+              // 统一的返回分发：调用 WebView 里的 window.__onAndroidBack()。
+              // 前端约定（见 VideoApp.tsx 的 __onAndroidBack / lib/backStack.ts）：
+              //   返回 false = App 已消费本次返回（关了浮层/退横屏等）→ 拦截，不调 super；
+              //   返回 true  = 栈空不拦截 → 放行 super.onBackPressed()（退出或 wry 的 goBack）。
+              // 注意与注释字面相反：false 才是"已消费"。 evaluateJavascript 的 result 是
+              // JSON 串（"true"/"false"），下面按字符串比对。
               private fun dispatchBack(): Boolean {
                   if (_backDispatching) return false
                   _backDispatching = true
@@ -144,6 +147,24 @@ jobs:
                   val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
                   _backWebView = wv
                   if (wv == null) { _backDispatching = false; return false }
+                  // V4.1.1 ⑧：远程页直通，不再问 JS。主窗口 navigate 到网盘登录页
+                  // （aliyundrive / quark / uc）后，页面里没有 __onAndroidBack（App 的 JS
+                  // 不在远程 document 上），IIFE 恒返回 "false"，被下面的 consumed 逻辑
+                  // 当成"已消费"→ 系统返回/手势返回全部被吞，用户困在登录页出不来。
+                  // 识别：URL 是 http(s) 且不是本地源（tauri.localhost / dev 的 localhost）。
+                  // 处置：有历史就 goBack 回本地 App 页（wry 默认回调的同款行为），
+                  //      无历史才放行 super（退出）。
+                  val url = wv.url ?: ""
+                  val isRemote = (url.startsWith("http://") || url.startsWith("https://")) &&
+                      !url.contains("tauri.localhost") && !url.contains("127.0.0.1") && !url.contains("localhost")
+                  if (isRemote) {
+                      try {
+                          if (wv.canGoBack()) wv.goBack() else runOnUiThread { super.onBackPressed() }
+                      } catch (e: Exception) { runOnUiThread { super.onBackPressed() } }
+                      window.decorView.removeCallbacks(_backReset)
+                      _backDispatching = false
+                      return true
+                  }
                   wv.evaluateJavascript(
             "(function(){ try { return window.__onAndroidBack ? !!window.__onAndroidBack() : false; } catch(e) { return false; } })()"
                   ) { result ->
@@ -444,7 +465,9 @@ jobs:
               private fun _pushNavBarToWebView() {
                   try {
                       val decor = window.decorView ?: return
-                      val bottom = _navBarBottomFrom(decor.rootWindowInsets ?: return)
+                      // V4.1.1 ④：WindowInsets 返回的是物理 px，前端 CSS 要的是 CSS px（dp）。
+                      // 不除密度的话，3x 屏上 48dp 导航栏会被当成 144px 注入，底部 Tab 直接顶飞。
+                      val bottom = Math.round(_navBarBottomFrom(decor.rootWindowInsets ?: return) / resources.displayMetrics.density)
                       val wv = _backWebView ?: findBackWebView(decor as? android.view.ViewGroup)
                       _backWebView = wv
                       wv?.evaluateJavascript(
@@ -465,7 +488,8 @@ jobs:
                   decor.setOnApplyWindowInsetsListener(object : android.view.View.OnApplyWindowInsetsListener {
                       override fun onApplyWindowInsets(v: android.view.View, insets: android.view.WindowInsets): android.view.WindowInsets {
                           try {
-                              val bottom = _navBarBottomFrom(insets)
+                              // V4.1.1 ④：同上——物理 px 换算成 CSS px 再注入
+                              val bottom = Math.round(_navBarBottomFrom(insets) / resources.displayMetrics.density)
                               val wv = _backWebView ?: findBackWebView(window?.decorView as? android.view.ViewGroup)
                               _backWebView = wv
                               wv?.evaluateJavascript(

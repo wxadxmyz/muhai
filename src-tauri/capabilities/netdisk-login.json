@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "netdisk-login",
+  "description": "网盘登录页（远程域）专用：主窗口 navigate 到阿里/夸克/UC 登录页后，页面经 withGlobalTauri 注入的 __TAURI__.invoke 会被 ACL 拦截（远程源默认不继承任何命令权限），本 capability 按 remote.urls 精确放行两个网盘命令。本地页的调用仍由 default/desktop capability 负责，故 local:false。",
+  "windows": [
+    "main"
+  ],
+  "local": false,
+  "remote": {
+    "urls": [
+      "https://aliyundrive.com",
+      "https://*.aliyundrive.com",
+      "https://quark.cn",
+      "https://*.quark.cn",
+      "https://uc.cn",
+      "https://*.uc.cn"
+    ]
+  },
+  "permissions": [
+    "allow-open-netdisk-login",
+    "allow-close-netdisk-login"
+  ]
+}

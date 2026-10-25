@@ -5,6 +5,68 @@
 
 ---
 
+## V4.1.1
+
+**真机八项修复**：全部来自用户真机截图取证 + 逐项根因定位，集中在「移动端 WebView 老坑」与「远程域权限」两类。
+
+### 一、点卡片残留 hover 选中态
+
+- **现象**：主页/历史/搜索页点卡片进详情或播放，返回后**被点过的那张卡仍挂着上浮 + 投影**，像没取消选中。
+- **根因**：移动端触摸结束后 WebView 不刷新 `:hover`，最后点过的元素永久残留 hover 态（V3.4.6 已为 `.pcover` 蓝边加过护栏，但 `.mini-card/.pcard/.card/.dev` 的通用投影/上浮/描边规则一直裸奔）。
+- **修复**：全部 hover 规则收进 `@media (hover: hover) and (pointer: fine)`（桌面真实指针行为不变），触摸设备改用 `.pcover:active { transform: scale(.97) }` 的按压缩放做反馈。
+
+### 二、激活 Tab 投影脏海报顶
+
+- **现象**：历史/收藏页激活的 Tab 按钮下方像挂着一块脏影，漫到相邻海报卡片顶部。
+- **根因**：`.tabs button.active` 的 `box-shadow: var(--shadow)` 外投影肥尾。主题色背景已足够区分激活态，投影纯属冗余。
+- **修复**：去掉该处一次性 `box-shadow`（不动 `--shadow` 令牌本身）。
+
+### 三、观看历史卡盒高被 flex 架空
+
+- **现象**：历史卡片盒高 = 图片自然高，卡片忽高忽低、与邻卡参差；从播放页返回触发重排后盒底还会露出面板底色（白块）。
+- **根因**：`.pcard` 是 flex 列容器，`useCardGrid` 内联到 `.pcover` 的 px 盒高在该 WebView 上被架空（flex item 定高失效，V3.3.0 早有记载）。
+- **修复**：`.pcard` 改 `display: block`（内联 height 直接生效）+ `.pcover img` 绝对定位双保险——图片自身尺寸永不参与盒高计算。
+
+### 四、手势键/三键导航与底部 Tab 叠行
+
+- **现象**：三大金刚导航键机型的底部 Tab 行被系统导航键盖住约 36px（Tab 行与导航键重叠）；离线缓存抽屉、启动页跳过钮同样被压。
+- **根因**：这类机型 WebView 的 `env(safe-area-inset-bottom)` 恒为 0，`--sab` 只吃到 12px 兜底。V4.0.10 的原生 `--navbar` 注入有两处断点：① CI 补丁把 WindowInsets 的**物理 px** 当 CSS px 注入（3x 屏上 48dp 会被写成 144px）；② 老 WebView 跳过 `@supports(max())` 块，CSS 里消费 `--navbar` 的那条规则根本不生效，且 JS 的内联 `--sab` 本来就会盖住样式表。
+- **修复**（两半，均在本次落地）：
+  - **前端**：`safeArea.ts` 在 JS 侧合并——`--sab = max(env()实测, 12px, 原生导航栏高度)`，MutationObserver 监听原生 `evaluateJavascript` 写入的 `--navbar` 实时重算，外加 300/1500ms 两次兜底；导航栏高度钳上限 96px 防单位 bug 把底栏顶飞。
+  - **原生**：CI 补丁的 `_pushNavBarToWebView` 与 insets 监听两处均补 `/ resources.displayMetrics.density` 换算，注入值改为 CSS px。
+- **说明**：原生 `getNavigationBarHeight()` 桥方法不在本仓库，本方案复用 CI 已有的 `--navbar` 注入链路，无需外部工程配合。
+
+### 五、播放器标题行两态错位 24px
+
+- **现象**：解析加载态下播放器顶栏标题比播放态**整体下移约 24px**（pill 中心 188 vs 260 CSS px，精确吻合 24px padding）。
+- **根因**：overlay 上的 `loading` class 撞中全局 `.loading, .empty { padding: 24px 4px }`（styles.css:176）——class 名撞车。
+- **修复**：overlay 的加载态 class 改名 `loading → ov-loading`（VideoPlayer.tsx 两处 JSX + styles.css 五条选择器），与全局规则彻底隔离。
+
+### 六、搜索页右缝两态差 10px
+
+- **现象**：无搜索结果（不滚动）时右缝窄，有结果（可滚动）时经典滚动条白吃 10px——同页两态右缝不一致。
+- **根因**：L9 的滚动条隐藏清单漏了 `.searchview` 与 `.search-grid-wrap` 两个滚动容器。
+- **修复**：补 `scrollbar-width: none` + `::-webkit-scrollbar { display: none }`。
+
+### 七、画中画小窗显示缩小版播放页
+
+- **现象**：点画中画后小窗里是**整张播放页的缩小版**（标题/信息区/控件全在），不是干净的视频画面。
+- **根因**：`pipMode` 是死状态——`__onPipChanged` 只改 state，渲染从未使用；且进 PiP 时 `setLocked(false)` 会触发 `[locked]` effect 把控件唤回。
+- **修复**：`player-root` 接入 `pip` class + `.player-root.pip` CSS（隐 overlay/vp-body/抽屉/加载态/HUD，播放卡片绝对定位铺满窗口，z-index 抬到 60 盖过状态栏遮罩条）；`guardTapWhenHidden` 与 `[locked]` effect 加 `pipModeRef` 护栏，小窗内不唤回控件。
+
+### 八、网盘登录页返回键失效
+
+- **现象**：阿里/夸克/UC 登录页左上角「← 返回幕海」按钮按了没反应；系统手势返回也没反应，用户困在登录页。
+- **根因**（两层）：
+  1. **Tauri v2 远程域 IPC 拦截**：主窗口 navigate 到 `https://` 登录页后该页即 Remote origin，capability 的命令权限默认只对本地源生效——登录页里 `invoke('close_netdisk_login')` 被 ACL 拒；而注入脚本的 `try/catch` 抓不住 Promise 的异步 reject，失败完全静默（`__ndFallback` 还是全仓库无人定义的死代码）。
+  2. **系统返回被吞**：远程页里没有 `__onAndroidBack`（App 的 JS 不在远程 document 上），Kotlin `dispatchBack` 把 IIFE 恒返回的 `"false"` 当成"已消费"，`super.onBackPressed()` 永远不被调用。
+- **修复**：
+  - 新建 `capabilities/netdisk-login.json`：`remote.urls` 放行三个盘的域名（裸域 + 子域通配，URLPattern 语义已用 tauri-utils 同款逻辑实测验证：登录页全命中、`aliyundrive.com.evil.com` 类相似域不命中），仅含两个网盘命令、`local: false`——最小授权面，不污染 default/desktop capability。
+  - `netdisk.ts` 注入脚本补 `.catch`（失败至少在控制台现形），删死代码。
+  - CI 补丁 `dispatchBack` 增加远程页直通：URL 是 http(s) 且非本地源时，有历史走 `goBack()` 回 App 页、无历史才放行系统退出；顺手修正了该函数注释里与实际代码相反的返回约定说明。
+
+---
+
 ## V4.0.0
 
 **形态重构大版本**：同一 APK 现在是「手机 / 电脑(横屏平板·桌面) / 电视」三形态，电视端有了独立大屏界面，不再是手机 UI 的等比放大。

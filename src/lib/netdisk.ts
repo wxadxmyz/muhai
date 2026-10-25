@@ -181,7 +181,11 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
       ? `function(){try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';}`
       : `function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
   // 返回 / 抓到 token 后调用 Rust 命令；withGlobalTauri 已在 tauri.conf 开启
-  const close = `function __ndClose(tok){try{if(window.__TAURI__&&window.__TAURI__.invoke){window.__TAURI__.invoke('close_netdisk_login',tok?{token:tok}:{});}else{window.__ndFallback&&window.__ndFallback(tok);}}catch(e){}}`;
+  // V4.1.1 ⑧：invoke 返回的是 Promise——远程登录页里这个调用此前被 ACL 拦截
+  // （capability 没配 remote.urls），而同步 try/catch 抓不到异步 reject，按钮"按了
+  // 没反应"就是这么来的（静默失败）。补 .catch 让失败至少在控制台现形；
+  // 同时删掉全仓库无人定义的 __ndFallback 死代码分支。
+  const close = `function __ndClose(tok){try{if(window.__TAURI__&&window.__TAURI__.invoke){window.__TAURI__.invoke('close_netdisk_login',tok?{token:tok}:{}).catch(function(e){try{console.error('[netdisk] close_netdisk_login rejected',e);}catch(_e){}});}else{try{console.error('[netdisk] window.__TAURI__ unavailable on login page');}catch(_e){}}}catch(e){try{console.error('[netdisk] __ndClose sync error',e);}catch(_e){}}}`;
   return `(()=>{
   ${close}
   var __ND_PROVIDER = ${JSON.stringify(p.key)};

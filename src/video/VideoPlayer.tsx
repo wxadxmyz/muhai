@@ -1163,6 +1163,10 @@ export function VideoPlayer({
   // stopPropagation 会拦住后续冒泡，按钮自己的 onClick 就不会执行了。
   // 锁定态不拦截 —— 锁定态下小锁是唯一可点元素，交给 onStageTouchEnd 的 locked 分支处理。
   const guardTapWhenHidden = (e: React.MouseEvent) => {
+    // V4.1.1 ⑦：PiP 小窗内一切点击都不该唤回控件——小窗由 CSS 强制只显示视频画面，
+    // 控件层即使被 state 唤出也会被 .player-root.pip .overlay{display:none} 藏掉，
+    // 这里提前 return，避免白跑 setControlsVisible/scheduleHide 还顺带重启 3s 定时器。
+    if (pipModeRef.current) return;
     // V3.5.5：锁定态若整层处于 .hide（状态异常残留），点屏幕要能把整层唤回来，
     // 否则小锁 pointer-events:none + 本函数放行 = 点屏幕永远无法让小锁再现。
     if (locked) { if (!controlsVisible) setControlsVisible(true); return; }
@@ -1204,6 +1208,9 @@ export function VideoPlayer({
   //     而 guardTapWhenHidden 在 locked 时直接放行，于是点屏幕永远唤不回小锁、点锁也解锁不了。
   //  3) 仅在「解锁」时才重启 3 秒自动隐藏倒计时。
   useEffect(() => {
+    // V4.1.1 ⑦：PiP 小窗内不唤回控件。进入 PiP 时 __onPipChanged 会 setLocked(false)，
+    // 若进入前是锁定态，locked 变化会触发本 effect 把控件强行显示——小窗里绝不允许。
+    if (pipModeRef.current) return;
     setControlsVisible(true);
     if (!locked && state.isPlaying) scheduleHide();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1315,7 +1322,7 @@ export function VideoPlayer({
   }
 
   return (
-    <div className={'player-root' + (landscape ? ' landscape' : '')}>
+    <div className={'player-root' + (landscape ? ' landscape' : '') + (pipMode ? ' pip' : '')}>
       {/* ===== 播放器卡片（竖屏）/ 横屏舞台 ===== */}
       <div
         className={'player-card' + (landscape ? ' land' : '')}
@@ -1475,7 +1482,7 @@ export function VideoPlayer({
 
           {/* ============ 竖屏：顶/中/底 三段 ============ */}
           {!landscape && (
-            <div className={'overlay' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
+            <div className={'overlay' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' ov-loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
               <div className="top">
                 <button className="back" onClick={onClose} title="返回"><Icon name="arrow-left" size={18} /></button>
                 {/* 对齐原型 .ov-top .ttl：`片名 第N集` + 清晰度胶囊（res-pill） */}
@@ -1561,7 +1568,7 @@ export function VideoPlayer({
 
         {/* ============ 横屏（对齐原型 .land：顶栏 返回/标题/锁/投屏 + 中央 上一个/播放/下一个 + 底部 5 个图标钮） ============ */}
         {landscape && (
-          <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
+          <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' ov-loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
             {/* .l-top：返回 + `片名 第N集 画质小字` + 锁 + 投屏（38px 圆钮 rgba(255,255,255,.14)，图标 grid 居中） */}
             <div className="land-top">
               <button className="back" onClick={toggleLandscape} title="退出横屏"><Icon name="arrow-left" size={19} /></button>

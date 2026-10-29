@@ -3,6 +3,7 @@ import { MediaItem, MediaSource, PlayUrl, SourceConfig } from '../types';
 import { devLog } from '../../lib/log';
 import { ensureProxyPort, buildProxyUrl } from '../../lib/hlsPlayer';
 import { isTauri } from '../../lib/tauriBridge';
+import { getAllNetdiskTokens } from '../../lib/netdisk';
 
 // V3.8.9：删掉 netdiskShare 依赖。网盘分享解析（V3.7.5 #4）是 V3.7.0 之后加的，
 // 不在「V3.7.0 能播」的基准里，按回退清单一并去除。
@@ -268,7 +269,7 @@ export function createDrpy3Source(
     let raw: string;
     try {
       raw = await invoke<string>('drpy3run', {
-        payload: { code, key: String(jsCfg.id ?? jsCfg.name ?? 'drpy3'), func, args, ext: jsCfg.ext },
+        payload: { code, key: String(jsCfg.id ?? jsCfg.name ?? 'drpy3'), func, args, ext: jsCfg.ext, netdiskTokens: getAllNetdiskTokens() },
       });
     } catch (e: any) {
       const msg = `drpy3 ${func} 调用失败: ${e?.message ?? e}`;

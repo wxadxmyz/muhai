@@ -13,8 +13,11 @@ import { type NetdiskProvider, buildCaptureNavScript } from './netdisk';
  * @returns 无。成功与否由 Rust 端 toast / 页面跳转体现；失败会抛错到调用方。
  */
 export async function openNetdiskLogin(p: NetdiskProvider): Promise<void> {
-  // 记录当前 App 地址（含 hash），供 Rust 跳回时使用；去掉 ndtok 等残留参数
-  const back = (window.location.href.split('#')[0] || '').replace(/[?&]ndtok=[^&]+/g, '').replace(/\?$/, '');
+  // 记录当前 App 地址（保留 hash 路由），供 Rust 跳回时使用；去掉 ndtok 残留参数。
+  // P3①：旧实现 split('#')[0] 会丢掉 hash，导致从登录页跳回后落在根地址而非网盘登录页。
+  const u = new URL(window.location.href);
+  u.searchParams.delete('ndtok');
+  const back = u.toString();
   const captureScript = buildCaptureNavScript(p);
   await invoke('open_netdisk_login', {
     url: p.loginUrl,

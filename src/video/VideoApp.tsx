@@ -8,6 +8,7 @@ import { useGlobalShortcuts } from '../lib/shortcuts';
 import { useSwipeBack } from '../lib/swipeBack';
 import { MediaItem, createSource, findSourceConfig } from '../engine';
 import { alistClient } from '../lib/alistClient';
+import { setNetdiskToken, type NetdiskKey } from '../lib/netdisk';
 import { SearchView } from '../components/SearchView';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { VideoPlayer } from './VideoPlayer';
@@ -40,6 +41,14 @@ export default function VideoApp() {
   // 形态切换（电视/桌面/手机）：变化时重渲染，使 TV 界面 / 桌面设置页即时切换
   const [mode, setMode] = useState(getDeviceMode());
   useEffect(() => onDeviceModeChange(setMode), []);
+
+  // P3：App 顶层消费网盘登录回传的 token（Rust 侧暂存 → 这里主动取）。
+  // 落在任何页面都能落盘，避免「返回后已挂载列表为空、需重启 App」的问题。
+  useEffect(() => {
+    invoke<[string, string] | null>('take_netdisk_token')
+      .then((r) => { if (r && r.length === 2) setNetdiskToken(r[0] as NetdiskKey, r[1]); })
+      .catch(() => {});
+  }, []);
 
   const [tab, setTab] = useState<Tab>('home');
   const mainRef = useRef<HTMLElement>(null);
@@ -299,7 +308,7 @@ export default function VideoApp() {
         </div>
         <nav className="nav">
           <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>
-            主页
+            首页
           </button>
           <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
             直播
@@ -410,7 +419,7 @@ export default function VideoApp() {
           <span className="ico">
             <Icon name="tab-home" />
           </span>
-          <span>主页</span>
+          <span>首页</span>
         </button>
         <button className={tab === 'live' ? 'active' : ''} onClick={() => setTab('live')}>
           <span className="ico">

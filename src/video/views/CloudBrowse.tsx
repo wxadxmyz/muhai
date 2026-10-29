@@ -102,7 +102,10 @@ export function CloudBrowse({
           <div className="empty" style={{ gridColumn: '1 / -1' }}>
             <span className="ic"><Icon name="folder" size={48} /></span>
             <div className="big">该目录为空</div>
-            <div className="sm">尚未配置云盘源，可在「影视源管理」添加一个 alist 源</div>
+            <div className="sm">
+              这是 alist 云盘浏览区。若想在 App 内直接看刚登录的阿里/夸克/UC，请到「设置 → 网盘登录」查看已挂载网盘；
+              此处需先在「影视源管理」添加一个 alist 源（自备 alist 服务地址与账号）才能浏览文件。
+            </div>
           </div>
         )}
         {files.map((f) => {

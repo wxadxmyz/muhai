@@ -384,6 +384,13 @@ export function Home({
     <div className="home-top v25">
       {/* V3.5.5：与原型 home 顶栏 1:1 对齐——单行搜索框 + 站点选择 pill，去掉品牌行。 */}
       <div className="ht-row2">
+        {/* P9：首页搜索框左侧圆形透明动图（circle.apng，截自参考视频圆圈，圆外真透明），点击进源管理 */}
+        <img
+          src="/circle.apng"
+          alt="幕海"
+          onClick={onOpenSources}
+          style={{ flex: '0 0 36px', width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', objectFit: 'cover' }}
+        />
         <button className="ht-search" onClick={() => onSearch('')}>
           <Icon name="search" size={18} />
           <span className="ht-search-ph">搜索电影/剧集/演员…</span>

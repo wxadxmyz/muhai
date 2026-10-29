@@ -58,6 +58,11 @@ struct NetdiskLoginState {
 
 static NETDISK_LOGIN_STATE: OnceLock<Mutex<Option<NetdiskLoginState>>> = OnceLock::new();
 
+// P1：保存注入脚本，供每次页面加载完成时重新注入（解决夸克整页跳转后按钮/token 消失）
+static ND_SCRIPT: Mutex<Option<String>> = Mutex::new(None);
+// P3：登录抓到的 token 暂存在 Rust 侧（不再塞进 URL），由前端 take_netdisk_token 主动取
+static PENDING_ND: Mutex<Option<(String, String)>> = Mutex::new(None); // (provider, token)
+
 const DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 #[cfg(target_os = "android")]
@@ -99,6 +104,47 @@ fn webview_ua(
         let _ = tx.send(res);
     });
     rx.recv().map_err(|e| e.to_string())?
+}
+
+/// P2：JNI 实测状态栏高度（px）。外站登录页没有 viewport-fit=cover，env(safe-area-inset-top)
+/// 取不到，故走 Android Resources。取不到时返回 0（顶栏贴顶，与不测量时表现一致，不退化）。
+#[cfg(target_os = "android")]
+fn status_bar_height_px(webview: &tauri::webview::PlatformWebview) -> f64 {
+    use jni::objects::JValue;
+    let (tx, rx) = std::sync::mpsc::channel::<f64>();
+    webview.jni_handle().exec(|env, activity, _wv| {
+        let res = (|| -> Result<f64, jni::errors::Error> {
+            // activity.getResources()
+            let resources = env
+                .call_method(activity, "getResources", "()Landroid/content/res/Resources;", &[])?
+                .l()?;
+            let name_j = env.new_string("status_bar_height")?;
+            let dimen_j = env.new_string("dimen")?;
+            let android_j = env.new_string("android")?;
+            let id = env
+                .call_method(
+                    &resources,
+                    "getIdentifier",
+                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I",
+                    &[
+                        JValue::Object(&*name_j),
+                        JValue::Object(&*dimen_j),
+                        JValue::Object(&*android_j),
+                    ],
+                )?
+                .i()?;
+            if id <= 0 {
+                return Ok(24.0 * 3.0); // 取不到资源时给一个 3x 屏的常见近似（~72px）
+            }
+            let px = env
+                .call_method(&resources, "getDimensionPixelSize", "(I)I", &[JValue::Int(id)])?
+                .i()?;
+            Ok(px as f64)
+        })()
+        .unwrap_or(0.0);
+        let _ = tx.send(res);
+    });
+    rx.recv().unwrap_or(0.0)
 }
 
 /// 在 App 内 WebView 打开网盘登录页。
@@ -153,16 +199,47 @@ async fn open_netdisk_login(
         });
     }
 
+    // P2：测量状态栏高度（Android 经 JNI；非 Android 为 0），注入脚本据此把顶栏背景铺满状态栏
+    #[cfg(target_os = "android")]
+    let top_px: f64 = {
+        let (tx, rx) = std::sync::mpsc::channel::<f64>();
+        let w = window.clone();
+        let _ = w.with_webview(move |wv| {
+            let r = status_bar_height_px(&wv);
+            let _ = tx.send(r);
+        });
+        rx.recv().unwrap_or(0.0)
+    };
+    #[cfg(not(target_os = "android"))]
+    let top_px: f64 = 0.0;
+
+    // P2：把状态栏高度常量前置进注入脚本，供 __ndEnsureBar 使用
+    let capture_script = format!("const __ND_TOP = {top_px};\n{capture_script}");
+
+    // P1：保存脚本，供每次页面加载完成时重新注入（幂等，按钮/轮询都会重建）；
+    // 同时注册 on_page_load 监听（解决夸克整页跳转子页后注入被销毁 → 按钮消失/token 抓不到）。
+    if let Ok(mut s) = ND_SCRIPT.lock() {
+        *s = Some(capture_script.clone());
+    }
+    let nd_window = window.clone();
+    window.on_webview_event(move |_wv, event| {
+        if let tauri::webview::WebviewEvent::PageLoad(payload) = event {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                if let Ok(s) = ND_SCRIPT.lock() {
+                    if let Some(script) = s.as_ref() {
+                        let _ = nd_window.eval(script);
+                    }
+                }
+            }
+        }
+    });
+
     // 导航到登录页
     let target = url.parse().map_err(|e: url::ParseError| e.to_string())?;
     window.navigate(target).map_err(|e| e.to_string())?;
 
-    // 延迟注入返回/抓 token 脚本（给页面留 1.2s 加载时间）
-    let window_for_inject = window.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-        let _ = window_for_inject.eval(&capture_script);
-    });
+    // 立即注入一次（兜底；页面若尚未就绪，__ndEnsureBar/setInterval 仍会反复尝试）
+    let _ = window.eval(&capture_script);
 
     Ok(())
 }
@@ -193,26 +270,33 @@ async fn close_netdisk_login(app: tauri::AppHandle, token: Option<String>) -> Re
         rx.recv().map_err(|e| e.to_string())??;
     }
 
-    // 构造回 App 地址；如有 token 则挂在 ?ndtok=provider:token（前端 syncNetdiskTokens 消费）
-    let mut final_url = back_url;
-    if let Some(t) = token {
-        let sep = if final_url.contains('?') { '&' } else { '?' };
-        final_url.push_str(&format!(
-            "{}ndtok={}:{}",
-            sep,
-            urlencoding::encode(&provider),
-            urlencoding::encode(&t)
-        ));
+    // P3：token 不再塞进 URL（阿里 localStorage['token'] 是整段 JSON，塞进 query 会被 Tauri
+    // asset protocol 当成资源路径，导航失败 → "返回后像卡死/只能重启"）。改为暂存 Rust 全局，
+    // 由前端 take_netdisk_token 主动取，落在任何页面都能落盘。
+    if let Some(t) = &token {
+        if let Ok(mut g) = PENDING_ND.lock() {
+            *g = Some((provider.clone(), t.clone()));
+        }
     }
 
-    let target = final_url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    // 直接导航回干净的 back_url（hash 路由已在 JS 侧保留）
+    let target = back_url.parse().map_err(|e: url::ParseError| e.to_string())?;
     window.navigate(target).map_err(|e| e.to_string())?;
 
-    // 清理状态
+    // 清理状态（含注入脚本，避免残留监听器继续注入）
     if let Ok(mut s) = state.lock() {
         *s = None;
     }
+    if let Ok(mut s) = ND_SCRIPT.lock() {
+        *s = None;
+    }
     Ok(())
+}
+
+/// P3：前端在 App 顶层消费登录抓到的 token（Rust 侧暂存，取走即清空）。
+#[tauri::command]
+fn take_netdisk_token() -> Option<(String, String)> {
+    PENDING_ND.lock().ok().and_then(|mut g| g.take())
 }
 
 // P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），
@@ -259,7 +343,9 @@ pub fn run() {
             clear_webview_cache,
             // V3.7.8：网盘登录走 App 内 WebView + 桌面 UA + 注入返回/抓 token 脚本
             open_netdisk_login,
-            close_netdisk_login
+            close_netdisk_login,
+            // P3：前端在 App 顶层主动取出登录抓到的 token（Rust 侧暂存）
+            take_netdisk_token
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

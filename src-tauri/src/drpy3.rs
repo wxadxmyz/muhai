@@ -18,6 +18,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rquickjs::function::Rest;
 use rquickjs::{Coerced, Context, Function, Object, Runtime};
 use serde::Deserialize;
+use std::collections::HashMap;
 use serde_json::Value;
 use std::sync::mpsc::{self, Sender};
 use std::sync::OnceLock;
@@ -87,6 +88,10 @@ pub struct Drpy3Call {
     /// 参数（已是 JSON 值的数组；引擎内部 JSON.parse 后原样展开，保真 boolean/object/数字）
     #[serde(default)]
     pub args: Vec<Value>,
+    /// P5：已登录网盘的 token 映射（如 {"ali":"<json>","quark":"<cookie>"}），
+    /// 注入 QuickJS 沙箱的 globalThis.__netdiskTokens，供 drpy 网盘源规则（如玩偶哥哥）直接取用。
+    #[serde(default)]
+    pub netdisk_tokens: Option<HashMap<String, String>>,
 }
 
 struct Job {
@@ -261,6 +266,15 @@ impl Drpy3Engine {
             g.set("__mhFunc", call.func.clone()).map_err(|e| e.to_string())?;
             let args_json = serde_json::to_string(&call.args).unwrap_or_else(|_| "[]".to_string());
             g.set("__mhArgs", args_json).map_err(|e| e.to_string())?;
+
+            // P5：把已登录网盘的 token 注入沙箱，供 drpy 网盘源规则（如玩偶哥哥）直接取用，
+            // 不再依赖把令牌写进公开规则仓库。规则里读 globalThis.__netdiskTokens.<provider> 即可。
+            if let Some(tokens) = &call.netdisk_tokens {
+                if let Ok(json) = serde_json::to_string(tokens) {
+                    let expr = format!("globalThis.__netdiskTokens = {};", json);
+                    let _ = ctx.eval::<(), _>(&expr);
+                }
+            }
 
             // 首次调用装载源（同一 key 复用实例，避免每次重新求值规则）
             let loaded = ctx

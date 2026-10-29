@@ -164,6 +164,18 @@ export function SettingsPage({
   const refreshNdTokens = () => setNdTokens(getAllNetdiskTokens());
   useEffect(() => { syncNetdiskTokens(); }, []);
   useEffect(() => { if (sub === 'mounts' || sub === 'netdisk') refreshNdTokens(); }, [sub]);
+  // P3/P7：监听 token 变更事件 + 页面重新可见时刷新，保证从登录回跳写入的 token 即时上屏，
+  // 无需切到别的 sub 或重启 App。
+  useEffect(() => {
+    const onChanged = () => refreshNdTokens();
+    const onVis = () => { if (document.visibilityState === 'visible') refreshNdTokens(); };
+    window.addEventListener('netdisk-tokens-changed', onChanged);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('netdisk-tokens-changed', onChanged);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
 
   // V3.7.6 #5：手动粘贴授权（绕开官网在 App 内显示下载页、无法登录的问题，最可靠）
   const [pasteKey, setPasteKey] = useState<NetdiskKey>('ali');

@@ -66,6 +66,10 @@ jobs:
           unzip -q -o cmdtools.zip -d "$ANDROID_HOME/cmdline-tools"
           mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          # runner 自带预装 SDK 会注入 ANDROID_SDK_ROOT=/usr/local/lib/android/sdk，
+          # 与我们的 ANDROID_HOME 冲突导致 Gradle 报 “different paths to the SDK”。
+          # 强制让两者一致，消除冲突。
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
@@ -88,6 +92,7 @@ jobs:
         run: pnpm tauri android init
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
 
       # 先出 debug 包（自带签名、可直装）；跳过 R8 压缩，规避 release 的 minifyUniversalReleaseWithR8 任务报错
@@ -95,6 +100,7 @@ jobs:
         run: pnpm tauri android build --target aarch64 --debug
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
           JAVA_HOME: ${{ env.JAVA_HOME }}
 

@@ -152,6 +152,12 @@ export async function aggregateSearch(
     mediaType?: MediaType;
     onPartial?: (items: MediaItem[]) => void;
     onProgress?: (done: number, total: number) => void;
+    /**
+     * V4.1.7：某一个源刚刚结束（成功 / 失败 / 超时 / 被判死源跳过）时回调。
+     * 旧实现只回传「已完成数量 / 总数」，UI 无法知道**具体是哪个源**完成了，
+     * 只能一开始就把全部子站铺满左侧；有了它，UI 就能做到「搜完一个、出现一个」。
+     */
+    onSourceDone?: (info: { sourceId: string; sourceName: string; count: number; error?: string }) => void;
   } = {}
 ): Promise<{ items: MediaItem[]; errors: { sourceId: string; sourceName: string; message: string }[] }> {
   const active = sources
@@ -178,6 +184,8 @@ export async function aggregateSearch(
 
   await Promise.all(
     active.map(async (s, i) => {
+      // V4.1.7：本源的错误信息（成功路径保持 ''，finally 里据此区分「有结果」与「失败」）
+      let errMsg = '';
       try {
         // V3.7.0 A2：单源超时上限由 6s 提到 18s。注意这是「上限」不是「等待」——
         // 快源（如 360≈2s）经 onPartial 秒出，慢源最多用到 18s，不会拖慢快源。
@@ -206,10 +214,18 @@ export async function aggregateSearch(
         // 只有网络错误/404/域名失联等「真死」才计入连续失败。
         const isTimeout = e?.message === 'timeout';
         if (!isTimeout) markSourceFail(s.id);
-        errors.push({ sourceId: s.id, sourceName: s.name, message: e?.message ?? '搜索失败' });
+        errMsg = e?.message ?? '搜索失败';
+        errors.push({ sourceId: s.id, sourceName: s.name, message: errMsg });
       } finally {
         settled += 1;
         progress();
+        // V4.1.7：上报「这个源结束了」——count 为该源实际带回的条数（0 = 空结果/失败）
+        opts.onSourceDone?.({
+          sourceId: s.id,
+          sourceName: s.name,
+          count: buckets[i]?.length ?? 0,
+          error: errMsg || undefined,
+        });
       }
     })
   );

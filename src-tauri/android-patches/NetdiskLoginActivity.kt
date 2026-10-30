@@ -54,7 +54,9 @@ class NetdiskLoginActivity : AppCompatActivity() {
         resultPath = intent.getStringExtra("result_path") ?: ""
 
         val density = resources.displayMetrics.density
-        val sbh = statusBarHeightPx()
+        // V4.1.7：本 Activity **未**开 edge-to-edge（与 MainActivity 的 enableEdgeToEdge() 不同），
+        // 标准主题下内容区本就从状态栏下沿开始，顶栏无需再垫 statusBarHeight。
+        // 此前 sbh 既算进了 barH 又算进了 padding，顶栏上方凭空多出整整一条状态栏高度的空白。
 
         // ── 根布局 ──
         val root = LinearLayout(this).apply {
@@ -66,12 +68,13 @@ class NetdiskLoginActivity : AppCompatActivity() {
         }
 
         // ── 原生顶部返回栏（替代注入式 DOM 顶栏）──
-        val barH = (sbh + 48 * density).toInt()
+        val barH = (48 * density).toInt()
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, barH)
-            setPadding(0, sbh, 0, 0)
+            // V4.1.7：不再垫 sbh（内容区已在状态栏下方），X / 标题直接落在顶栏垂直居中位置
+            setPadding(0, 0, 0, 0)
         }
 
         val back = TextView(this).apply {
@@ -208,13 +211,6 @@ class NetdiskLoginActivity : AppCompatActivity() {
         fun close() {
             runOnUiThread { this@NetdiskLoginActivity.close() }
         }
-    }
-
-    /** 系统状态栏高度（px），用于原生顶栏留出安全区，避免被通知栏压。 */
-    private fun statusBarHeightPx(): Int {
-        val res = resources
-        val id = res.getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0) res.getDimensionPixelSize(id) else (24 * resources.displayMetrics.density).toInt()
     }
 
     override fun onDestroy() {

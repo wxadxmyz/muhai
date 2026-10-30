@@ -1062,7 +1062,10 @@ button.fav, .fav { color: var(--danger) !important; }
    padding-top 承担（本来就承担），顶栏自身 top:0、无 margin、padding 上下对称，
    这样滚动前后位置完全一致，不产生位移。 */
 .home-top.v25{position:sticky;top:0;z-index:60;background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border-bottom:1px solid var(--glass-line);display:flex;flex-direction:column;gap:8px;
-  margin-top:0;padding:10px 14px;}
+  /* V4.1.7：顶部留白 10px → 4px（方案 A）。只动顶栏**内部**留白，不动 --sat 安全区——
+     V4.1.4 把 .main 顶部 padding 由 sat-7 改回 sat 是为了修「网盘返回后顶栏被通知栏压住」，
+     那 7px 安全区不能退；这里仅让搜索框/logo 上移 6px，把「顶栏与通知栏之间显得空」补回来。 */
+  margin-top:0;padding:4px 14px 10px;}
 /* V3.5.5：顶栏单行结构（对齐原型 .home-top：搜索框 + 站点 pill 同排）。
    原先的 .ht-row1 品牌行已移除——原型主页顶栏没有「幕海」品牌行。 */
 .home-top.v25 .ht-row2{display:flex;align-items:center;gap:10px;}

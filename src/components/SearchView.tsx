@@ -92,6 +92,9 @@ export function SearchView({
   const [page, setPage] = useState(1);
   const [progressText, setProgressText] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
+  // V4.1.7：已结束（出结果 / 报错 / 超时）的子站 id 集合。
+  // 搜索中左侧只渲染「已结束且有结果」的子站 → 随每个源返回逐个出现，不再是开局铺满一片。
+  const [doneSources, setDoneSources] = useState<Set<string>>(() => new Set());
 
   // #8：中文输入法组字中（拼音还没上屏）——此时按搜索键不能拿拼音去搜
   const composingRef = useRef(false);
@@ -163,6 +166,7 @@ export function SearchView({
     if (resetSrc) { setActiveSource(ALL_KEY); clearSrcPref(); }
     else updateSrcKw(query); // V3.8.7 #1：保持子站选中，同步 pref 的搜索词
     setPage(1); // V3.6.5：新搜索回到第 1 页
+    setDoneSources(new Set()); // V4.1.7：清空「已结束子站」，左侧从空开始逐个长出
     setProgressText('跨源搜索中…');
     library.addSearch(query);
     // 展开 tvbox 子站（左侧源栏用 + 搜索逐源并发）
@@ -185,6 +189,16 @@ export function SearchView({
           setProgressText(
             done < total ? `已返回 ${done}/${total} 个源…` : `已搜完 ${total} 个源`
           );
+        },
+        // V4.1.7：某个源一结束就把它记进已完成集合，左侧子站随之「长出一个」
+        onSourceDone: (info) => {
+          if (mySeq !== searchSeqRef.current) return;
+          setDoneSources((prev) => {
+            if (prev.has(info.sourceId)) return prev;
+            const next = new Set(prev);
+            next.add(info.sourceId);
+            return next;
+          });
         },
         // #5：哪个源先回来就把它的结果先显示出来，不再干等最慢的源
         // V3.3.4：过期搜索的增量回调直接丢弃，不再覆盖最新结果
@@ -420,8 +434,11 @@ export function SearchView({
               </div>
             {expanded
               .filter((src) => {
-                // 搜索未完成（未搜/搜索中）：所有子站都显示，让用户看到哪些还在搜
-                if (!searched || loading) return true;
+                // V4.1.7：搜索中 → 只显示「已结束且有结果」的子站，随每个源返回逐个出现
+                // （对齐影视仓的渐进式左侧栏），不再开局就把整列子站连同「0」一起铺满。
+                if (loading) {
+                  return doneSources.has(src.id) && sourceState.get(src.id)?.kind === 'ok';
+                }
                 // 搜索完成：只显示有结果的子站，空结果/死源不占位置（V3.7.3 清单第4条）
                 return sourceState.get(src.id)?.kind === 'ok';
               })

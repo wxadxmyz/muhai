@@ -55,7 +55,7 @@ jobs:
 
       # 手动安装 Android SDK：android-actions/setup-android@v3 已失效（会装 preview cmdline-tools
       # 并尝试安装已废弃的 tools 包，导致 sdkmanager 退出码 1）。
-      - name: Setup Android SDK
+      - name: Setup Android SDK (cmdline-tools)
         run: |
           ANDROID_HOME=$HOME/android-sdk
           mkdir -p "$ANDROID_HOME/cmdline-tools"
@@ -66,6 +66,10 @@ jobs:
           echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+
+      # 本步才调用 sdkmanager（上一步写入的 $GITHUB_PATH 已对后续步骤生效）
+      - name: Install Android build deps
+        run: |
           yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1
           sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;${{ env.NDK_VERSION }}"
           echo "Installed NDK under: $ANDROID_HOME/ndk"

@@ -263,7 +263,9 @@ button.fav, .fav { color: var(--danger) !important; }
 /* V3.4.6 修正 V3.4.5 #3A 参照错误：与主页 .home-top 同一套逻辑，
    历史/收藏 tabs 上沿 = 状态栏底（margin-top:7px），padding-top:0 → 紧贴通知栏，
    空隙 0，与播放页视频一致。z-index:60 高于 .app::before(50)。 */
-.view.library .tabs { margin-top: 7px; padding-top: 0; z-index: 60; }
+/* V4.1.4 ④：.main 顶部 padding 已改回完整 var(--sat)（不再 -7px），这里原本用来抵消那 7px 的
+   margin-top 一并归零，历史/收藏 tabs 仍紧贴状态栏底，不多出空隙。 */
+.view.library .tabs { margin-top: 0; padding-top: 0; z-index: 60; }
 .tabs button { flex: 1; background: var(--panel2); border: none; color: var(--muted); padding: 10px; font-size: 13px; font-weight: 600; border-radius: var(--r-md, 12px); }
 /* V4.1.1 ②：去掉激活态的 box-shadow 外投影——该投影肥尾会漫到下方海报卡片顶部，
    历史/收藏页激活 Tab 像挂着一块脏影（去掉的是 var(--shadow) 令牌在此处的一次性使用，
@@ -927,7 +929,11 @@ button.fav, .fav { color: var(--danger) !important; }
      导致真机左右各空 28px、顶部安全区失效、直播页整页可滚。这里用更高特异性(0,2,1)抢回覆盖。 */
   /* v3.2.1 ①②③：顶栏整体上移约 4mm（15px）。主页 .home-top / 历史收藏 .tabs / 设置 .settings-scroll 共用此容器，
      统一把 .main 顶部 padding 从 8+sat 减到 sat-7（≈15px），三处标题同步上移，目标约 37/33/35px（sat=26 基准）。 */
-  .app .main:not(.main-live) { padding: calc(var(--sat) - 7px) 14px calc(50px + var(--sab) + 80px); }
+  /* V4.1.4 ④：sat-7 → sat。那 7px 是 v3.2.1「整体上移」的历史欠账，正好让顶栏上沿钻进状态栏 7px
+     （正常冷启动勉强看不出，从网盘页返回后 --sat 变小就明显压住搜索框/logo）。改为完整 sat 后
+     顶栏上沿 = 状态栏底，空隙 0。同步补偿另外两页：.view.library .tabs 去掉 margin-top:7px、
+     移动端 .settings-scroll 顶部 14 → 7，三页视觉位置保持不跳。 */
+  .app .main:not(.main-live) { padding: var(--sat) 14px calc(50px + var(--sab) + 80px); }
   /* 特异性必须高于桌面 `.main:not(button)`(0,2,1)：用 .app .main.main-live(0,3,0) 抢回直播页 padding:0 + overflow:hidden */
   .app .main.main-live { padding: 0; overflow: hidden; height: 100%; }
   /* V3.6.6 C：设置页左右边距对齐仓库管理页。
@@ -936,7 +942,9 @@ button.fav, .fav { color: var(--danger) !important; }
      .fullpage-body，左右只有 14px。这里把 .settings-scroll 的左右去掉，两边即一致。
      只动左右、不动上下：顶部位置由 .home-top/.tabs/.settings-scroll 共用容器统一上移算出
      （见上方 893 注释），改 top 会连带改设置页标题的垂直位置。 */
-  .settings-scroll { padding-left: 0; padding-right: 0; }
+  /* V4.1.4 ④：.main 顶部 padding 由 sat-7 改回 sat（+7px），这里把设置页自身顶部 padding 相应减 7，
+     标题视觉位置与改前一致，不往下跳。 */
+  .settings-scroll { padding-left: 0; padding-right: 0; padding-top: 7px; }
   /* A8（v3.1.12 重做）：不再用 sticky::before 挡板（会留 14px 缝隙、且把 home-top 双重下推成「太靠下」）。
      滚动容器 .main 的 padding-top(14px+var(--sat)) 本身就是「天花板」——内容无法滚过容器顶部。
      移动端另加下方 .app::before 固定遮罩，罩住状态栏那条区域（含点播竖屏页），上滑时被它挡住。 */

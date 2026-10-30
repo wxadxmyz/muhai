@@ -106,18 +106,35 @@ fn webview_ua(
     rx.recv().map_err(|e| e.to_string())?
 }
 
-/// P2：JNI 实测状态栏高度（px）。外站登录页没有 viewport-fit=cover，env(safe-area-inset-top)
-/// 取不到，故走 Android Resources。取不到时返回 0（顶栏贴顶，与不测量时表现一致，不退化）。
+/// P2：JNI 实测状态栏高度。外站登录页没有 viewport-fit=cover，env(safe-area-inset-top)
+/// 取不到，故走 Android Resources。
+/// V4.1.4 ③：同时返回 (物理px, CSS px)。CSS px = 物理px / DisplayMetrics.density，
+/// 由原生直接算好，避免 JS 侧除 devicePixelRatio 在桌面 UA 下漂移导致顶栏错位。
+/// 取不到时返回 (0,0)（顶栏贴顶，与不测量时表现一致，不退化）。
 #[cfg(target_os = "android")]
-fn status_bar_height_px(webview: &tauri::webview::PlatformWebview) -> f64 {
+fn status_bar_metrics(webview: &tauri::webview::PlatformWebview) -> (f64, f64) {
     use jni::objects::JValue;
-    let (tx, rx) = std::sync::mpsc::channel::<f64>();
+    let (tx, rx) = std::sync::mpsc::channel::<(f64, f64)>();
     webview.jni_handle().exec(move |env, activity, _wv| {
-        let res = (|| -> Result<f64, jni::errors::Error> {
+        let res = (|| -> Result<(f64, f64), jni::errors::Error> {
             // activity.getResources()
             let resources = env
                 .call_method(activity, "getResources", "()Landroid/content/res/Resources;", &[])?
                 .l()?;
+            // DisplayMetrics.density：1.0 = mdpi，3.0 = xxhdpi（与 devicePixelRatio 同一量纲）
+            let density = (|| -> Result<f64, jni::errors::Error> {
+                let dm = env
+                    .call_method(
+                        &resources,
+                        "getDisplayMetrics",
+                        "()Landroid/util/DisplayMetrics;",
+                        &[],
+                    )?
+                    .l()?;
+                let d = env.get_field(&dm, "density", "F")?.f()?;
+                Ok(d as f64)
+            })()
+            .unwrap_or(0.0);
             let name_j = env.new_string("status_bar_height")?;
             let dimen_j = env.new_string("dimen")?;
             let android_j = env.new_string("android")?;
@@ -134,17 +151,46 @@ fn status_bar_height_px(webview: &tauri::webview::PlatformWebview) -> f64 {
                 )?
                 .i()?;
             if id <= 0 {
-                return Ok(24.0 * 3.0); // 取不到资源时给一个 3x 屏的常见近似（~72px）
+                return Ok((24.0 * 3.0, if density > 0.5 { 24.0 } else { 0.0 }));
             }
             let px = env
                 .call_method(&resources, "getDimensionPixelSize", "(I)I", &[JValue::Int(id)])?
                 .i()?;
-            Ok(px as f64)
+            let css = if density > 0.5 {
+                (px as f64) / density
+            } else {
+                0.0
+            };
+            Ok((px as f64, css))
         })()
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0.0));
         let _ = tx.send(res);
     });
-    rx.recv().unwrap_or(0.0)
+    rx.recv().unwrap_or((0.0, 0.0))
+}
+
+/// V4.1.4 ③：把系统真实状态栏高度（CSS px）交给前端，作为 --sat 的权威值。
+/// 背景：--sat 原来只靠探针量 env(safe-area-inset-top)，冷启动能测到、从网盘页(外域)
+/// 导航回本地页时首帧量到 0 → 落到 28px 兜底，两次数值不一致，表现为"返回首页后顶栏被
+/// 通知栏压住"。改用系统值后两条路径拿到同一个数，不再漂移。
+/// 非 Android 返回 0（前端继续用 env()/兜底）。
+#[tauri::command]
+async fn safe_area_top(app: tauri::AppHandle) -> Result<f64, String> {
+    #[cfg(target_os = "android")]
+    {
+        let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+        let (tx, rx) = std::sync::mpsc::channel::<f64>();
+        let _ = window.with_webview(move |wv| {
+            let (_, css) = status_bar_metrics(&wv);
+            let _ = tx.send(css);
+        });
+        Ok(rx.recv().unwrap_or(0.0))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(0.0)
+    }
 }
 
 /// 在 App 内 WebView 打开网盘登录页。
@@ -204,23 +250,28 @@ async fn open_netdisk_login(
     }
 
     // P2：测量状态栏高度（Android 经 JNI；非 Android 为 0），注入脚本据此把顶栏背景铺满状态栏
+    // V4.1.4 ③：同时拿 CSS px（原生除 density），注入给 __ND_TOP_CSS 优先使用
     #[cfg(target_os = "android")]
-    let top_px: f64 = {
-        let (tx, rx) = std::sync::mpsc::channel::<f64>();
+    let (top_px, top_css): (f64, f64) = {
+        let (tx, rx) = std::sync::mpsc::channel::<(f64, f64)>();
         let w = window.clone();
         let _ = w.with_webview(move |wv| {
-            let r = status_bar_height_px(&wv);
+            let r = status_bar_metrics(&wv);
             let _ = tx.send(r);
         });
-        rx.recv().unwrap_or(0.0)
+        rx.recv().unwrap_or((0.0, 0.0))
     };
     #[cfg(not(target_os = "android"))]
-    let top_px: f64 = 0.0;
+    let (top_px, top_css): (f64, f64) = (0.0, 0.0);
 
     // P2：把状态栏高度常量前置进注入脚本，供 __ndEnsureBar 使用；并前置回跳地址 __ND_BACK
     // （back_json 已在 move 前计算，此处仅复用）
-    let capture_script =
-        format!("const __ND_TOP = {top_px};\nconst __ND_BACK = {back_json};\n{capture_script}");
+    // V4.1.4：const → var。本脚本每秒被重注入到同一文档，全局 `const` 重复声明会抛
+    // SyntaxError 让整段脚本不执行（顶栏/token 抓取全失效）；`var` 重复声明安全，
+    // 且会挂到 window 上（`window.__ND_BACK` 也能取到，与裸变量两种写法都兼容）。
+    let capture_script = format!(
+        "var __ND_TOP = {top_px};\nvar __ND_TOP_CSS = {top_css};\nvar __ND_BACK = {back_json};\n{capture_script}"
+    );
 
     // P1：保存捕获脚本；夸克等会整页跳转子页，一次性注入会被销毁 → 返回键/token 丢失。
     // 改用 Rust 侧定时重注入（脚本幂等：__ndEnsureBar 自带存在性判断，setInterval 用
@@ -394,7 +445,9 @@ pub fn run() {
             open_netdisk_login,
             close_netdisk_login,
             // P3：前端在 App 顶层主动取出登录抓到的 token（Rust 侧暂存）
-            take_netdisk_token
+            take_netdisk_token,
+            // V4.1.4 ③：系统真实状态栏高度（CSS px），作为 --sat 权威值，冷启动/网盘返回同一数值
+            safe_area_top
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

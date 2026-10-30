@@ -310,13 +310,22 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   // 阿里登录会跳转到 passport.aliyun.com 等未放行域，close 命令被静默拒绝；hash 回跳让主 WebView
   // 直接导航回本地 App 页，token 经 hash 带回，前端 hashchange 消费后即落盘）。
   // 无 token（手动关闭/返回键）：先尝试 invoke close_netdisk_login，失败再 hash 回跳兜底。
+  // V4.1.4 ②：Rust 注入的是 `const __ND_BACK` / IIFE 内的 `var __ND_PROVIDER`，
+  // 两者都**不会**挂到 window 上（const 不创建 window 属性），旧写法 `window.__ND_BACK` 恒为 ''，
+  // 导致点 × 时 location.href='' 原地不动 = "返回不了"；登录成功时 target 退化成 '#?ndtok='，
+  // 只改了远程页自己的 hash，token 也从没回到 App。这里统一改裸变量 + typeof 兜底。
   const close = `function __ndClose(tok){
     if (window.__ND_DONE) return;
     window.__ND_DONE = true;
+    var __ND_BACK_URL = '';
+    try { __ND_BACK_URL = (typeof __ND_BACK !== 'undefined' && __ND_BACK) ? __ND_BACK : ''; } catch(e) { __ND_BACK_URL = ''; }
     try {
       if (tok) {
-        var enc = encodeURIComponent((window.__ND_PROVIDER) + ':' + tok);
-        var b = window.__ND_BACK || '';
+        var prov = '';
+        try { prov = (typeof __ND_PROVIDER !== 'undefined' && __ND_PROVIDER) ? __ND_PROVIDER : ''; } catch(e) { prov = ''; }
+        var enc = encodeURIComponent(prov + ':' + tok);
+        var b = __ND_BACK_URL;
+        if (!b) { return; }
         var parts = b.split('#'); var base = parts[0]; var h = parts[1] || '';
         var sep = h.indexOf('?') >= 0 ? '&' : '?';
         var target = base + '#' + h + sep + 'ndtok=' + enc;
@@ -324,12 +333,12 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
         return;
       }
       if (window.__TAURI__ && window.__TAURI__.invoke) {
-        window.__TAURI__.invoke('close_netdisk_login', {}).catch(function(){ try { location.href = window.__ND_BACK; } catch(e){} });
+        window.__TAURI__.invoke('close_netdisk_login', {}).catch(function(){ try { if(__ND_BACK_URL) location.href = __ND_BACK_URL; } catch(e){} });
       } else {
-        try { location.href = window.__ND_BACK; } catch(e){}
+        try { if(__ND_BACK_URL) location.href = __ND_BACK_URL; } catch(e){}
       }
     } catch(e) {
-      try { location.href = window.__ND_BACK; } catch(e2){}
+      try { if(__ND_BACK_URL) location.href = __ND_BACK_URL; } catch(e2){}
     }
   }`;
   // V4.1.3 #5：三个网盘顶栏统一软件默认白色皮肤（不再按盘差异化配色 / 去橙色分隔线）
@@ -359,24 +368,27 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   } catch (e) {}
 
   // 悬浮返回顶栏（沉浸式：背景铺满状态栏，内容下移到安全区）
-  // V4.1.3 #8：登录页在桌面 UA 下往往按固定宽布局（>视口），需横向滑动才能看到登录框。
-  // 这里按设备宽度等比缩放整页（zoom），让登录框落在首屏可见区（尽力而为；zoom 在部分 WebView 不生效）。
-  function __ndFit(){
-    try {
-      var sw = Math.max(document.documentElement.scrollWidth || 0, (document.body ? document.body.scrollWidth : 0) || 0);
-      if (sw > window.innerWidth + 4) {
-        document.documentElement.style.zoom = String(window.innerWidth / sw);
-      } else {
-        document.documentElement.style.zoom = '1';
-      }
-    } catch(e){}
-  }
+  // V4.1.4 ①：回退 V4.1.3 第 8 条——删除 __ndFit（整页 zoom 缩放）。
+  // zoom 会把 position:fixed 的顶栏连高度带 padding 一起缩放，顶栏定位与真实状态栏对不上，
+  // 表现为"顶栏被通知栏压住"；且部分 WebView 里 zoom 还会污染 getBoundingClientRect 的测量。
+  // 登录页恢复成改之前的样子（不缩放）。
 
   function __ndEnsureBar(){
     if (document.getElementById('__nd_bar')) return;
-    var TOP = (typeof __ND_TOP !== 'undefined' && __ND_TOP > 0) ? __ND_TOP : 0; // 来自 Rust JNI 实测状态栏物理像素
-    // V4.1.3 #1：物理像素 → CSS 像素（除以 DPR），否则在 ~3x 屏上空白被放大 3 倍
-    try { var DPR = window.devicePixelRatio || 1; if (DPR > 1) TOP = Math.round(TOP / DPR); } catch(e){}
+    // V4.1.4 ③：状态栏高度优先取 Rust 算好的 CSS px（__ND_TOP_CSS = 物理px / density），
+    // 不再在 JS 里除 devicePixelRatio —— 桌面 UA 下部分 WebView 的 DPR 会漂，
+    // 除错就整条顶栏错位（表现为被通知栏压住 / 悬空）。物理值仅作旧脚本兜底。
+    var TOP = 0;
+    try {
+      if (typeof __ND_TOP_CSS !== 'undefined' && __ND_TOP_CSS > 0) {
+        TOP = __ND_TOP_CSS;
+      } else if (typeof __ND_TOP !== 'undefined' && __ND_TOP > 0) {
+        var DPR = window.devicePixelRatio || 1;
+        TOP = DPR > 1 ? Math.round(__ND_TOP / DPR) : __ND_TOP;
+      }
+    } catch(e) { TOP = 0; }
+    // 留 2px 余量：部分 ROM 的 status_bar_height 不含通知横幅弹出的额外高度
+    if (TOP > 0) TOP += 2;
     var H = 48;
     var bg = __ND_THEME.bg, fg = __ND_THEME.fg, sep = __ND_THEME.sep;
     var bar = document.createElement('div');
@@ -406,7 +418,6 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   if (!window.__ND_INTERVAL) {
     window.__ND_INTERVAL = setInterval(function(){
       try { __ndEnsureBar(); } catch(e){}
-      try { __ndFit(); } catch(e){}
       if (window.__ND_DONE) return;
       var t = '';
       try { t = __ND_GETTER(); } catch(e){ t = ''; }
@@ -417,6 +428,5 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   }
   // 立即先来一次（页面已就绪时）
   try { __ndEnsureBar(); } catch(e){}
-  try { __ndFit(); } catch(e){}
 })();`;
 }

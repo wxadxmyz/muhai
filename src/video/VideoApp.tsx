@@ -8,7 +8,7 @@ import { useGlobalShortcuts } from '../lib/shortcuts';
 import { useSwipeBack } from '../lib/swipeBack';
 import { MediaItem, createSource, findSourceConfig } from '../engine';
 import { alistClient } from '../lib/alistClient';
-import { setNetdiskToken, type NetdiskKey } from '../lib/netdisk';
+import { setNetdiskToken, syncNetdiskTokens, setupNetdiskTokenListener, type NetdiskKey } from '../lib/netdisk';
 import { SearchView } from '../components/SearchView';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { VideoPlayer } from './VideoPlayer';
@@ -42,9 +42,12 @@ export default function VideoApp() {
   const [mode, setMode] = useState(getDeviceMode());
   useEffect(() => onDeviceModeChange(setMode), []);
 
-  // P3：App 顶层消费网盘登录回传的 token（Rust 侧暂存 → 这里主动取）。
-  // 落在任何页面都能落盘，避免「返回后已挂载列表为空、需重启 App」的问题。
+  // V4.1.3：消费登录回跳带回的 token（hash 通道），并注册 hashchange / visibilitychange
+  // 监听，保证登录回到 App 后挂载列表即时上屏（无需重启 App）。
   useEffect(() => {
+    syncNetdiskTokens();
+    setupNetdiskTokenListener();
+    // 兼容旧回传通道（Rust 暂存）：仍尝试取一次
     invoke<[string, string] | null>('take_netdisk_token')
       .then((r) => { if (r && r.length === 2) setNetdiskToken(r[0] as NetdiskKey, r[1]); })
       .catch(() => {});

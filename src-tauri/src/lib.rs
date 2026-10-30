@@ -213,8 +213,10 @@ async fn open_netdisk_login(
     #[cfg(not(target_os = "android"))]
     let top_px: f64 = 0.0;
 
-    // P2：把状态栏高度常量前置进注入脚本，供 __ndEnsureBar 使用
-    let capture_script = format!("const __ND_TOP = {top_px};\n{capture_script}");
+    // P2：把状态栏高度常量前置进注入脚本，供 __ndEnsureBar 使用；并前置回跳地址 __ND_BACK
+    let back_json = serde_json::to_string(&back_url).unwrap_or_else(|_| "\"\"".to_string());
+    let capture_script =
+        format!("const __ND_TOP = {top_px};\nconst __ND_BACK = {back_json};\n{capture_script}");
 
     // P1：保存捕获脚本；夸克等会整页跳转子页，一次性注入会被销毁 → 返回键/token 丢失。
     // 改用 Rust 侧定时重注入（脚本幂等：__ndEnsureBar 自带存在性判断，setInterval 用
@@ -237,7 +239,19 @@ async fn open_netdisk_login(
                 break;
             }
             if let Some(w) = ri_app.get_webview_window("main") {
-                let _ = w.eval(&ri_script);
+                let url = w.url().map(|u| u.to_string()).unwrap_or_default();
+                let is_remote = url.contains("aliyundrive.com")
+                    || url.contains("quark.cn")
+                    || url.contains("uc.cn");
+                if is_remote {
+                    // 远程登录页：注入返回顶栏 + 抓 token 脚本（幂等：__ndEnsureBar 自带存在性判断）
+                    let _ = w.eval(&ri_script);
+                } else {
+                    // V4.1.3 #4：已回本地页（如 hash 回跳带回 token），自动收尾：
+                    // 清状态 + 恢复 UA + 停止注入，彻底避免首页残留顶栏、注入循环空转。
+                    let _ = netdisk_finalize(&ri_app);
+                    break;
+                }
             }
             ticks += 1;
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -249,57 +263,78 @@ async fn open_netdisk_login(
     window.navigate(target).map_err(|e| e.to_string())?;
 
     // 立即注入一次（兜底；页面若尚未就绪，__ndEnsureBar/setInterval 仍会反复尝试）
-    let _ = window.eval(&capture_script);
+    // V4.1.3 #4：仅对远程登录页注入，避免 navigate 尚未生效时往本地页误注入顶栏
+    let url_now = window.url().map(|u| u.to_string()).unwrap_or_default();
+    let is_remote_now = url_now.contains("aliyundrive.com")
+        || url_now.contains("quark.cn")
+        || url_now.contains("uc.cn");
+    if is_remote_now {
+        let _ = window.eval(&capture_script);
+    }
 
     Ok(())
 }
 
-/// 网盘登录结束：可选保存 token、重置 UA、跳转回 App。
+/// V4.1.3 #4：登录流程收尾——恢复原始 UA（仅 Android 且有记录时），并清理登录状态与注入脚本。
+/// 供「注入循环检测到已回本地页」与「close_netdisk_login」共用，保证无论哪条路径都能干净收尾。
+fn netdisk_finalize(app: &tauri::AppHandle) -> Result<(), String> {
+    // 先取出原 UA（需在清空状态之前）
+    let original_ua = {
+        let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
+        let s = state.lock().map_err(|e| e.to_string())?;
+        s.as_ref().map(|st| st.original_ua.clone()).unwrap_or_default()
+    };
+    // Android：恢复原始 UA（登录时改成了桌面 UA）
+    if !original_ua.is_empty() {
+        #[cfg(target_os = "android")]
+        {
+            let original = original_ua.clone();
+            let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+            let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
+            window
+                .with_webview(move |wv| {
+                    let r = webview_ua(&wv, Some(original));
+                    let _ = tx.send(r);
+                })
+                .map_err(|e| e.to_string())?;
+            rx.recv().map_err(|e| e.to_string())??;
+        }
+    }
+    // 清理登录状态与注入脚本，避免残留监听器继续往页面注入
+    if let Ok(mut s) = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None)).lock() {
+        *s = None;
+    }
+    if let Ok(mut s) = ND_SCRIPT.lock() {
+        *s = None;
+    }
+    Ok(())
+}
+
+/// 网盘登录结束：保存 token（兼容旧通道）、重置 UA、跳转回 App。
 #[tauri::command]
 async fn close_netdisk_login(app: tauri::AppHandle, token: Option<String>) -> Result<(), String> {
-    let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
-    let (_original_ua, back_url, provider) = {
+    // 先读回跳地址与 provider（netdisk_finalize 会清空状态，必须在之前读）
+    let (back_url, provider) = {
+        let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
         let s = state.lock().map_err(|e| e.to_string())?;
         let st = s.as_ref().ok_or("当前未处于网盘登录流程")?;
-        (st.original_ua.clone(), st.back_url.clone(), st.provider.clone())
+        (st.back_url.clone(), st.provider.clone())
     };
 
-    let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
-
-    // Android：恢复原始 UA
-    #[cfg(target_os = "android")]
-    if !_original_ua.is_empty() {
-        let original = _original_ua.clone();
-        let (tx, rx) = std::sync::mpsc::channel::<Result<Option<String>, String>>();
-        window
-            .with_webview(move |wv| {
-                let r = webview_ua(&wv, Some(original));
-                let _ = tx.send(r);
-            })
-            .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())??;
-    }
-
-    // P3：token 不再塞进 URL（阿里 localStorage['token'] 是整段 JSON，塞进 query 会被 Tauri
-    // asset protocol 当成资源路径，导航失败 → "返回后像卡死/只能重启"）。改为暂存 Rust 全局，
-    // 由前端 take_netdisk_token 主动取，落在任何页面都能落盘。
+    // 暂存 token（兼容旧通道；新通道走 hash 回跳，Rust 不再依赖此暂存）
     if let Some(t) = &token {
         if let Ok(mut g) = PENDING_ND.lock() {
             *g = Some((provider.clone(), t.clone()));
         }
     }
 
+    // V4.1.3 #4：统一收尾（恢复 UA + 清状态 + 清注入脚本）
+    netdisk_finalize(&app)?;
+
     // 直接导航回干净的 back_url（hash 路由已在 JS 侧保留）
+    let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
     let target = back_url.parse().map_err(|e: url::ParseError| e.to_string())?;
     window.navigate(target).map_err(|e| e.to_string())?;
-
-    // 清理状态（含注入脚本，避免残留监听器继续注入）
-    if let Ok(mut s) = state.lock() {
-        *s = None;
-    }
-    if let Ok(mut s) = ND_SCRIPT.lock() {
-        *s = None;
-    }
     Ok(())
 }
 
@@ -670,11 +705,20 @@ async fn fetchsource(url: String) -> Result<String, String> {
 // —— 后者用于 HLS.js 以最终 URL 为 base 解析 master playlist 里的相对路径 variant
 //    （如 CCTV1 的 live.php 302 到 migu 后，variant 是相对路径 `01.m3u8?...`）。
 #[tauri::command]
-async fn fetchmedia(url: String, headers: Option<std::collections::HashMap<String, String>>) -> Result<String, String> {
+async fn fetchmedia(
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+    // V4.1.3 #7：新增 body 参数，支持 POST（已登录网盘文件列表等需带 JSON body 的 API）。
+    // 前端不传则为 None，现有媒体代理调用不受影响。
+    body: Option<String>,
+) -> Result<String, String> {
     use base64::Engine;
-    let mut req = http_client()
-        .get(&url)
-        .timeout(std::time::Duration::from_secs(30));
+    let mut req = if body.is_some() {
+        http_client().post(&url)
+    } else {
+        http_client().get(&url)
+    }
+    .timeout(std::time::Duration::from_secs(30));
     let mut has_ua = false;
     if let Some(hs) = &headers {
         for (k, v) in hs {
@@ -689,6 +733,9 @@ async fn fetchmedia(url: String, headers: Option<std::collections::HashMap<Strin
         req = req.header("User-Agent", "okhttp/4.10.0");
     }
     req = req.header("Accept", "*/*");
+    if let Some(b) = &body {
+        req = req.header("Content-Type", "application/json").body(b.clone());
+    }
     let resp = req.send().await.map_err(friendly_net_err)?;
     let status = resp.status();
     if !status.is_success() {

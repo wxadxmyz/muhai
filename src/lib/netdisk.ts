@@ -6,6 +6,8 @@
 // 播放侧对接：启动时把已存 token 同步到 window.__netdiskTokens（{ali,quark,uc}），
 // 社区 drpy2 网盘源的 rule 脚本里用 globalThis.__netdiskTokens.<provider> 拼请求头即可，引擎无需改动。
 
+import { invoke } from '@tauri-apps/api/core';
+
 export type NetdiskKey = 'ali' | 'quark' | 'uc';
 
 export interface NetdiskProvider {
@@ -99,9 +101,12 @@ function writeStore(map: TokenMap) {
 /** 启动时调用：把已存 token 挂到 window，供 spider 引擎读取。
  *  选项 B（V3.2.5）：若 URL query 携带网盘登录回传的 token（主 WebView 跳回 App 时带入，
  *  形如 ?ndtok=<provider>:<token>），先消费并写入，再清除参数，避免重复消费。 */
-export function syncNetdiskTokens() {
+/** 从 URL（search 或 hash）消费网盘登录回传的 token 并落盘；返回是否被消费。 */
+export function consumeNetdiskTokenFromUrl(): boolean {
   try {
-    const m = (window.location.search || '').match(/ndtok=([^&]+)/);
+    const m =
+      (window.location.search || '').match(/ndtok=([^&]+)/) ||
+      (window.location.hash || '').match(/[?&]ndtok=([^&]+)/);
     if (m) {
       const raw = decodeURIComponent(m[1]);
       const ci = raw.indexOf(':');
@@ -111,17 +116,40 @@ export function syncNetdiskTokens() {
         if (token) {
           const map = readStore();
           map[key] = token;
-          writeStore(map);
+          writeStore(map); // 内部会 dispatch 'netdisk-tokens-changed'，触发挂载列表即时刷新
         }
       }
-      // 清除 ?ndtok，避免下次 startup 重复消费
+      // 清除 ndtok（search 或 hash 内），避免重复消费
       try {
-        const cleaned = window.location.search.replace(/[?&]ndtok=[^&]+/, '').replace(/\?$/, '');
-        history.replaceState(null, '', window.location.pathname + cleaned + window.location.hash);
+        let url = window.location.href
+          .replace(/[?&]ndtok=[^&]+/, '')
+          .replace(/#&/, '#')
+          .replace(/\?$/, '')
+          .replace(/#\?$/, '#');
+        history.replaceState(null, '', url);
       } catch { /* ignore */ }
+      return true;
     }
   } catch { /* ignore */ }
+  return false;
+}
+
+/** 启动时调用：把已存 token 挂到 window，并消费 URL 中可能携带的回传 token。 */
+export function syncNetdiskTokens() {
+  consumeNetdiskTokenFromUrl();
   (window as any).__netdiskTokens = readStore();
+}
+
+/** 在 App 顶层注册 hashchange / visibilitychange 监听，自动消费登录回跳带来的 token
+ *  （登录后回到 App 不重启，hashchange 会触发；从后台切回也会触发）。 */
+export function setupNetdiskTokenListener() {
+  const handler = () => {
+    consumeNetdiskTokenFromUrl();
+  };
+  window.addEventListener('hashchange', handler);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') handler();
+  });
 }
 
 export function getNetdiskToken(key: NetdiskKey): string | undefined {
@@ -142,6 +170,96 @@ export function clearNetdiskToken(key: NetdiskKey) {
   const map = readStore();
   delete map[key];
   writeStore(map);
+}
+
+export interface NdFile {
+  name: string;
+  id: string;
+  isDir: boolean;
+  size: number;
+}
+
+// V4.1.3 #7：已登录网盘文件浏览——经 Rust fetchmedia 代理（带鉴权头 + body）请求各盘 API，
+// 绕开 WebView 的 CORS 与 Android 明文限制。阿里/夸克/UC 的个人 API 普遍需要逆向签名
+// （x-sign / pr / sign），未签名请求可能被服务端拒绝；此处 best-effort 适配，调用失败由 UI 友好提示。
+async function ndRequest(url: string, headers: Record<string, string>, body?: string): Promise<any> {
+  const res = await invoke<{ data: string; url: string }>('fetchmedia', { url, headers, body });
+  const text = atob(res.data);
+  return JSON.parse(text);
+}
+
+export async function listNetdiskFiles(key: NetdiskKey, token: string, parentId: string): Promise<NdFile[]> {
+  if (key === 'ali') return await aliList(token, parentId);
+  if (key === 'quark') return await quarkList(token, parentId);
+  if (key === 'uc') return await ucList(token, parentId);
+  return [];
+}
+
+async function aliList(token: string, parentId: string): Promise<NdFile[]> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'x-device-id': 'null',
+  };
+  const info = await ndRequest('https://api.aliyundrive.com/v2/user/getDriveInfo', headers, '{}');
+  const driveId = info?.default_drive_id || info?.drive_id;
+  if (!driveId) throw new Error('无法获取阿里云盘 driveId');
+  const list = await ndRequest(
+    'https://api.aliyundrive.com/v2/file/list',
+    headers,
+    JSON.stringify({
+      drive_id: driveId,
+      parent_file_id: parentId || 'root',
+      limit: 100,
+      order_by: 'name',
+      order_direction: 'ASC',
+    }),
+  );
+  return (list?.items || []).map((f: any) => ({
+    name: f.name,
+    id: f.file_id,
+    isDir: f.type === 'folder',
+    size: f.size || 0,
+  }));
+}
+
+async function quarkList(token: string, parentId: string): Promise<NdFile[]> {
+  const headers: Record<string, string> = { cookie: token, 'Content-Type': 'application/json' };
+  const body = JSON.stringify({
+    parentId: parentId || '',
+    fileId: parentId || '',
+    page: 1,
+    pageSize: 100,
+    orderBy: 'name',
+    orderDirection: 'asc',
+  });
+  const r = await ndRequest('https://drive-pan.quark.cn/1/clouddrive/file/sort', headers, body);
+  const arr = r?.data?.list || [];
+  return arr.map((f: any) => ({
+    name: f.file_name,
+    id: f.fid,
+    isDir: f.file_type === 0 || f.file_type === 1,
+    size: f.size || 0,
+  }));
+}
+
+async function ucList(token: string, parentId: string): Promise<NdFile[]> {
+  const headers: Record<string, string> = { cookie: token, 'Content-Type': 'application/json' };
+  const body = JSON.stringify({
+    parentId: parentId || '0',
+    orderBy: 'name',
+    orderDirection: 'asc',
+    pageNum: 1,
+    pageSize: 100,
+  });
+  const r = await ndRequest('https://drive.uc.cn/api/file/list', headers, body);
+  const arr = r?.data?.list || [];
+  return arr.map((f: any) => ({
+    name: f.name,
+    id: f.id,
+    isDir: f.isDir === true || f.fileType === 'folder',
+    size: f.size || 0,
+  }));
 }
 
 /**
@@ -188,44 +306,77 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
     p.captureMode === 'localStorage'
       ? `function(){try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';}`
       : `function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
-  // 返回 / 抓到 token 后调用 Rust 命令；withGlobalTauri 已在 tauri.conf 开启
-  // V4.1.1 ⑧：invoke 返回的是 Promise——远程登录页里这个调用此前被 ACL 拦截
-  // （capability 没配 remote.urls），而同步 try/catch 抓不到异步 reject，按钮"按了
-  // 没反应"就是这么来的（静默失败）。补 .catch 让失败至少在控制台现形；
-  // 同时删掉全仓库无人定义的 __ndFallback 死代码分支。
-  const close = `function __ndClose(tok){try{if(window.__TAURI__&&window.__TAURI__.invoke){window.__TAURI__.invoke('close_netdisk_login',tok?{token:tok}:{}).catch(function(e){try{console.error('[netdisk] close_netdisk_login rejected',e);}catch(_e){}});}else{try{console.error('[netdisk] window.__TAURI__ unavailable on login page');}catch(_e){}}}catch(e){try{console.error('[netdisk] __ndClose sync error',e);}catch(_e){}}}`;
-  // P2：三网盘沉浸式顶栏主题（阿里深色；夸克/UC 浅色——状态栏图标深浅由系统决定，浅底最稳）
-  const theme =
-    p.key === 'ali'
-      ? { bg: '#0f1524', fg: '#ffffff', sep: 'none' }
-      : p.key === 'quark'
-        ? { bg: '#ffffff', fg: '#1a1a1a', sep: '1px solid rgba(0,0,0,.06)' }
-        : { bg: '#ffffff', fg: '#1a1a1a', sep: '2px solid ' + (p.color || '#ff6a00') };
+  // V4.1.3：回传改造——抓到 token 后用 hash 回跳（最稳，彻底绕开远程页 invoke 的 ACL 限制：
+  // 阿里登录会跳转到 passport.aliyun.com 等未放行域，close 命令被静默拒绝；hash 回跳让主 WebView
+  // 直接导航回本地 App 页，token 经 hash 带回，前端 hashchange 消费后即落盘）。
+  // 无 token（手动关闭/返回键）：先尝试 invoke close_netdisk_login，失败再 hash 回跳兜底。
+  const close = `function __ndClose(tok){
+    if (window.__ND_DONE) return;
+    window.__ND_DONE = true;
+    try {
+      if (tok) {
+        var enc = encodeURIComponent((window.__ND_PROVIDER) + ':' + tok);
+        var b = window.__ND_BACK || '';
+        var parts = b.split('#'); var base = parts[0]; var h = parts[1] || '';
+        var sep = h.indexOf('?') >= 0 ? '&' : '?';
+        var target = base + '#' + h + sep + 'ndtok=' + enc;
+        try { location.href = target; } catch(e){ try{ location.replace(target); }catch(e2){} }
+        return;
+      }
+      if (window.__TAURI__ && window.__TAURI__.invoke) {
+        window.__TAURI__.invoke('close_netdisk_login', {}).catch(function(){ try { location.href = window.__ND_BACK; } catch(e){} });
+      } else {
+        try { location.href = window.__ND_BACK; } catch(e){}
+      }
+    } catch(e) {
+      try { location.href = window.__ND_BACK; } catch(e2){}
+    }
+  }`;
+  // V4.1.3 #5：三个网盘顶栏统一软件默认白色皮肤（不再按盘差异化配色 / 去橙色分隔线）
+  const theme = { bg: '#ffffff', fg: '#1a1a1a', sep: '1px solid rgba(0,0,0,.08)' };
   return `(()=>{
   ${close}
   var __ND_PROVIDER = ${JSON.stringify(p.key)};
   var __ND_GETTER = ${getter};
   var __ND_MATCH = ${must};
-  var __ND_DONE = false;
+  // V4.1.3：__ND_DONE 挂到 window，使 Rust 每秒重注入脚本时不会被重置为 false（避免"已关闭却仍重复触发"）
+  window.__ND_DONE = window.__ND_DONE || false;
   // P2：沉浸式顶栏主题（来自 buildCaptureNavScript 注入）
   var __ND_THEME = ${JSON.stringify(theme)};
 
   // P8：返回陷阱——手势/系统返回键触发 popstate 而非离开页面；接住后走正常关闭流程
   // （Rust 恢复 UA、导航回 App）。已在 close 流程里就不重复拦，避免打断自动关闭。
   try {
-    history.pushState({ __ndTrap: 1 }, '', location.href);
-    window.addEventListener('popstate', function () {
-      if (__ND_DONE) return;
-      __ND_DONE = true;
-      try { history.pushState({ __ndTrap: 1 }, '', location.href); } catch (e) {}
-      __ndClose(null);
-    });
+    if (!window.__ND_TRAP) {
+      window.__ND_TRAP = true;
+      history.pushState({ __ndTrap: 1 }, '', location.href);
+      window.addEventListener('popstate', function () {
+        if (window.__ND_DONE) return;
+        try { history.pushState({ __ndTrap: 1 }, '', location.href); } catch (e) {}
+        __ndClose(null);
+      });
+    }
   } catch (e) {}
 
   // 悬浮返回顶栏（沉浸式：背景铺满状态栏，内容下移到安全区）
+  // V4.1.3 #8：登录页在桌面 UA 下往往按固定宽布局（>视口），需横向滑动才能看到登录框。
+  // 这里按设备宽度等比缩放整页（zoom），让登录框落在首屏可见区（尽力而为；zoom 在部分 WebView 不生效）。
+  function __ndFit(){
+    try {
+      var sw = Math.max(document.documentElement.scrollWidth || 0, (document.body ? document.body.scrollWidth : 0) || 0);
+      if (sw > window.innerWidth + 4) {
+        document.documentElement.style.zoom = String(window.innerWidth / sw);
+      } else {
+        document.documentElement.style.zoom = '1';
+      }
+    } catch(e){}
+  }
+
   function __ndEnsureBar(){
     if (document.getElementById('__nd_bar')) return;
-    var TOP = (typeof __ND_TOP !== 'undefined' && __ND_TOP > 0) ? __ND_TOP : 0; // 来自 Rust JNI 实测状态栏高度
+    var TOP = (typeof __ND_TOP !== 'undefined' && __ND_TOP > 0) ? __ND_TOP : 0; // 来自 Rust JNI 实测状态栏物理像素
+    // V4.1.3 #1：物理像素 → CSS 像素（除以 DPR），否则在 ~3x 屏上空白被放大 3 倍
+    try { var DPR = window.devicePixelRatio || 1; if (DPR > 1) TOP = Math.round(TOP / DPR); } catch(e){}
     var H = 48;
     var bg = __ND_THEME.bg, fg = __ND_THEME.fg, sep = __ND_THEME.sep;
     var bar = document.createElement('div');
@@ -244,27 +395,28 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
       '<div style="flex:1;text-align:center;font-size:16px;font-weight:500;letter-spacing:.5px;">登录' + ${JSON.stringify(p.label)} + '</div>' +
       '<div style="width:44px;flex:0 0 44px;text-align:center;font-size:11px;opacity:.55;">幕海</div>';
     bar.querySelector('#__nd_close').onclick = function(){
-      if(!__ND_DONE){ __ND_DONE = true; __ndClose(null); }
+      if(!window.__ND_DONE){ __ndClose(null); }
     };
     (document.body||document.documentElement).appendChild(bar);
     if (document.body) document.body.style.paddingTop = (TOP + H) + 'px';
   }
 
-  // 每秒：确保顶栏在；抓 token。Rust 侧会定时重注入本脚本（扛夸克整页跳转），
+  // 每秒：确保顶栏在；适配视口缩放；抓 token。Rust 侧会定时重注入本脚本（扛夸克整页跳转），
   // 用 window.__ND_INTERVAL 防止同一文档里重复注册定时器导致堆叠。
   if (!window.__ND_INTERVAL) {
     window.__ND_INTERVAL = setInterval(function(){
       try { __ndEnsureBar(); } catch(e){}
-      if (__ND_DONE) return;
+      try { __ndFit(); } catch(e){}
+      if (window.__ND_DONE) return;
       var t = '';
       try { t = __ND_GETTER(); } catch(e){ t = ''; }
       if (t) {
-        __ND_DONE = true;
-        try { __ndClose(t); } catch(e){}
+        __ndClose(t);
       }
     }, 1000);
   }
   // 立即先来一次（页面已就绪时）
   try { __ndEnsureBar(); } catch(e){}
+  try { __ndFit(); } catch(e){}
 })();`;
 }

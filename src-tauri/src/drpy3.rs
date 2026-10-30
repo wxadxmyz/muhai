@@ -272,7 +272,7 @@ impl Drpy3Engine {
             if let Some(tokens) = &call.netdisk_tokens {
                 if let Ok(json) = serde_json::to_string(tokens) {
                     let expr = format!("globalThis.__netdiskTokens = {};", json);
-                    let _ = ctx.eval::<(), _>(&expr);
+                    let _ = ctx.eval::<(), _>(expr.as_str());
                 }
             }
 

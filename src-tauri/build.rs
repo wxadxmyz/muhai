@@ -27,6 +27,8 @@ fn main() {
                     // V3.7.8：网盘登录走 App 内 WebView + 桌面 UA + 注入返回/抓 token 脚本
                     "open_netdisk_login",
                     "close_netdisk_login",
+                    // P3：前端在 App 顶层主动取出登录抓到的 token（Rust 侧暂存）
+                    "take_netdisk_token",
                 ]),
         ),
     )

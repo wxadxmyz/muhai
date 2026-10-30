@@ -112,7 +112,7 @@ fn webview_ua(
 fn status_bar_height_px(webview: &tauri::webview::PlatformWebview) -> f64 {
     use jni::objects::JValue;
     let (tx, rx) = std::sync::mpsc::channel::<f64>();
-    webview.jni_handle().exec(|env, activity, _wv| {
+    webview.jni_handle().exec(move |env, activity, _wv| {
         let res = (|| -> Result<f64, jni::errors::Error> {
             // activity.getResources()
             let resources = env
@@ -216,21 +216,31 @@ async fn open_netdisk_login(
     // P2：把状态栏高度常量前置进注入脚本，供 __ndEnsureBar 使用
     let capture_script = format!("const __ND_TOP = {top_px};\n{capture_script}");
 
-    // P1：保存脚本，供每次页面加载完成时重新注入（幂等，按钮/轮询都会重建）；
-    // 同时注册 on_page_load 监听（解决夸克整页跳转子页后注入被销毁 → 按钮消失/token 抓不到）。
+    // P1：保存捕获脚本；夸克等会整页跳转子页，一次性注入会被销毁 → 返回键/token 丢失。
+    // 改用 Rust 侧定时重注入（脚本幂等：__ndEnsureBar 自带存在性判断，setInterval 用
+    // window.__ND_INTERVAL 防重复注册），导航后新文档也能重建捕获脚本。
     if let Ok(mut s) = ND_SCRIPT.lock() {
         *s = Some(capture_script.clone());
     }
-    let nd_window = window.clone();
-    window.on_webview_event(move |_wv, event| {
-        if let tauri::webview::WebviewEvent::PageLoad(payload) = event {
-            if payload.event() == tauri::webview::PageLoadEvent::Finished {
-                if let Ok(s) = ND_SCRIPT.lock() {
-                    if let Some(script) = s.as_ref() {
-                        let _ = nd_window.eval(script);
-                    }
-                }
+    let ri_app = app.clone();
+    let ri_script = capture_script.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut ticks: u32 = 0;
+        loop {
+            // 登录流程已结束（close_netdisk_login 清了状态）→ 退出，避免空转
+            let active = NETDISK_LOGIN_STATE
+                .get_or_init(|| Mutex::new(None))
+                .lock()
+                .map(|s| s.is_some())
+                .unwrap_or(false);
+            if !active || ticks > 3600 {
+                break;
             }
+            if let Some(w) = ri_app.get_webview_window("main") {
+                let _ = w.eval(&ri_script);
+            }
+            ticks += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         }
     });
 

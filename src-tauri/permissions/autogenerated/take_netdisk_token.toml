@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-take-netdisk-token"
+description = "Enables the take_netdisk_token command without any pre-configured scope."
+commands.allow = ["take_netdisk_token"]
+
+[[permission]]
+identifier = "deny-take-netdisk-token"
+description = "Denies the take_netdisk_token command without any pre-configured scope."
+commands.deny = ["take_netdisk_token"]

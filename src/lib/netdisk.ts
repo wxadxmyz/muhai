@@ -250,17 +250,20 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
     if (document.body) document.body.style.paddingTop = (TOP + H) + 'px';
   }
 
-  // 每秒：确保顶栏在；抓 token
-  setInterval(function(){
-    try { __ndEnsureBar(); } catch(e){}
-    if (__ND_DONE) return;
-    var t = '';
-    try { t = __ND_GETTER(); } catch(e){ t = ''; }
-    if (t) {
-      __ND_DONE = true;
-      try { __ndClose(t); } catch(e){}
-    }
-  }, 1000);
+  // 每秒：确保顶栏在；抓 token。Rust 侧会定时重注入本脚本（扛夸克整页跳转），
+  // 用 window.__ND_INTERVAL 防止同一文档里重复注册定时器导致堆叠。
+  if (!window.__ND_INTERVAL) {
+    window.__ND_INTERVAL = setInterval(function(){
+      try { __ndEnsureBar(); } catch(e){}
+      if (__ND_DONE) return;
+      var t = '';
+      try { t = __ND_GETTER(); } catch(e){ t = ''; }
+      if (t) {
+        __ND_DONE = true;
+        try { __ndClose(t); } catch(e){}
+      }
+    }, 1000);
+  }
   // 立即先来一次（页面已就绪时）
   try { __ndEnsureBar(); } catch(e){}
 })();`;

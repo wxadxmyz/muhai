@@ -34,15 +34,36 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-// ⑥ 长按复制 token（网盘本地登录抓取的 token）
+// ⑥ 复制 token（网盘本地登录抓取的 token）
 function copyToken(token: string, name: string) {
   if (!token) { toast('该网盘没有可复制的 Token', 'err'); return; }
   const done = () => toast(`已复制 ${name} 的 Token`);
-  const fail = () => toast('复制失败，请手动长按选择', 'err');
+  // V4.1.5 ⑤：App 内是 http://tauri.localhost，非安全上下文，navigator.clipboard 不可用。
+  // 兜底用隐藏 textarea + execCommand('copy')（Android WebView 仍支持）；再不行提示长按手动选择。
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = token;
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (ok) { done(); return; }
+    } catch (e) { /* ignore */ }
+    toast('复制失败，请在展开的 Token 上长按手动选择', 'err');
+  };
   try {
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(token).then(done).catch(fail);
-    else fail();
-  } catch { fail(); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(token).then(done).catch(() => fallback());
+      return;
+    }
+  } catch (e) { /* ignore */ }
+  fallback();
 }
 
 // ⑥ 触摸长按手势：返回清理函数；触发时执行 onLong
@@ -53,25 +74,28 @@ function useLongPress(onLong: () => void, ms = 600) {
   return { onTouchStart: start, onTouchEnd: clear, onTouchMove: clear, onContextMenu: (e: React.MouseEvent) => { e.preventDefault(); onLong(); } };
 }
 
-// C3 已挂载网盘行：展示盘名 + 状态，长按/点击复制 token，可移除
+// C3 已挂载网盘行：展示盘名 + 状态，点击展开 Token（可长按选中），按钮复制/移除
 function MountRow({ ndKey, token, onCopy, onRemove }: { ndKey: NetdiskKey; token: string; onCopy: () => void; onRemove: () => void }) {
   const p = providerOf(ndKey);
-  const lp = useLongPress(onCopy);
+  const [show, setShow] = useState(false);
   return (
-    <div className="netdisk-row" {...lp} onClick={onCopy}>
+    <div className="netdisk-row">
       <span className="ic"><Icon name="folder" size={26} /></span>
-      <div className="nd-body">
+      <div className="nd-body" onClick={() => setShow((s) => !s)}>
         <div className="nd-name">{p.label}</div>
-        <div className="sm muted">已获取 Token · 30天</div>
+        <div className="sm muted">{show ? '点击收起 Token' : '已获取 Token · 30天（点击查看）'}</div>
+        {show && (
+          <div
+            className="nd-token"
+            style={{ userSelect: 'text', WebkitUserSelect: 'text', wordBreak: 'break-all', fontSize: 11, opacity: 0.7, marginTop: 4 }}
+          >
+            {token}
+          </div>
+        )}
       </div>
       <span className="st ok">已挂载</span>
-      <button
-        className="nd-remove"
-        onClick={(e) => { e.stopPropagation(); onRemove(); }}
-        title="移除该网盘授权"
-      >
-        移除
-      </button>
+      <button className="nd-copy" onClick={(e) => { e.stopPropagation(); onCopy(); }}>复制</button>
+      <button className="nd-remove" onClick={(e) => { e.stopPropagation(); onRemove(); }}>移除</button>
     </div>
   );
 }

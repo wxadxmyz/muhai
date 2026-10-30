@@ -47,7 +47,9 @@ export const NETDISKS: NetdiskProvider[] = [
     // V3.7.8：用网页版入口（桌面 UA 下才会出登录框，移动 UA 会被推到下载页）
     loginUrl: 'https://pan.quark.cn/',
     captureMode: 'cookie',
-    mustMatch: 'PUID|b-user-id|__pus|kps',
+    // V4.1.5 ④：去掉登录前的会话/跟踪 cookie（__pus/kps 在登录页一进来就存在），
+    // 只保留登录后才出现的用户标识（PUID/b-user-id），避免"还没登录就误抓 cookie → 闪退 + 误显示已登录"。
+    mustMatch: 'PUID|b-user-id',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（夸克 API 用 cookie 鉴权）',
   },
@@ -58,7 +60,8 @@ export const NETDISKS: NetdiskProvider[] = [
     // V3.7.8：用网页版登录页（drive.uc.cn，桌面 UA 下出登录框）
     loginUrl: 'https://drive.uc.cn/',
     captureMode: 'cookie',
-    mustMatch: 'PUID|uc_uid|b-user-id|kps',
+    // V4.1.5 ④：去掉登录前的会话 cookie kps（登录页一进来就存在），只保留登录后才出现的用户标识。
+    mustMatch: 'PUID|uc_uid|b-user-id',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（UC API 用 cookie 鉴权）',
   },
@@ -306,39 +309,37 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
     p.captureMode === 'localStorage'
       ? `function(){try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';}`
       : `function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
-  // V4.1.3：回传改造——抓到 token 后用 hash 回跳（最稳，彻底绕开远程页 invoke 的 ACL 限制：
-  // 阿里登录会跳转到 passport.aliyun.com 等未放行域，close 命令被静默拒绝；hash 回跳让主 WebView
-  // 直接导航回本地 App 页，token 经 hash 带回，前端 hashchange 消费后即落盘）。
-  // 无 token（手动关闭/返回键）：先尝试 invoke close_netdisk_login，失败再 hash 回跳兜底。
-  // V4.1.4 ②：Rust 注入的是 `const __ND_BACK` / IIFE 内的 `var __ND_PROVIDER`，
-  // 两者都**不会**挂到 window 上（const 不创建 window 属性），旧写法 `window.__ND_BACK` 恒为 ''，
-  // 导致点 × 时 location.href='' 原地不动 = "返回不了"；登录成功时 target 退化成 '#?ndtok='，
-  // 只改了远程页自己的 hash，token 也从没回到 App。这里统一改裸变量 + typeof 兜底。
-  const close = `function __ndClose(tok){
+  // 回传通道说明（V4.1.5 ①②③）：抓到 token 后**仅暂存**到 window.__ND_TOKEN，不自动跳回；
+  // 用户主动点 X / 手势返回时，__ndClose() 经 hash 回跳把 token 带回本地 App 页（彻底绕开远程域 ACL，
+  // 阿里登录跳转到 passport.aliyun.com 等未放行域时 invoke 会被拒，hash 回跳最稳），前端 hashchange 消费落盘。
+  // 无 token（手动关闭/返回键）：invoke close_netdisk_login（Rust 还原 UA + 导航回 back_url），失败再 hash 回跳兜底。
+  // V4.1.4 ②：注入常量用裸变量（const/IIFE var 不挂 window，旧写法 window.__ND_BACK 恒为 '' 导致返回不了）。
+  // V4.1.5：去掉"抓到 token 即跳回"——登录成功不再整页重载（避免被误认为"重启 App"），停在登录后页等用户操作。
+  const close = `function __ndClose(){
     if (window.__ND_DONE) return;
     window.__ND_DONE = true;
-    var __ND_BACK_URL = '';
-    try { __ND_BACK_URL = (typeof __ND_BACK !== 'undefined' && __ND_BACK) ? __ND_BACK : ''; } catch(e) { __ND_BACK_URL = ''; }
-    try {
-      if (tok) {
-        var prov = '';
-        try { prov = (typeof __ND_PROVIDER !== 'undefined' && __ND_PROVIDER) ? __ND_PROVIDER : ''; } catch(e) { prov = ''; }
-        var enc = encodeURIComponent(prov + ':' + tok);
-        var b = __ND_BACK_URL;
-        if (!b) { return; }
-        var parts = b.split('#'); var base = parts[0]; var h = parts[1] || '';
-        var sep = h.indexOf('?') >= 0 ? '&' : '?';
-        var target = base + '#' + h + sep + 'ndtok=' + enc;
-        try { location.href = target; } catch(e){ try{ location.replace(target); }catch(e2){} }
-        return;
-      }
+    var b = '';
+    try { b = (typeof __ND_BACK !== 'undefined' && __ND_BACK) ? __ND_BACK : ''; } catch(e){ b = ''; }
+    var tok = '';
+    try { tok = (typeof window.__ND_TOKEN !== 'undefined' && window.__ND_TOKEN) ? window.__ND_TOKEN : ''; } catch(e){ tok = ''; }
+    var prov = '';
+    try { prov = (typeof __ND_PROVIDER !== 'undefined' && __ND_PROVIDER) ? __ND_PROVIDER : ''; } catch(e){ prov = ''; }
+    if (tok && b) {
+      // 带回 token 的 hash 回跳：主 WebView 导航回本地 App 页，token 经 hash 带回，前端消费落盘
+      var enc = encodeURIComponent(prov + ':' + tok);
+      var parts = b.split('#'); var base = parts[0]; var h = parts[1] || '';
+      var sep = h.indexOf('?') >= 0 ? '&' : '?';
+      var target = base + '#' + h + sep + 'ndtok=' + enc;
+      try { location.href = target; } catch(e){ try{ location.replace(target); }catch(e2){} }
+      return;
+    }
+    // 无 token：走 Rust 关闭（还原 UA + 导航回 back_url）；失败再用 back_url 兜底，保证只导航一次
+    if (b) {
       if (window.__TAURI__ && window.__TAURI__.invoke) {
-        window.__TAURI__.invoke('close_netdisk_login', {}).catch(function(){ try { if(__ND_BACK_URL) location.href = __ND_BACK_URL; } catch(e){} });
+        window.__TAURI__.invoke('close_netdisk_login', {}).catch(function(){ try { location.href = b; } catch(e){} });
       } else {
-        try { if(__ND_BACK_URL) location.href = __ND_BACK_URL; } catch(e){}
+        try { location.href = b; } catch(e){}
       }
-    } catch(e) {
-      try { if(__ND_BACK_URL) location.href = __ND_BACK_URL; } catch(e2){}
     }
   }`;
   // V4.1.3 #5：三个网盘顶栏统一软件默认白色皮肤（不再按盘差异化配色 / 去橙色分隔线）
@@ -353,8 +354,9 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   // P2：沉浸式顶栏主题（来自 buildCaptureNavScript 注入）
   var __ND_THEME = ${JSON.stringify(theme)};
 
-  // P8：返回陷阱——手势/系统返回键触发 popstate 而非离开页面；接住后走正常关闭流程
-  // （Rust 恢复 UA、导航回 App）。已在 close 流程里就不重复拦，避免打断自动关闭。
+  // V4.1.5 ②：手势/系统返回键陷阱——拦截 popstate，统一走 __ndClose() 回到网盘登录选择页
+  // （V4.1.3 #3 起因：Tauri navigate 跳远程页不留回 App 的历史条目，不拦会直接退出 App）。
+  // 不再"自动登录跳回"，改为用户主动触发才返回，且只走单通道，消除并发导航导致的闪退。
   try {
     if (!window.__ND_TRAP) {
       window.__ND_TRAP = true;
@@ -362,7 +364,7 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
       window.addEventListener('popstate', function () {
         if (window.__ND_DONE) return;
         try { history.pushState({ __ndTrap: 1 }, '', location.href); } catch (e) {}
-        __ndClose(null);
+        __ndClose();
       });
     }
   } catch (e) {}
@@ -374,7 +376,8 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   // 登录页恢复成改之前的样子（不缩放）。
 
   function __ndEnsureBar(){
-    if (document.getElementById('__nd_bar')) return;
+    var bar = document.getElementById('__nd_bar');
+    if (bar) return;
     // V4.1.4 ③：状态栏高度优先取 Rust 算好的 CSS px（__ND_TOP_CSS = 物理px / density），
     // 不再在 JS 里除 devicePixelRatio —— 桌面 UA 下部分 WebView 的 DPR 会漂，
     // 除错就整条顶栏错位（表现为被通知栏压住 / 悬空）。物理值仅作旧脚本兜底。
@@ -391,7 +394,7 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
     if (TOP > 0) TOP += 2;
     var H = 48;
     var bg = __ND_THEME.bg, fg = __ND_THEME.fg, sep = __ND_THEME.sep;
-    var bar = document.createElement('div');
+    bar = document.createElement('div');
     bar.id = '__nd_bar';
     bar.style.cssText =
       'position:fixed!important;left:0!important;right:0!important;top:0!important;' +
@@ -404,26 +407,35 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
       '<div id="__nd_close" style="width:44px;height:44px;flex:0 0 44px;display:flex;align-items:center;justify-content:center;cursor:pointer;">' +
         '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="' + fg + '" stroke-width="1.6" stroke-linecap="round">' +
           '<path d="M6 6l12 12M18 6L6 18"/></svg></div>' +
-      '<div style="flex:1;text-align:center;font-size:16px;font-weight:500;letter-spacing:.5px;">登录' + ${JSON.stringify(p.label)} + '</div>' +
+      '<div class="nd-center" style="flex:1;text-align:center;font-size:16px;font-weight:500;letter-spacing:.5px;">登录' + ${JSON.stringify(p.label)} + '</div>' +
       '<div style="width:44px;flex:0 0 44px;text-align:center;font-size:11px;opacity:.55;">幕海</div>';
     bar.querySelector('#__nd_close').onclick = function(){
-      if(!window.__ND_DONE){ __ndClose(null); }
+      if(!window.__ND_DONE){ __ndClose(); }
     };
     (document.body||document.documentElement).appendChild(bar);
     if (document.body) document.body.style.paddingTop = (TOP + H) + 'px';
   }
 
-  // 每秒：确保顶栏在；适配视口缩放；抓 token。Rust 侧会定时重注入本脚本（扛夸克整页跳转），
-  // 用 window.__ND_INTERVAL 防止同一文档里重复注册定时器导致堆叠。
+  // 登录成功后把顶栏文案改为"已登录 · 点击返回"
+  function __ndUpdateLabel(){
+    try {
+      if (window.__ND_TOKEN && !window.__ND_LABELED) {
+        var c = document.querySelector('#__nd_bar .nd-center');
+        if (c) { c.textContent = '已登录 · 点击返回'; window.__ND_LABELED = true; }
+      }
+    } catch(e){}
+  }
+
+  // 每秒：确保顶栏在；更新标签；抓 token（仅暂存 window.__ND_TOKEN，不自动跳回）。
+  // Rust 侧定时重注入本脚本（扛整页跳转），window.__ND_INTERVAL 防同文档重复注册定时器。
   if (!window.__ND_INTERVAL) {
     window.__ND_INTERVAL = setInterval(function(){
       try { __ndEnsureBar(); } catch(e){}
+      try { __ndUpdateLabel(); } catch(e){}
       if (window.__ND_DONE) return;
       var t = '';
       try { t = __ND_GETTER(); } catch(e){ t = ''; }
-      if (t) {
-        __ndClose(t);
-      }
+      if (t) { try { window.__ND_TOKEN = t; } catch(e){} }
     }, 1000);
   }
   // 立即先来一次（页面已就绪时）

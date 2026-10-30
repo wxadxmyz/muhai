@@ -62,6 +62,9 @@ static NETDISK_LOGIN_STATE: OnceLock<Mutex<Option<NetdiskLoginState>>> = OnceLoc
 static ND_SCRIPT: Mutex<Option<String>> = Mutex::new(None);
 // P3：登录抓到的 token 暂存在 Rust 侧（不再塞进 URL），由前端 take_netdisk_token 主动取
 static PENDING_ND: Mutex<Option<(String, String)>> = Mutex::new(None); // (provider, token)
+// V4.1.5 ②：流程代际计数器。每次 open_netdisk_login 自增；注入循环每次 tick 校验，
+// 再次打开另一网盘时，旧流程的循环立即退出，避免旧循环误调 netdisk_finalize 清空新流程状态导致闪退。
+static ND_EPOCH: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 const DESKTOP_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -281,9 +284,15 @@ async fn open_netdisk_login(
     }
     let ri_app = app.clone();
     let ri_script = capture_script.clone();
+    // V4.1.5 ②：本流程代际；再次打开另一网盘时旧流程的循环凭此立即退出，避免误 finalize 新流程状态
+    let my_epoch = ND_EPOCH.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         let mut ticks: u32 = 0;
         loop {
+            // V4.1.5 ②：代际不符说明已有更新的网盘登录流程，本循环立即退出
+            if ND_EPOCH.load(std::sync::atomic::Ordering::SeqCst) != my_epoch {
+                break;
+            }
             // 登录流程已结束（close_netdisk_login 清了状态）→ 退出，避免空转
             let active = NETDISK_LOGIN_STATE
                 .get_or_init(|| Mutex::new(None))

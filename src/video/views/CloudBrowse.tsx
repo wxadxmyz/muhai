@@ -152,16 +152,6 @@ export function CloudBrowse({
   const ndKeys = (Object.keys(ndTokens) as NetdiskKey[]).filter((k) => ndTokens[k]);
 
   const [activeNd, setActiveNd] = useState<NetdiskKey | null>(null);
-  if (activeNd) {
-    return (
-      <Ndbrowser
-        ndKey={activeNd}
-        token={ndTokens[activeNd] as string}
-        onPlayFile={onPlayFile}
-        onClose={() => setActiveNd(null)}
-      />
-    );
-  }
 
   const alistSources = sources.filter((s) => s.type === 'alist');
   // V3.7.5 #6：移除写死的「示例网盘(离线演示)」。未配置真实 alist 源时直接显示空态，
@@ -229,6 +219,19 @@ export function CloudBrowse({
       onPlayFile(item);
     }
   };
+
+  // V4.1.5 ⑥：已登录网盘浏览（Ndbrowser）放到**所有 hook 之后**再条件返回，
+  // 否则点进去后 hook 数量骤减会触发 React #300 渲染错误。
+  if (activeNd) {
+    return (
+      <Ndbrowser
+        ndKey={activeNd}
+        token={ndTokens[activeNd] as string}
+        onPlayFile={onPlayFile}
+        onClose={() => setActiveNd(null)}
+      />
+    );
+  }
 
   return (
     <div className="view cloud-browse">

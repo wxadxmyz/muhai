@@ -2405,7 +2405,7 @@ dependencies = [
 
 [[package]]
 name = "muhai"
-version = "4.1.4"
+version = "4.1.5"
 dependencies = [
  "base64 0.22.1",
  "bytes",

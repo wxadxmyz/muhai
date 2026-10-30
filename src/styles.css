@@ -1211,6 +1211,19 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 }
 .netdisk-row .nd-remove:active { background: var(--panel3); }
 .netdisk-row .st + .nd-remove { margin-left: 10px; }
+/* V4.1.5 ⑤：复制按钮（与移除并列的次要按钮） */
+.netdisk-row .nd-copy {
+  flex: 0 0 auto; margin-left: 8px; padding: 4px 10px;
+  font-size: 12px; font-family: inherit; color: var(--accent);
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 999px; cursor: pointer;
+}
+.netdisk-row .nd-copy:active { background: var(--panel3); }
+.netdisk-row .nd-token {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; line-height: 1.5;
+}
 /* V3.7.6 #5：手动粘贴授权卡片（绕开官网下载页拦截，最可靠的网盘授权方式） */
 .paste-card {
   margin-top: 14px; padding: 14px;

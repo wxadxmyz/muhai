@@ -90,8 +90,9 @@ jobs:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
 
+      # 先出 debug 包（自带签名、可直装）；跳过 R8 压缩，规避 release 的 minifyUniversalReleaseWithR8 任务报错
       - name: Build APK (aarch64, debug)
-        run: pnpm tauri android build --target aarch64
+        run: pnpm tauri android build --target aarch64 --debug
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}

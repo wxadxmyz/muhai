@@ -85,6 +85,14 @@ jobs:
       - name: Install host clang (rquickjs bindgen)
         run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
 
+      # 给所有 Gradle 构建（含 buildSrc）追加 mavenCentral/google 作为插件仓库兜底，
+      # 规避 plugins.gradle.org 偶发不可达导致 kotlin 依赖（如 kotlin-gradle-plugin 2.0.21）解析失败
+      - name: Configure Gradle repositories fallback
+        run: |
+          mkdir -p "$HOME/.gradle"
+          echo "YmVmb3JlU2V0dGluZ3MgeyBzZXR0aW5ncyAtPgogICAgc2V0dGluZ3MucGx1Z2luTWFuYWdlbWVudCB7CiAgICAgICAgcmVwb3NpdG9yaWVzIHsKICAgICAgICAgICAgZ3JhZGxlUGx1Z2luUG9ydGFsKCkKICAgICAgICAgICAgbWF2ZW5DZW50cmFsKCkKICAgICAgICAgICAgZ29vZ2xlKCkKICAgICAgICB9CiAgICB9Cn0K" | base64 -d > "$HOME/.gradle/init.gradle"
+          echo "wrote init.gradle:"; cat "$HOME/.gradle/init.gradle"
+
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 

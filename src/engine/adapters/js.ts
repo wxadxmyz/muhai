@@ -4,6 +4,7 @@ import { devLog } from '../../lib/log';
 // V3.6.0：drpy2 / drpy3 规则源改由 drpy3 引擎承载（Rust 侧 drpy3run 命令）。
 // 检测与适配实现见 ./drpy3；这里只在"脚本是 drpy 规则"时把调用整体转派过去。
 import { createDrpy3Source, isDrpyRule } from './drpy3';
+import { injectAliRefreshToken } from '../../lib/netdisk';
 
 // v2.3.8 统一 JS 引擎源适配器（兼容 CatVod / drpy 两种生态）
 //
@@ -121,7 +122,9 @@ export function createJsSource(cfg: SourceConfig): MediaSource {
   }
 
   async function call(func: string, args: string[]): Promise<any> {
-    const code = await loadCode();
+    let code = await loadCode();
+    // V4.1.6 E：注入幕海已登录的阿里 refresh_token 到规则源码（玩偶哥哥等）。
+    code = injectAliRefreshToken(code);
     let raw: string;
     try {
       raw = await invoke<string>('spiderrun', {

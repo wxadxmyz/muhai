@@ -47,9 +47,9 @@ export const NETDISKS: NetdiskProvider[] = [
     // V3.7.8：用网页版入口（桌面 UA 下才会出登录框，移动 UA 会被推到下载页）
     loginUrl: 'https://pan.quark.cn/',
     captureMode: 'cookie',
-    // V4.1.5 ④：去掉登录前的会话/跟踪 cookie（__pus/kps 在登录页一进来就存在），
-    // 只保留登录后才出现的用户标识（PUID/b-user-id），避免"还没登录就误抓 cookie → 闪退 + 误显示已登录"。
-    mustMatch: 'PUID|b-user-id',
+    // V4.1.6 ②：进一步去掉设备匿名 cookie b-user-id（未登录就存在），只保留登录后
+    // 才出现的用户标识 PUID，彻底消除"还没输密码就误抓 cookie → 误显示已登录"。
+    mustMatch: 'PUID',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（夸克 API 用 cookie 鉴权）',
   },
@@ -60,8 +60,8 @@ export const NETDISKS: NetdiskProvider[] = [
     // V3.7.8：用网页版登录页（drive.uc.cn，桌面 UA 下出登录框）
     loginUrl: 'https://drive.uc.cn/',
     captureMode: 'cookie',
-    // V4.1.5 ④：去掉登录前的会话 cookie kps（登录页一进来就存在），只保留登录后才出现的用户标识。
-    mustMatch: 'PUID|uc_uid|b-user-id',
+    // V4.1.6 ②：去掉设备匿名 cookie（uc_uid/b-user-id，未登录就存在），只保留登录后出现的 PUID。
+    mustMatch: 'PUID',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（UC API 用 cookie 鉴权）',
   },
@@ -173,6 +173,32 @@ export function clearNetdiskToken(key: NetdiskKey) {
   const map = readStore();
   delete map[key];
   writeStore(map);
+}
+
+// V4.1.6 E：把幕海已登录的阿里 refresh_token 注入到 drpy 规则源码里。
+// 社区规则（如玩偶哥哥 wogg.js）用 `var ALI_REFRESH_TOKEN = ''` 硬编码空令牌，
+// 不填则能搜不能播。这里把它替换成当前已登录的阿里 refresh_token（从 localStorage
+// 的 token JSON 解析），让这类规则直接复用本地登录态，无需用户手动改规则。
+// 仅当规则源码确实声明了 ALI_REFRESH_TOKEN 时才替换，其它规则不受影响。
+export function injectAliRefreshToken(code: string): string {
+  if (!code || !/ALI_REFRESH_TOKEN/.test(code)) return code;
+  const ali = getAllNetdiskTokens().ali;
+  let refreshToken = '';
+  if (ali) {
+    try {
+      const j = JSON.parse(ali);
+      if (j && typeof j.refresh_token === 'string' && j.refresh_token) refreshToken = j.refresh_token;
+      else if (j && typeof j.access_token === 'string' && j.access_token) refreshToken = j.access_token;
+    } catch {
+      // 存的就是裸 token（非 JSON）
+      refreshToken = ali;
+    }
+  }
+  // 只替换声明处的空/占位赋值，避免破坏规则其它逻辑
+  return code.replace(
+    /(var\s+ALI_REFRESH_TOKEN\s*=\s*)(['"])(?:[^'"]*)\2(\s*;)/,
+    `$1${JSON.stringify(refreshToken)}$3`,
+  );
 }
 
 export interface NdFile {
@@ -318,6 +344,9 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   const close = `function __ndClose(){
     if (window.__ND_DONE) return;
     window.__ND_DONE = true;
+    // 原生登录 Activity 模式（Android）：直接交还原生层处理（顶栏/X 均为原生控件，
+    // 由 Kotlin NetdiskBridge 把 token 回传主 App，避免主 WebView 被导航导致的整页重载）。
+    if (window.NetdiskBridge) { try { window.NetdiskBridge.close(); } catch(e){} return; }
     var b = '';
     try { b = (typeof __ND_BACK !== 'undefined' && __ND_BACK) ? __ND_BACK : ''; } catch(e){ b = ''; }
     var tok = '';
@@ -351,6 +380,10 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   var __ND_MATCH = ${must};
   // V4.1.3：__ND_DONE 挂到 window，使 Rust 每秒重注入脚本时不会被重置为 false（避免"已关闭却仍重复触发"）
   window.__ND_DONE = window.__ND_DONE || false;
+  // 原生登录 Activity 标志：由宿主（Android 原生 Activity）在注入前写入，控制顶栏/陷阱走原生实现，
+  // 避免注入式 DOM 顶栏在桌面 UA 下横向滑动、被通知栏压等问题（V4.1.6 C 项）。
+  window.__ND_NATIVE_BAR = window.__ND_NATIVE_BAR || false;
+  window.__ND_NO_TRAP = window.__ND_NO_TRAP || false;
   // P2：沉浸式顶栏主题（来自 buildCaptureNavScript 注入）
   var __ND_THEME = ${JSON.stringify(theme)};
 
@@ -358,7 +391,7 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   // （V4.1.3 #3 起因：Tauri navigate 跳远程页不留回 App 的历史条目，不拦会直接退出 App）。
   // 不再"自动登录跳回"，改为用户主动触发才返回，且只走单通道，消除并发导航导致的闪退。
   try {
-    if (!window.__ND_TRAP) {
+    if (!window.__ND_NO_TRAP && !window.__ND_TRAP) {
       window.__ND_TRAP = true;
       history.pushState({ __ndTrap: 1 }, '', location.href);
       window.addEventListener('popstate', function () {
@@ -376,6 +409,8 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   // 登录页恢复成改之前的样子（不缩放）。
 
   function __ndEnsureBar(){
+    // 原生顶栏模式：UI 由原生控件承载，JS 不再创建 DOM 顶栏（V4.1.6 C 项）
+    if (window.__ND_NATIVE_BAR) return;
     var bar = document.getElementById('__nd_bar');
     if (bar) return;
     // V4.1.4 ③：状态栏高度优先取 Rust 算好的 CSS px（__ND_TOP_CSS = 物理px / density），
@@ -418,6 +453,7 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
 
   // 登录成功后把顶栏文案改为"已登录 · 点击返回"
   function __ndUpdateLabel(){
+    if (window.__ND_NATIVE_BAR) return;
     try {
       if (window.__ND_TOKEN && !window.__ND_LABELED) {
         var c = document.querySelector('#__nd_bar .nd-center');
@@ -430,15 +466,22 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   // Rust 侧定时重注入本脚本（扛整页跳转），window.__ND_INTERVAL 防同文档重复注册定时器。
   if (!window.__ND_INTERVAL) {
     window.__ND_INTERVAL = setInterval(function(){
-      try { __ndEnsureBar(); } catch(e){}
-      try { __ndUpdateLabel(); } catch(e){}
+      try { if (!window.__ND_NATIVE_BAR) __ndEnsureBar(); } catch(e){}
+      try { if (!window.__ND_NATIVE_BAR) __ndUpdateLabel(); } catch(e){}
       if (window.__ND_DONE) return;
       var t = '';
       try { t = __ND_GETTER(); } catch(e){ t = ''; }
-      if (t) { try { window.__ND_TOKEN = t; } catch(e){} }
+      if (t) {
+        try { window.__ND_TOKEN = t; } catch(e){}
+        // 原生模式：把抓到的 token 上报给原生层（用于顶栏文案 + 返回时回传主 App）
+        if (window.NetdiskBridge && !window.__ND_NOTIFIED) {
+          window.__ND_NOTIFIED = true;
+          try { window.NetdiskBridge.onTokenCaptured(t); } catch(e){}
+        }
+      }
     }, 1000);
   }
   // 立即先来一次（页面已就绪时）
-  try { __ndEnsureBar(); } catch(e){}
+  try { if (!window.__ND_NATIVE_BAR) __ndEnsureBar(); } catch(e){}
 })();`;
 }

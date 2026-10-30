@@ -205,7 +205,13 @@ async fn open_netdisk_login(
     back_url: String,
     provider: String,
     capture_script: String,
-) -> Result<(), String> {
+) -> Result<Option<NetdiskLoginResult>, String> {
+    // V4.1.6 A：Android 由独立原生 NetdiskLoginActivity（自己的 WebView + 原生顶栏）接管登录，
+    // 主 WebView 不被导航，返回登录页不会整页重载（"重启"）。命令在用户关闭登录页后返回 token。
+    #[cfg(target_os = "android")]
+    {
+        return android_open_netdisk_login(&app, &url, &provider, &capture_script).await;
+    }
     let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
     let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
 
@@ -336,6 +342,144 @@ async fn open_netdisk_login(
         let _ = window.eval(&capture_script);
     }
 
+    Ok(None)
+}
+
+/// V4.1.6 A：网盘登录结果（原生 Activity 回传）。
+#[derive(serde::Serialize)]
+struct NetdiskLoginResult {
+    provider: String,
+    token: String,
+}
+
+/// V4.1.6 A：Android 专用——启动原生 NetdiskLoginActivity 承载登录，并轮询结果文件拿回 token。
+#[cfg(target_os = "android")]
+async fn android_open_netdisk_login(
+    app: &tauri::AppHandle,
+    url: &str,
+    provider: &str,
+    script: &str,
+) -> Result<Option<NetdiskLoginResult>, String> {
+    // 结果文件：放在应用私有 files 目录，Rust 与 Kotlin 两侧都用同一路径（由 Rust 算出后传给 Activity）。
+    let result_path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("netdisk_login_result.json");
+    // 清掉上一次残留，避免读到旧结果
+    let _ = std::fs::remove_file(&result_path);
+
+    // 经主 WebView 的 JNI 句柄启动原生 Activity（setClassName + startActivity）
+    let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let url_s = url.to_string();
+    let prov_s = provider.to_string();
+    let script_s = script.to_string();
+    let path_s = result_path.to_string_lossy().to_string();
+    window
+        .with_webview(move |wv| {
+            wv.jni_handle().exec(move |env, activity, _wv| {
+                let r = android_launch_netdisk_login(env, &activity, &url_s, &prov_s, &script_s, &path_s);
+                let _ = tx.send(r);
+            });
+        })
+        .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())??;
+
+    // 轮询结果文件（Activity 关闭时写入）：canceled → None；含 token → 返回。超时 7.5 分钟兜底。
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(450);
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            let _ = std::fs::remove_file(&result_path);
+            return Ok(None);
+        }
+        if let Ok(content) = std::fs::read_to_string(&result_path) {
+            let c = content.trim();
+            if !c.is_empty() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(c) {
+                    let _ = std::fs::remove_file(&result_path);
+                    if v.get("canceled").and_then(|x| x.as_bool()).unwrap_or(false) {
+                        return Ok(None);
+                    }
+                    if let (Some(p), Some(t)) = (
+                        v.get("provider").and_then(|x| x.as_str()),
+                        v.get("token").and_then(|x| x.as_str()),
+                    ) {
+                        return Ok(Some(NetdiskLoginResult {
+                            provider: p.to_string(),
+                            token: t.to_string(),
+                        }));
+                    }
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+}
+
+/// V4.1.6 A：用 JNI 在 Android 主线程启动 NetdiskLoginActivity，并传入登录页地址/注入脚本/结果文件路径。
+#[cfg(target_os = "android")]
+fn android_launch_netdisk_login(
+    env: &mut jni::JNIEnv,
+    activity: &jni::objects::JObject,
+    url: &str,
+    provider: &str,
+    script: &str,
+    result_path: &str,
+) -> Result<(), String> {
+    use jni::objects::JValue;
+    use jni::objects::JObject;
+    use jni::JNIEnv;
+    let intent_cls = env
+        .find_class("android/content/Intent")
+        .map_err(|e| format!("find Intent: {e}"))?;
+    let intent = env
+        .new_object(&intent_cls, "()V", &[])
+        .map_err(|e| format!("new Intent: {e}"))?;
+
+    // setClassName(包名, 全类名) 避免显式构造 JClass
+    let pkg_val = env
+        .call_method(activity, "getPackageName", "()Ljava/lang/String;", &[])
+        .map_err(|e| format!("getPackageName: {e}"))?;
+    let pkg_obj = pkg_val
+        .l()
+        .map_err(|e| format!("pkg obj: {e}"))?;
+    let cls_name = env
+        .new_string("com.muhai.app.NetdiskLoginActivity")
+        .map_err(|e| format!("cls name: {e}"))?;
+    env.call_method(
+        &intent,
+        "setClassName",
+        "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+        &[JValue::Object(&pkg_obj), JValue::Object(&*cls_name)],
+    )
+    .map_err(|e| format!("setClassName: {e}"))?;
+
+    // 字符串 extras
+    let put = |env: &mut JNIEnv, intent: &JObject, key: &str, val: &str| -> Result<(), String> {
+        let k = env.new_string(key).map_err(|e| format!("extra key: {e}"))?;
+        let v = env.new_string(val).map_err(|e| format!("extra val: {e}"))?;
+        env.call_method(
+            intent,
+            "putExtra",
+            "(Ljava/lang/String;Ljava/lang/String;)Landroid/content/Intent;",
+            &[JValue::Object(&*k), JValue::Object(&*v)],
+        )
+        .map_err(|e| format!("putExtra: {e}"))?;
+        Ok(())
+    };
+    put(env, &intent, "url", url)?;
+    put(env, &intent, "provider", provider)?;
+    put(env, &intent, "script", script)?;
+    put(env, &intent, "result_path", result_path)?;
+
+    env.call_method(
+        activity,
+        "startActivity",
+        "(Landroid/content/Intent;)V",
+        &[JValue::Object(&intent)],
+    )
+    .map_err(|e| format!("startActivity: {e}"))?;
     Ok(())
 }
 

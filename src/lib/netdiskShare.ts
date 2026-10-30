@@ -67,15 +67,25 @@ async function aliRefreshToken(refreshToken: string): Promise<string> {
 }
 
 async function aliResolve(share: NetdiskShare): Promise<string | null> {
-  const token = getAllNetdiskTokens().ali;
-  if (!token) throw new Error('未登录阿里云盘，无法解析分享链接');
-  // token 可能是 refresh_token（localStorage 'token' 里），先刷新拿 access_token
+  const stored = getAllNetdiskTokens().ali;
+  if (!stored) throw new Error('未登录阿里云盘，无法解析分享链接');
+  // V4.1.6 ④：localStorage 'token' 存的是完整 JSON（含 access_token/refresh_token），
+  // 之前误把整段 JSON 当 refresh_token 去刷新必然失败。这里先解析取 refresh_token
+  // （没有则退而取 access_token），再刷新成可用的 access_token。
+  let refreshToken = stored;
+  try {
+    const j = JSON.parse(stored);
+    if (j && typeof j.refresh_token === 'string' && j.refresh_token) refreshToken = j.refresh_token;
+    else if (j && typeof j.access_token === 'string' && j.access_token) refreshToken = j.access_token;
+  } catch {
+    // 存的就是裸 token（非 JSON）
+  }
   let accessToken: string;
   try {
-    accessToken = await aliRefreshToken(token);
+    accessToken = await aliRefreshToken(refreshToken);
   } catch {
     // 若存的本身就是 access_token（已带 Bearer 或裸），尝试直接用
-    accessToken = /^eyJ/.test(token.trim()) ? token.trim() : token;
+    accessToken = /^eyJ/.test(refreshToken.trim()) ? refreshToken.trim() : refreshToken;
   }
   const auth = accessToken.startsWith('Bearer ') ? accessToken : 'Bearer ' + accessToken;
 

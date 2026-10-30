@@ -723,6 +723,48 @@ jobs:
           python3 -m pip install --quiet pillow
           python3 scripts/sync-android-icon.py
 
+      - name: Add native NetdiskLoginActivity (V4.1.6 A：隔离网盘登录 WebView，避免返回重启 App)
+        run: |
+          set -e
+          SRC_PATCH="src-tauri/android-patches/NetdiskLoginActivity.kt"
+          if [ ! -f "$SRC_PATCH" ]; then
+            echo "::error::未找到 $SRC_PATCH —— 原生网盘登录 Activity 源缺失，构建中止"
+            exit 1
+          fi
+          JAVA_DIR="src-tauri/gen/android/app/src/main/java/com/muhai/app"
+          mkdir -p "$JAVA_DIR"
+          cp "$SRC_PATCH" "$JAVA_DIR/NetdiskLoginActivity.kt"
+          echo "已写入 $JAVA_DIR/NetdiskLoginActivity.kt"
+          # 在 <application> 内（</application> 之前）注册该 Activity
+          MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)
+          if [ -z "$MANIFEST" ]; then echo "::error::AndroidManifest not found — 无法注册 NetdiskLoginActivity"; exit 1; fi
+          python3 - "$MANIFEST" << 'PYEOF'
+          import sys, re
+          path = sys.argv[1]
+          src = open(path, encoding="utf-8").read()
+          if "NetdiskLoginActivity" in src:
+              print("NetdiskLoginActivity 已注册，跳过")
+              sys.exit(0)
+          activity = (
+              '\n        <!-- V4.1.6 A：网盘登录专用原生 Activity（独立 WebView + 原生顶栏），仅内部启动 -->\n'
+              '        <activity\n'
+              '            android:name=".NetdiskLoginActivity"\n'
+              '            android:exported="false"\n'
+              '            android:theme="@style/Theme.muhai"\n'
+              '            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />\n'
+          )
+          idx = src.rfind("</application>")
+          if idx == -1:
+              print("::error::未找到 </application>")
+              sys.exit(1)
+          src = src[:idx] + activity + src[idx:]
+          open(path, "w", encoding="utf-8").write(src)
+          if "NetdiskLoginActivity" not in src:
+              print("::error::NetdiskLoginActivity 注册写入失败")
+              sys.exit(1)
+          print("已在 AndroidManifest 注册 NetdiskLoginActivity")
+          PYEOF
+
       - name: Build Tauri Android APK
         id: build
         if: steps.init.outcome == 'success'

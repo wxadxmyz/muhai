@@ -53,14 +53,22 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # 手动安装 Android SDK：android-actions/setup-android@v3 已失效（会装 preview cmdline-tools
+      # 并尝试安装已废弃的 tools 包，导致 sdkmanager 退出码 1）。
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android build deps
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;${{ env.NDK_VERSION }}"
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/ndk"
+          ANDROID_HOME=$HOME/android-sdk
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          curl -sSL --retry 5 -o cmdtools.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          unzip -q -o cmdtools.zip -d "$ANDROID_HOME/cmdline-tools"
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1
+          sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;${{ env.NDK_VERSION }}"
+          echo "Installed NDK under: $ANDROID_HOME/ndk"
 
       # rquickjs(bindgen) 在编译期用 libclang 生成 QuickJS 的 aarch64-android 绑定
       - name: Install host clang (rquickjs bindgen)

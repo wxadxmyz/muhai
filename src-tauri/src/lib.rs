@@ -160,6 +160,10 @@ async fn open_netdisk_login(
     let state = NETDISK_LOGIN_STATE.get_or_init(|| Mutex::new(None));
     let window = app.get_webview_window("main").ok_or("找不到主窗口")?;
 
+    // 先把 back_url 序列化为 JS 字面量（注入 __ND_BACK 用），必须在 move 进状态前完成，
+    // 否则后面借用已 move 的值会触发 E0382。
+    let back_json = serde_json::to_string(&back_url).unwrap_or_else(|_| "\"\"".to_string());
+
     // Android：读取并保存原 UA，再设成桌面 UA
     #[cfg(target_os = "android")]
     {
@@ -214,7 +218,7 @@ async fn open_netdisk_login(
     let top_px: f64 = 0.0;
 
     // P2：把状态栏高度常量前置进注入脚本，供 __ndEnsureBar 使用；并前置回跳地址 __ND_BACK
-    let back_json = serde_json::to_string(&back_url).unwrap_or_else(|_| "\"\"".to_string());
+    // （back_json 已在 move 前计算，此处仅复用）
     let capture_script =
         format!("const __ND_TOP = {top_px};\nconst __ND_BACK = {back_json};\n{capture_script}");
 

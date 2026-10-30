@@ -13,6 +13,9 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   NDK_VERSION: "25.2.9519653"
+  # rquickjs(bindgen) 在宿主 Ubuntu 上生成 aarch64-android 绑定时，宿主 clang 找不到
+  # multiarch 头文件 /usr/include/bits/libc-header-start.h，需显式指定宿主目标与 multiarch include 路径
+  BINDGEN_EXTRA_CLANG_ARGS: "--target=x86_64-linux-gnu -I/usr/include/x86_64-linux-gnu"
 
 jobs:
   build:

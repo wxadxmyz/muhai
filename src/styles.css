@@ -528,6 +528,15 @@ button.fav, .fav { color: var(--danger) !important; }
 /* 网盘浏览子页（对齐原型 cloud）：标题 + 右侧紧凑下拉、一行灰色说明 */
 .cloud-browse .page-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .cloud-browse .page-title { flex: 1; min-width: 0; margin: 0; font-size: 18px; font-weight: 700; }
+/* V4.1.8 ⑤：已登录网盘的文件浏览页（Ndbrowser）走整屏浮层，盖住外层「网盘浏览」顶栏，
+   避免双层标题栏。这里把 .fullpage 的 flex column 改回 block，保持原有网格布局与滚动。 */
+.cloud-browse.fullpage {
+  display: block;
+  overflow-y: auto;
+  padding-top: calc(12px + var(--sat));
+  padding-left: 14px;
+  padding-right: 14px;
+}
 .cloud-browse .nd-pick { width: 130px; min-width: 0; max-width: 130px; font-size: 13px; padding: 8px 10px; flex: 0 0 auto; box-sizing: border-box; }
 /* 下拉挂到子页顶栏时：标题不换行、下拉保持 130px（对齐原型 sp-head 内的 select） */
 .fullpage-head h3 { flex: 0 0 auto; white-space: nowrap; }
@@ -577,7 +586,11 @@ button.fav, .fav { color: var(--danger) !important; }
 .ptitle { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .psub { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .player-ctrl { display: flex; align-items: center; gap: 8px; }
-.icon { background: var(--panel2); border: 1px solid var(--border); color: var(--text); width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; font-size: 14px; }
+/* V4.1.8 ④：补 padding:0。此前全局 `button{padding:10px 16px}` + `* {box-sizing:border-box}`
+   会作用到 .icon 上，42px 的圆形按钮内容区只剩 ~10px 宽，22px 图标塞不进去导致
+   place-items:center 失效、图标被顶向右下偏移 6px（实测 dx=+6.00 dy=+1.00）。
+   .fullpage-head 下的 .icon 原本单独修过（所以那一处是正的），这里统一修全局。 */
+.icon { background: var(--panel2); border: 1px solid var(--border); color: var(--text); width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; font-size: 14px; padding: 0; }
 .icon:hover { border-color: var(--accent); }
 .icon.active { border-color: var(--accent); color: var(--accent); }
 .fullpage-head .icon { border-radius: 12px; flex: 0 0 auto; align-self: center; display: inline-flex; align-items: center; justify-content: center; padding: 0; } /* 返回按钮：图标垂直居中 */

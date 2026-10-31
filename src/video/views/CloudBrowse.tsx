@@ -69,7 +69,10 @@ function Ndbrowser({
   };
 
   return (
-    <div className="view cloud-browse">
+    // V4.1.8 ⑤：进入已登录网盘的文件浏览时整屏浮层（.fullpage = fixed + 不透明背景 + z-index:90），
+    // 盖住外层 SubPage 的「网盘浏览」标题栏——此前只是普通 .view，外层顶栏一直挂着，
+    // 形成「网盘浏览 ← 阿里云盘 文件」的双层标题栏。
+    <div className="view cloud-browse fullpage">
       <div className="page-title-row">
         <button className="icon" onClick={onClose}>
           <Icon name="arrow-left" />
@@ -179,24 +182,26 @@ export function CloudBrowse({
 
   const crumbs = path.split('/').filter(Boolean);
 
-  // 网盘选择下拉：优先挂到子页顶栏（对齐原型），否则就地渲染在标题行
-  const picker = (
-    <select
-      className="text-input nd-pick"
-      value={srcId}
-      onChange={(e) => {
-        setSrcId(e.target.value);
-        setPath('/');
-      }}
-      disabled={effective.length === 0}
-    >
-      {effective.map((s) => (
-        <option key={s.id} value={s.id}>
-          {s.name}
-        </option>
-      ))}
-    </select>
-  );
+  // 网盘选择下拉：优先挂到子页顶栏（对齐原型），否则就地渲染在标题行。
+  // V4.1.8 ③：未配置任何 alist 源时**整个下拉不渲染**——此前只是 disabled，
+  // 结果在顶栏留下一个空的白色下拉框（用户红圈处），纯占位且毫无作用。
+  const picker =
+    effective.length === 0 ? null : (
+      <select
+        className="text-input nd-pick"
+        value={srcId}
+        onChange={(e) => {
+          setSrcId(e.target.value);
+          setPath('/');
+        }}
+      >
+        {effective.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+    );
   useEffect(() => {
     onHeadSlot?.(picker);
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -156,11 +156,31 @@ class NetdiskLoginActivity : AppCompatActivity() {
         }
     }
 
-    /** 每 1s 重新注入抓取脚本（扛夸克整页跳转后脚本丢失），并在注入前声明原生顶栏/无陷阱标志。 */
+    /**
+     * 每 1s 重新注入抓取脚本（扛夸克整页跳转后脚本丢失），并在注入前声明原生顶栏/无陷阱标志。
+     *
+     * V4.1.8 ①：额外把 CookieManager 读到的完整 cookie 写进 window.__ND_COOKIES。
+     * 夸克/UC 的登录态 cookie（__puus / __pus）是 HttpOnly，document.cookie 一律读不到，
+     * 光靠页面脚本永远匹配不上登录态（表现为"已经登录进文件列表，顶栏却还显示登录xx网盘、
+     * 已挂载列表里没有该盘"）。CookieManager 不受 HttpOnly 限制，这里作为兜底通道喂给注入脚本。
+     */
     private fun injectScript() {
         if (done) return
-        val pre = "window.__ND_NATIVE_BAR=true;window.__ND_NO_TRAP=true;"
+        val cookies = readCookies()
+        val pre = "window.__ND_NATIVE_BAR=true;window.__ND_NO_TRAP=true;" +
+            "window.__ND_COOKIES=" + JSONObject.quote(cookies) + ";"
         if (script.isNotEmpty()) webView.evaluateJavascript(pre + script, null)
+    }
+
+    /** 当前页面（或起始登录页）可用 cookie 串；含 HttpOnly。 */
+    private fun readCookies(): String {
+        return try {
+            val cm = CookieManager.getInstance()
+            val u = if (::webView.isInitialized) (webView.url ?: url) else url
+            if (u.isNotEmpty()) cm.getCookie(u) ?: "" else ""
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun startInjectLoop() {

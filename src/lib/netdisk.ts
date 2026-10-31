@@ -47,9 +47,12 @@ export const NETDISKS: NetdiskProvider[] = [
     // V3.7.8：用网页版入口（桌面 UA 下才会出登录框，移动 UA 会被推到下载页）
     loginUrl: 'https://pan.quark.cn/',
     captureMode: 'cookie',
-    // V4.1.6 ②：进一步去掉设备匿名 cookie b-user-id（未登录就存在），只保留登录后
-    // 才出现的用户标识 PUID，彻底消除"还没输密码就误抓 cookie → 误显示已登录"。
-    mustMatch: 'PUID',
+    // V4.1.8 ①：V4.1.6 把 mustMatch 砍成 'PUID' 是改错了——PUID 是阿里系 cookie，
+    // 夸克/UC 根本没有这个键，导致登录成功后**永远匹配不上**（视频里登录进「全部文件」
+    // 了但顶栏仍显示「登录夸克网盘」）。夸克/UC 登录后才有的是 __puus（用户标识）
+    // 与 __pus（会话），未登录时均不存在，天然不会误报；去掉的 b-user-id / uc_uid
+    // 是设备匿名 cookie（未登录就有），继续排除。
+    mustMatch: '__puus|__pus',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（夸克 API 用 cookie 鉴权）',
   },
@@ -60,8 +63,9 @@ export const NETDISKS: NetdiskProvider[] = [
     // V3.7.8：用网页版登录页（drive.uc.cn，桌面 UA 下出登录框）
     loginUrl: 'https://drive.uc.cn/',
     captureMode: 'cookie',
-    // V4.1.6 ②：去掉设备匿名 cookie（uc_uid/b-user-id，未登录就存在），只保留登录后出现的 PUID。
-    mustMatch: 'PUID',
+    // V4.1.8 ①：同夸克——UC 网盘属阿里 UC 体系，登录态 cookie 为 __puus / __pus，
+    // PUID 在此处同样不存在（V4.1.6 的误改）。uc_uid / b-user-id 仍排除（设备匿名）。
+    mustMatch: '__puus|__pus',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（UC API 用 cookie 鉴权）',
   },
@@ -84,6 +88,46 @@ function readStore(): TokenMap {
   }
 }
 
+/**
+ * V4.1.8 ②：阿里云盘 token 规范化——只保留 refresh_token。
+ * 之前直接把 localStorage 的整段 JSON（{"access_token":"eyJ…","refresh_token":"…",…}）
+ * 原样存下来，导致：① 「已挂载」列表里显示/复制的是近千字符的 JSON，和影视仓那种
+ * 32 字符短 token 完全不一样；② aliList 用 `Bearer ${整段JSON}` 发请求必然 401。
+ * 现在统一存裸 refresh_token（JSON 输入取 refresh_token，裸串输入原样 trim）。
+ */
+export function normalizeAliToken(v: string): string {
+  const s = (v ?? '').trim();
+  if (!s) return '';
+  if (s.startsWith('{')) {
+    try {
+      const j = JSON.parse(s);
+      if (j && typeof j.refresh_token === 'string' && j.refresh_token) return j.refresh_token.trim();
+      if (j && typeof j.access_token === 'string' && j.access_token) return j.access_token.trim();
+    } catch {
+      /* 不是合法 JSON，按裸串处理 */
+    }
+  }
+  return s;
+}
+
+/**
+ * V4.1.8 ②：给 drpy 规则脚本的 token 视图。
+ * 存储层 ali 已是裸 refresh_token，但 V4.1.2 契约里规则侧读 __netdiskTokens.ali 后
+ * 会自己 JSON.parse 取字段；为不让老规则在这里抛异常，对外仍暴露规范化 JSON 串。
+ */
+function toRuleTokens(map: TokenMap): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(map)) {
+    if (!v) continue;
+    if (k === 'ali') {
+      out[k] = /^\s*\{/.test(v) ? v : JSON.stringify({ refresh_token: v, access_token: '' });
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 function writeStore(map: TokenMap) {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(map));
@@ -91,7 +135,10 @@ function writeStore(map: TokenMap) {
     /* ignore */
   }
   // 同步到全局，供 drpy2 网盘源 rule 脚本取用
-  (window as any).__netdiskTokens = { ...(window as any).__netdiskTokens, ...map };
+  (window as any).__netdiskTokens = {
+    ...(window as any).__netdiskTokens,
+    ...toRuleTokens(map),
+  };
   // P3/P7：token 已变更，通知其它组件（如设置页「已挂载」列表）即时刷新，
   // 即便变更发生在主 WebView 当前页面之外的登录回收流程里。
   try {
@@ -118,7 +165,7 @@ export function consumeNetdiskTokenFromUrl(): boolean {
         const token = raw.slice(ci + 1);
         if (token) {
           const map = readStore();
-          map[key] = token;
+          map[key] = key === 'ali' ? normalizeAliToken(token) : token;
           writeStore(map); // 内部会 dispatch 'netdisk-tokens-changed'，触发挂载列表即时刷新
         }
       }
@@ -140,7 +187,18 @@ export function consumeNetdiskTokenFromUrl(): boolean {
 /** 启动时调用：把已存 token 挂到 window，并消费 URL 中可能携带的回传 token。 */
 export function syncNetdiskTokens() {
   consumeNetdiskTokenFromUrl();
-  (window as any).__netdiskTokens = readStore();
+  const map = readStore();
+  // V4.1.8 ②：历史数据迁移——旧版本（≤V4.1.7）存的是整段 token JSON，
+  // 启动时就地收敛成 refresh_token 并回写，「已挂载」列表里立刻变短。
+  if (map.ali) {
+    const n = normalizeAliToken(map.ali);
+    if (n !== map.ali) {
+      map.ali = n;
+      writeStore(map); // 内部已挂 __netdiskTokens + dispatch 事件
+      return;
+    }
+  }
+  (window as any).__netdiskTokens = toRuleTokens(map);
 }
 
 /** 在 App 顶层注册 hashchange / visibilitychange 监听，自动消费登录回跳带来的 token
@@ -165,7 +223,8 @@ export function getAllNetdiskTokens(): TokenMap {
 
 export function setNetdiskToken(key: NetdiskKey, token: string) {
   const map = readStore();
-  map[key] = token;
+  // V4.1.8 ②：阿里统一存裸 refresh_token（手动粘贴整段 JSON 或短 token 都能正确归一）
+  map[key] = key === 'ali' ? normalizeAliToken(token) : token;
   writeStore(map);
 }
 
@@ -181,25 +240,33 @@ export function clearNetdiskToken(key: NetdiskKey) {
 // 的 token JSON 解析），让这类规则直接复用本地登录态，无需用户手动改规则。
 // 仅当规则源码确实声明了 ALI_REFRESH_TOKEN 时才替换，其它规则不受影响。
 export function injectAliRefreshToken(code: string): string {
-  if (!code || !/ALI_REFRESH_TOKEN/.test(code)) return code;
-  const ali = getAllNetdiskTokens().ali;
-  let refreshToken = '';
-  if (ali) {
-    try {
-      const j = JSON.parse(ali);
-      if (j && typeof j.refresh_token === 'string' && j.refresh_token) refreshToken = j.refresh_token;
-      else if (j && typeof j.access_token === 'string' && j.access_token) refreshToken = j.access_token;
-    } catch {
-      // 存的就是裸 token（非 JSON）
-      refreshToken = ali;
-    }
+  if (!code) return code;
+  const tokens = getAllNetdiskTokens();
+  let out = code;
+  // V4.1.8 E：同时支持 var / let / const、单双引号与反引号、分号可选。
+  // 旧正则只认 `var X = '';`（必须带分号 + 单双引号），实测 8/13 种常见写法命中，
+  // 无分号 / let / const / 模板串一律静默不替换，规则拿着空 token 去请求必然失败且无任何提示。
+  const DECL = '((?:var|let|const)\\s+%s\\s*=\\s*)([\'"`])(?:[^\'"`]*)\\2';
+  const inject = (src: string, name: string, value: string): string => {
+    if (!src || !new RegExp(name).test(src)) return src;
+    const re = new RegExp(DECL.replace('%s', name));
+    return src.replace(re, (_m, head: string, _q: string) => `${head}${JSON.stringify(value)}`);
+  };
+  if (/ALI_REFRESH_TOKEN/.test(out)) {
+    // 存储层已是裸 refresh_token（V4.1.8 ②）；兼容历史上残留的 JSON 串
+    const rt = tokens.ali ? normalizeAliToken(tokens.ali) : '';
+    out = inject(out, 'ALI_REFRESH_TOKEN', rt);
   }
-  // 只替换声明处的空/占位赋值，避免破坏规则其它逻辑
-  return code.replace(
-    /(var\s+ALI_REFRESH_TOKEN\s*=\s*)(['"])(?:[^'"]*)\2(\s*;)/,
-    `$1${JSON.stringify(refreshToken)}$3`,
-  );
+  // V4.1.8 ⑥：夸克/UC 的 cookie 同样注入规则源码。
+  // 规则实际跑在 drpy3 引擎（Rust 侧 QuickJS 沙箱），**读不到 WebView 上的
+  // window.__netdiskTokens**，所以 cookie 只能走源码注入这条通道带进去。
+  if (/QUARK_COOKIE/.test(out)) out = inject(out, 'QUARK_COOKIE', tokens.quark ?? '');
+  if (/UC_COOKIE/.test(out)) out = inject(out, 'UC_COOKIE', tokens.uc ?? '');
+  return out;
 }
+
+/** 语义更准确的别名（V4.1.8 起同时注入阿里 token 与夸克/UC cookie）。 */
+export const injectNetdiskCredentials = injectAliRefreshToken;
 
 export interface NdFile {
   name: string;
@@ -224,9 +291,28 @@ export async function listNetdiskFiles(key: NetdiskKey, token: string, parentId:
   return [];
 }
 
+/**
+ * V4.1.8 ②：用 refresh_token 换 access_token（阿里官方刷新接口）。
+ * 存储层现在只留 refresh_token，而列表/取链 API 要的是 access_token；
+ * 之前直接把整段 JSON 塞进 Bearer 头，必然 401。
+ */
+async function aliAccessTokenFromRefresh(refreshToken: string): Promise<string> {
+  const r = await ndRequest(
+    'https://auth.aliyundrive.com/v2/account/token',
+    { 'Content-Type': 'application/json' },
+    JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }),
+  );
+  if (!r?.access_token) throw new Error('阿里云盘 refresh_token 换取 access_token 失败');
+  return r.access_token as string;
+}
+
 async function aliList(token: string, parentId: string): Promise<NdFile[]> {
+  // 裸 refresh_token（非 JWT）先换成 access_token；已是 JWT 则直接用
+  const bearer = /^eyJ/.test((token ?? '').trim())
+    ? (token ?? '').trim()
+    : await aliAccessTokenFromRefresh((token ?? '').trim());
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${bearer}`,
     'Content-Type': 'application/json',
     'x-device-id': 'null',
   };
@@ -292,6 +378,18 @@ async function ucList(token: string, parentId: string): Promise<NdFile[]> {
 }
 
 /**
+ * V4.1.8 ①：读取页面 cookie 的表达式（字符串形式，会被内联进注入脚本）。
+ * 除 document.cookie 外，额外合并 window.__ND_COOKIES —— 该变量由 Android 原生登录
+ * Activity 每秒用 CookieManager.getCookie(url) 写入，能读到 HttpOnly cookie。
+ * 夸克/UC 的登录态 cookie（__puus / __pus）多为 HttpOnly，只靠 document.cookie 一律读不到，
+ * 这正是 V4.1.6 之后"登录成功却仍显示点此登录"的另一半原因。
+ */
+const COOKIE_READ_EXPR =
+  `(function(){var a='';try{a=(typeof window!=='undefined'&&window.__ND_COOKIES)||'';}catch(e){}` +
+  `var b='';try{b=document.cookie||'';}catch(e){}` +
+  `return (a?a.replace(/;\\s*$/,'')+';':'')+b;})()`;
+
+/**
  * 生成注入到登录页的轮询脚本：每秒尝试抓一次 token，抓到后通过
  *  ① Tauri 事件 emit('netdisk-captured')（首选）
  *  ② window.opener.postMessage（兜底）
@@ -303,7 +401,7 @@ export function buildCaptureScript(p: NetdiskProvider): string {
   const getter =
     p.captureMode === 'localStorage'
       ? `(function(){try{var v=localStorage.getItem(${JSON.stringify(p.lsKey)});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';})()`
-      : `(function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';})()`;
+      : `(function(){try{var c=${COOKIE_READ_EXPR};if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';})()`;
   return `(function(){
   if (window.__ndPoll) return;
   window.__ndPoll = setInterval(function(){
@@ -334,7 +432,8 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   const getter =
     p.captureMode === 'localStorage'
       ? `function(){try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';}`
-      : `function(){try{var c=document.cookie;if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
+      // V4.1.8 ①：合并原生 CookieManager 注入的 __ND_COOKIES，覆盖 HttpOnly 登录态 cookie
+      : `function(){try{var c=${COOKIE_READ_EXPR};if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
   // 回传通道说明（V4.1.5 ①②③）：抓到 token 后**仅暂存**到 window.__ND_TOKEN，不自动跳回；
   // 用户主动点 X / 手势返回时，__ndClose() 经 hash 回跳把 token 带回本地 App 页（彻底绕开远程域 ACL，
   // 阿里登录跳转到 passport.aliyun.com 等未放行域时 invoke 会被拒，hash 回跳最稳），前端 hashchange 消费落盘。

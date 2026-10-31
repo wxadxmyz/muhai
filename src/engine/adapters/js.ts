@@ -40,8 +40,18 @@ function extractHost(input?: string): string {
 }
 
 // 预处理脚本：去 ESM 顶层 import/export，前置 req 桥
+//
+// V4.1.9 修复：drpy3 规则（盘搜 / 玩偶哥哥等）以 `export default { meta, rule, ... }`
+// 暴露源对象，而 Rust 侧 drpy3 引擎正是靠这段 export 来装载源。
+// 旧实现把顶层 export/import 一并剥掉，于是 drpy3 规则被阉割成匿名对象、装载失败，
+// 表现为该源在左侧列表里直接不出现（盘搜此前就是这样「永远看不到」）。
+// 故对 drpy 规则只删顶层 import（CatVod 偶有的 import 会让 QuickJS 崩），保留 export default；
+// 非 drpy 的裸 / CatVod 脚本维持原行为（连 export 一起删，走旧沙箱）。
 function catvodize(code: string): string {
-  const stripped = code.replace(/^\s*(export|import)\s+.*$/gm, '');
+  const isDrpy = isDrpyRule(code);
+  const stripped = isDrpy
+    ? code.replace(/^\s*import\s+.*$/gm, '')
+    : code.replace(/^\s*(export|import)\s+.*$/gm, '');
   return CATVOD_REQ_SHIM + stripped;
 }
 

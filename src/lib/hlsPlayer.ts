@@ -68,6 +68,10 @@ export function buildProxyUrl(url: string, headers?: Record<string, string> | nu
   u.searchParams.set('url', url);
   if (headers?.Referer) u.searchParams.set('referer', headers.Referer);
   if (headers?.['User-Agent']) u.searchParams.set('ua', headers['User-Agent']);
+  // 【补丁】转发 Cookie：夸克/UC 的分享直链必须带登录 Cookie 才能下载，
+  // 代理此前只转发 Referer/UA，导致「播放器一直转圈 → 视频加载超时」。
+  const ck = headers?.['Cookie'] || headers?.cookie;
+  if (ck) u.searchParams.set('cookie', ck);
   return u.toString();
 }
 

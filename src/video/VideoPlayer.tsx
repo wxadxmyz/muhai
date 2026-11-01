@@ -1283,8 +1283,18 @@ export function VideoPlayer({
   // 非数字特殊名（如「预告片」「会员专属」）保留原样；无名字时回退为序号。
   const cleanEp = (name?: string, idx?: number): string => {
     if (name) {
-      const m = name.replace(/^第/, '').replace(/集$/, '').match(/\d+/);
-      if (m) return String(parseInt(m[0], 10)).padStart(2, '0');
+      // 【补丁】原来直接取文件名里「第一个数字」→ 遇到 "S01E02.2026.2160p…" 这类
+      // 网盘剧集命名会抓到季号 01，导致每一集都显示「01」。现在按优先级：
+      //   ① S01E02 / E02 / EP02 → 取 E 后的集号
+      //   ② 第02集 / 02集 → 取集号
+      //   ③ 开头数字（01、01~4K、01-剧名）
+      //   ④ 兜底：第一个数字
+      const raw = name.replace(/^第/, '').replace(/集$/, '');
+      let m = raw.match(/[Ss]\d{1,2}\s*[Ee](?:p)?\.?\s*0?(\d{1,4})/);
+      if (!m) m = raw.match(/(?:^|[^\d])0?(\d{1,4})\s*[集話]/);
+      if (!m) m = raw.match(/^\s*0?(\d{1,4})(?:\s*[.\-_~、,，\s]|$)/);
+      if (!m) m = raw.match(/\d+/);
+      if (m) return String(parseInt(m[1], 10)).padStart(2, '0');
     }
     return idx != null ? String(idx + 1).padStart(2, '0') : '';
   };

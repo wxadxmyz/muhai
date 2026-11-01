@@ -1369,6 +1369,13 @@ async fn proxy_handler(req: Request<Incoming>) -> Result<Response<ProxyBody>, In
     } else {
         builder = builder.header("User-Agent", "okhttp/4.10.0");
     }
+    // 【补丁】转发 Cookie：网盘分享直链（夸克/UC）必须带登录 Cookie 才能下载，
+    // 代理此前不透传 Cookie，导致播放器加载直链失败 → 「视频加载超时」。
+    if let Some(c) = params.get("cookie") {
+        if !c.is_empty() {
+            builder = builder.header("Cookie", c.as_str());
+        }
+    }
     builder = builder.header("Accept", "*/*");
 
     // 诊断事件模板：上面已解析完所需字段，这里只等 status / body_len 补齐后落盘。

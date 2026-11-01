@@ -108,7 +108,7 @@ static POOL: OnceLock<Vec<Sender<Job>>> = OnceLock::new();
 // 并发度：每 worker 独立 QuickJS Runtime（内存上限 384MB 为 CAP，非预分配，实测常驻很低）。
 // 移动端取 4 即可让 7 个 drpy 源近似并发；如需更激进可调大，但注意内存水位。
 // V3.8.8 #1：worker 的选择由下面的 sticky_index 按源 key 决定，不再全局轮转。
-const POOL_SIZE: usize = 4;
+const POOL_SIZE: usize = 12; // 【补丁】4 → 12：源列表里的 drpy 源变多后，4 个 worker 会互相排队饿死
 
 fn pool() -> &'static Vec<Sender<Job>> {
     POOL.get_or_init(|| {

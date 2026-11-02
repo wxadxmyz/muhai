@@ -243,7 +243,20 @@ export default function VideoApp() {
             }
           }
         }
-      } catch { /* 保持列表项 */ }
+      } catch (e: any) {
+        // V4.2.0：原来这里静默 catch，导致详情失败时界面上只剩「暂无简介 +
+        // 该源未提供选集列表」，用户完全无从判断是网络、被拦还是资源下架。
+        // 现在保留列表项数据，但把失败原因挂到 desc 末尾，至少能看到一句可读提示。
+        const reason = String(e?.message || e || '').slice(0, 160);
+        if (reason) {
+          try {
+            player.updateCurrent({
+              ...player.getState().current!,
+              desc: (it.desc || '') + '\n\n[详情获取失败] ' + reason,
+            });
+          } catch { /* 更新失败就算了，不影响播放 */ }
+        }
+      }
     }
     setDetailLoading(false);
   };

@@ -39,11 +39,9 @@ const CATS: { key: Cat; icon: any; label: string }[] = [
   { key: 'about', icon: 'file-text', label: '关于' },
 ];
 
-const NETDISKS = [
-  { key: 'ali', label: '阿里云盘', color: '#6a7cff' },
-  { key: 'quark', label: '夸克网盘', color: '#2b6ff2' },
-  { key: 'uc', label: 'UC 网盘', color: '#ff6a00' },
-] as const;
+// 【V4.1.10】原来这里有一份硬编码的 NETDISKS（ali/quark/uc），
+// 但全文件从未使用（死代码），却会让「新增网盘」时误以为已同步。
+// 网盘入口的唯一数据源是 lib/netdisk.ts 的 NETDISKS，这里不再重复定义。
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (

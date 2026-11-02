@@ -26,6 +26,7 @@ import {
   type NetdiskKey,
 } from '../lib/netdisk';
 import { openNetdiskLogin } from '../lib/netdiskLogin';
+import { NETDISKS as NETDISK_PROVIDERS } from '../lib/netdisk';
 import { SourceConfig } from '../engine/types';
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -156,12 +157,17 @@ function ToggleRow({
 // #15 版本号自动化：这里改用构建期从 package.json 注入的 __APP_VERSION__，不再手写常量（避免与主版本脱节）。
 const APP_VERSION_FALLBACK = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0';
 
-// 网盘登录页（影视仓样式）：阿里 / 夸克 / UC 三个圆形入口，底层通过 alist 网关注入绑定
-const NETDISKS: { key: string; label: string; icon: 'folder'; color: string; desc?: string }[] = [
-  { key: 'ali', label: '阿里云盘', icon: 'folder', color: '#6a7cff', desc: '支持 4K 原画' },
-  { key: 'quark', label: '夸克网盘', icon: 'folder', color: '#2b6ff2' },
-  { key: 'uc', label: 'UC 网盘', icon: 'folder', color: '#ff6a00' },
-];
+// 网盘登录页（影视仓样式）：入口列表从 lib/netdisk 的 NETDISKS 派生。
+// 【V4.1.10 修复】原来这里硬编码了 ali/quark/uc 三项，新增网盘（百度/迅雷）时
+// 忘了同步 → 网盘登录页看不到新入口。现在单一数据源，加网盘只改 lib/netdisk.ts。
+const ND_DESC: Record<string, string> = { ali: '支持 4K 原画' };
+const NETDISKS = NETDISK_PROVIDERS.map((p) => ({
+  key: p.key as string,
+  label: p.label,
+  icon: 'folder' as const,
+  color: p.color,
+  desc: ND_DESC[p.key],
+}));
 
 export function SettingsPage({
   onClose,
@@ -425,6 +431,10 @@ export function SettingsPage({
               placeholder={
                 pasteKey === 'ali'
                   ? '粘贴阿里云盘 refresh_token（从 aliyundrive 网页/客户端获取）'
+                  : pasteKey === 'baidu'
+                  ? '粘贴百度网盘 access_token（OAuth 授权后页面上的 access_token=...）'
+                  : pasteKey === 'xunlei'
+                  ? '粘贴迅雷云盘 Cookie（需含 uid= / pass= / access_token=）'
                   : '粘贴对应网盘的 Cookie（需含 PUID= / kps= 等登录态字段）'
               }
               value={pasteVal}

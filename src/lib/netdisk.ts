@@ -322,6 +322,10 @@ export async function listNetdiskFiles(key: NetdiskKey, token: string, parentId:
   if (key === 'ali') return await aliList(token, parentId);
   if (key === 'quark') return await quarkList(token, parentId);
   if (key === 'uc') return await ucList(token, parentId);
+  // 【V4.1.10】百度/迅雷目前只做「分享直链」能力，尚未实现 App 内目录浏览。
+  // 原来这里静默返回 []，用户在「已挂载列表」里点进去会看到空列表却不知原因。
+  if (key === 'baidu') throw new Error('百度网盘暂不支持 App 内目录浏览，请在影视源里选「百度网盘」线路播放');
+  if (key === 'xunlei') throw new Error('迅雷云盘暂不支持 App 内目录浏览，请在影视源里选「迅雷云盘」线路播放');
   return [];
 }
 

@@ -337,7 +337,27 @@ export function createDrpy3Source(
   return {
     async search(keyword: string, page?: number): Promise<MediaItem[]> {
       await ensureInit();
-      const r = await call('search', [keyword, false, String(page ?? 1)]);
+      // V4.2.3：加超时保护。
+      // 此前 drpy 的 search 是**裸调 call**，没有任何超时 ——
+      // 而 drpy3 的 HTTP 桥是同步阻塞的（Rust reqwest::blocking）、
+      // 且 Rust worker 池内串行（drpy3.rs `for j in rx { engine.run(&j.call) }`），
+      // 一个慢源（如盘搜遇到 8s+ 的公共实例）会把整个 worker 线程占住，
+      // 同 worker 上的其它源全部排队 → 表现为「盘搜慢，后面的玩偶/多多也跟着慢」，
+      // 而且慢源多了会吃光 18s 的搜索窗口 → 「时有时无」。
+      //
+      // 注：App 的聚合层本来就是 Promise.all + 谁快谁先上（engine/index.ts），
+      // 所以慢源**不会**拖慢已经返回的源；这里加超时是为了**不让慢源占住 worker**。
+      let r: any;
+      try {
+        r = await withTimeout(call('search', [keyword, false, String(page ?? 1)]), 12000);
+      } catch (e: any) {
+        const m = String(e?.message || e || '');
+        if (m === 'timeout') {
+          // 超时不算「源死了」——上层 aggregateSearch 对 timeout 有特殊处理（不累计连续失败）
+          throw new Error('timeout');
+        }
+        throw e;
+      }
       if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '搜索失败'));
       return toItems(r?.list ?? [], cfg);
     },

@@ -152,6 +152,8 @@ class NetdiskLoginActivity : AppCompatActivity() {
             "ali" -> "阿里云盘"
             "quark" -> "夸克网盘"
             "uc" -> "UC网盘"
+            "baidu" -> "百度网盘"
+            "xunlei" -> "迅雷云盘"
             else -> ""
         }
     }

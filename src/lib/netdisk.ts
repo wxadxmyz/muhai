@@ -8,7 +8,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-export type NetdiskKey = 'ali' | 'quark' | 'uc';
+export type NetdiskKey = 'ali' | 'quark' | 'uc' | 'baidu' | 'xunlei';
 
 export interface NetdiskProvider {
   key: NetdiskKey;
@@ -16,7 +16,7 @@ export interface NetdiskProvider {
   color: string;
   loginUrl: string;
   /** 抓 token 的方式 */
-  captureMode: 'localStorage' | 'cookie';
+  captureMode: 'localStorage' | 'cookie' | 'urlParam';
   /** localStorage 的键名（captureMode=localStorage 时） */
   lsKey?: string;
   /** 登录态校验正则（源码字符串）：未登录时 cookie/缓存里也有跟踪类数据，
@@ -68,6 +68,36 @@ export const NETDISKS: NetdiskProvider[] = [
     mustMatch: '__puus|__pus',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（UC API 用 cookie 鉴权）',
+  },
+  {
+    key: 'baidu',
+    label: '百度网盘',
+    color: '#2e7cf6',
+    // 百度 OAuth 授权（redirect_uri=oob）：授权成功后浏览器会跳到
+    // openapi.baidu.com/oauth/2.0/authorize?...&access_token=xxx&token_type=Bearer&expires_in=...
+    // token 直接在 URL 上，页面正文也会显示一遍。抓 URL 参数即可，无需读 cookie。
+    // client_id 为 TVBox/影视仓生态通用公开值。
+    loginUrl:
+      'https://openapi.baidu.com/oauth/2.0/authorize?response_type=token&scope=basic,netdisk' +
+      '&client_id=omiOnr2tYnN9vSyDErcVFWpPU2mZA7YO&redirect_uri=oob&confirm_login=0',
+    captureMode: 'urlParam',
+    lsKey: 'access_token',
+    // 百度 access_token 是 32 位左右的十六进制/URL-safe 串
+    mustMatch: '^[A-Za-z0-9\-_.]{16,}$',
+    headerName: 'cookie',
+    hint: '登录后自动抓取 access_token（百度分享直链接口需要）',
+  },
+  {
+    key: 'xunlei',
+    label: '迅雷云盘',
+    color: '#0b6cf0',
+    // 迅雷云盘网页版入口（桌面 UA 下才有登录框）
+    loginUrl: 'https://pan.xunlei.com/',
+    captureMode: 'cookie',
+    // 迅雷登录后的关键 cookie：uid / pass / access_token（未登录时这些键不存在）
+    mustMatch: 'uid=|pass=|access_token=',
+    headerName: 'cookie',
+    hint: '登录后自动抓取网页 cookie（迅雷分享直链接口需要）',
   },
 ];
 
@@ -262,6 +292,10 @@ export function injectAliRefreshToken(code: string): string {
   // window.__netdiskTokens**，所以 cookie 只能走源码注入这条通道带进去。
   if (/QUARK_COOKIE/.test(out)) out = inject(out, 'QUARK_COOKIE', tokens.quark ?? '');
   if (/UC_COOKIE/.test(out)) out = inject(out, 'UC_COOKIE', tokens.uc ?? '');
+  // 百度：access_token（OAuth oob 授权得到），直链接口 xpan/multimedia 必需
+  if (/BAIDU_ACCESS_TOKEN/.test(out)) out = inject(out, 'BAIDU_ACCESS_TOKEN', tokens.baidu ?? '');
+  // 迅雷：网页 cookie，pc-api 分享接口必需
+  if (/XUNLEI_COOKIE/.test(out)) out = inject(out, 'XUNLEI_COOKIE', tokens.xunlei ?? '');
   return out;
 }
 
@@ -432,6 +466,12 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
   const getter =
     p.captureMode === 'localStorage'
       ? `function(){try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';}`
+      // 百度 OAuth(oob)：token 直接出现在跳转 URL 的 query / hash 上
+      : p.captureMode === 'urlParam'
+      ? `function(){try{var s=(location.search||'')+'&'+(location.hash||'');var m=s.match(/[?&#]access_token=([^&\\s\\\"']+)/);if(m&&m[1]){var t=decodeURIComponent(m[1]);if(new RegExp(${must}).test(t))return t;}}catch(e){}
+          try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}
+          try{var b=(document.body&&document.body.innerText)||'';var m2=b.match(/access_token\\s*[=:]\\s*([A-Za-z0-9\\-_.]{16,})/);if(m2)return m2[1];}catch(e){}
+          return '';}`
       // V4.1.8 ①：合并原生 CookieManager 注入的 __ND_COOKIES，覆盖 HttpOnly 登录态 cookie
       : `function(){try{var c=${COOKIE_READ_EXPR};if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
   // 回传通道说明（V4.1.5 ①②③）：抓到 token 后**仅暂存**到 window.__ND_TOKEN，不自动跳回；

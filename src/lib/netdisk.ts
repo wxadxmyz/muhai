@@ -73,28 +73,40 @@ export const NETDISKS: NetdiskProvider[] = [
     key: 'baidu',
     label: '百度网盘',
     color: '#2e7cf6',
-    // 百度 OAuth 授权（redirect_uri=oob）：授权成功后浏览器会跳到
-    // openapi.baidu.com/oauth/2.0/authorize?...&access_token=xxx&token_type=Bearer&expires_in=...
-    // token 直接在 URL 上，页面正文也会显示一遍。抓 URL 参数即可，无需读 cookie。
-    // client_id 为 TVBox/影视仓生态通用公开值。
+    // V4.2.0：改用百度**官方移动登录页**（wappass.baidu.com 的「登录账号 体验完整功能」）。
+    // 之前用的 openapi.baidu.com OAuth 授权页观感与官方登录页不一致。
+    // 实测（Playwright + Chromium 412×915）：本 URL 用移动 UA 停在 wappass.baidu.com，
+    // 用桌面 UA 会被 302 到 passport.baidu.com/v2/「扫码登录」——所以必须配移动 UA
+    // （NetdiskLoginActivity 里按 provider 切换：百度/迅雷移动，其余桌面）。
+    // 登录成功后产出 cookie：BDUSS（+ STOKEN）。
     loginUrl:
-      'https://openapi.baidu.com/oauth/2.0/authorize?response_type=token&scope=basic,netdisk' +
-      '&client_id=omiOnr2tYnN9vSyDErcVFWpPU2mZA7YO&redirect_uri=oob&confirm_login=0',
-    captureMode: 'urlParam',
-    lsKey: 'access_token',
-    // 百度 access_token 是 32 位左右的十六进制/URL-safe 串
-    mustMatch: '^[A-Za-z0-9\-_.]{16,}$',
+      'https://wappass.baidu.com/passport?login&authsite=1&tpl=netdisk&overseas=1&smsLoginLink=1' +
+      '&display=mobile&u=https%3A%2F%2Fpan.baidu.com%2Fwap%2Fhome%3Floginform%3Dpass' +
+      '%26realName%3D1%26wapBehaviorLog%3Dwap_click_welcome_login%26branchType%3DSMSlogin' +
+      '#/insert_account',
+    captureMode: 'cookie',
+    // 百度登录态的判定：BDUSS 必须存在（未登录时只有 BAIDUID/BAIDUID_BFESS/__bid_n/fuid 等匿名 cookie）
+    mustMatch: 'BDUSS=',
     headerName: 'cookie',
-    hint: '登录后自动抓取 access_token（百度分享直链接口需要）',
+    hint: '登录后自动抓取 BDUSS（百度分享直链接口需要）',
   },
   {
     key: 'xunlei',
     label: '迅雷云盘',
     color: '#0b6cf0',
-    // 迅雷云盘网页版入口（桌面 UA 下才有登录框）
-    loginUrl: 'https://pan.xunlei.com/',
+    // V4.2.0：改用迅雷**官方登录页**（i.xunlei.com 的「手机验证登录」）。
+    // 之前用的 pan.xunlei.com 只是首页，不是登录页。
+    // 该 URL 是迅雷官方 OAuth 授权入口（PKCE S256，scope=profile+offline+pan+sso+user，
+    // redirect_uri 最终落到 https://pan.xunlei.com/），授权成功后 cookie 落在 .xunlei.com 域。
+    loginUrl:
+      'https://i.xunlei.com/center/account/personal/auth/?ui_client_id=Xqp0kJBXWhwaTpB6' +
+      '&redirect_uri=https%3A%2F%2Fi.xunlei.com%2Fcenter%2Faccount%2Fpersonal%2Foauth%2F' +
+      '%3Fclient_id%3DXqp0kJBXWhwaTpB6%26redirect_uri%3Dhttps%253A%252F%252Fpan.xunlei.com%252F%26' +
+      'scope%3Dprofile%2Boffline%2Bpan%2Bsso%2Buser%26state%3Dstate-n94yq6zmz9%26response_type%3Dcode' +
+      '%26code_challenge%3D0or8XWfxNA3GvcPFTG3ossf_MMfDO46uR3jIrEqAkx4%26code_challenge_method%3DS256' +
+      '%26sign_out_uri%3Dhttps%253A%252F%252Fpan.xunlei.com%252F%253Fsso_sign_out%253D',
     captureMode: 'cookie',
-    // 迅雷登录后的关键 cookie：uid / pass / access_token（未登录时这些键不存在）
+    // 迅雷登录后的关键 cookie：uid / pass / access_token（未登录时只有 deviceid / xl_fp_rt）
     mustMatch: 'uid=|pass=|access_token=',
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（迅雷分享直链接口需要）',
@@ -292,7 +304,10 @@ export function injectAliRefreshToken(code: string): string {
   // window.__netdiskTokens**，所以 cookie 只能走源码注入这条通道带进去。
   if (/QUARK_COOKIE/.test(out)) out = inject(out, 'QUARK_COOKIE', tokens.quark ?? '');
   if (/UC_COOKIE/.test(out)) out = inject(out, 'UC_COOKIE', tokens.uc ?? '');
-  // 百度：access_token（OAuth oob 授权得到），直链接口 xpan/multimedia 必需
+  // 百度：V4.2.0 起改用官方移动登录页，登录后产出的是**整串 cookie**（含 BDUSS=xxx; STOKEN=...），
+  // 而非 OAuth access_token。规则侧优先用 BAIDU_COOKIE（作 Cookie 头），
+  // 同时保留 BAIDU_ACCESS_TOKEN 变量名以兼容旧规则/手工粘贴场景 —— 两个变量注入同一个值。
+  if (/BAIDU_COOKIE/.test(out)) out = inject(out, 'BAIDU_COOKIE', tokens.baidu ?? '');
   if (/BAIDU_ACCESS_TOKEN/.test(out)) out = inject(out, 'BAIDU_ACCESS_TOKEN', tokens.baidu ?? '');
   // 迅雷：网页 cookie，pc-api 分享接口必需
   if (/XUNLEI_COOKIE/.test(out)) out = inject(out, 'XUNLEI_COOKIE', tokens.xunlei ?? '');

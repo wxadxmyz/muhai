@@ -432,7 +432,7 @@ export function SettingsPage({
                 pasteKey === 'ali'
                   ? '粘贴阿里云盘 refresh_token（从 aliyundrive 网页/客户端获取）'
                   : pasteKey === 'baidu'
-                  ? '粘贴百度网盘 access_token（OAuth 授权后页面上的 access_token=...）'
+                  ? '粘贴百度网盘 Cookie（含 BDUSS=... ，从浏览器登录 pan.baidu.com 后的开发者工具里取）'
                   : pasteKey === 'xunlei'
                   ? '粘贴迅雷云盘 Cookie（需含 uid= / pass= / access_token=）'
                   : '粘贴对应网盘的 Cookie（需含 PUID= / kps= 等登录态字段）'

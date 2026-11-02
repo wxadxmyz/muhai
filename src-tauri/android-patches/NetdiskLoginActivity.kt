@@ -44,6 +44,28 @@ class NetdiskLoginActivity : AppCompatActivity() {
     private val DESKTOP_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+    /**
+     * V4.2.0：按 provider 选 UA。
+     *
+     * 百度/迅雷的官方登录页是**移动版**（wappass.baidu.com 的「登录账号 体验完整功能」、
+     * i.xunlei.com 的「手机验证登录」），用桌面 UA 打开会被重定向到 PC 版：
+     *   - 百度 → passport.baidu.com/v2/ 「扫码登录 / 请使用百度App扫码登录」（与官方移动页完全不同）
+     *   - 实测（Playwright + Chromium 412×915）：移动 UA 停在 wappass.baidu.com，
+     *     桌面 UA 被 302 到 passport.baidu.com/v2/
+     *
+     * 但桌面 UA 不能全局改：夸克/阿里/UC 在移动 UA 下会被直接推到下载页，拿不到登录态
+     * （V4.1.8 踩过这个坑）。所以这里按 provider 分别指定。
+     */
+    private val MOBILE_UA =
+        "Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+    private fun uaForProvider(): String =
+        when (provider) {
+            // 官方登录页只有移动版才正确渲染
+            "baidu", "xunlei" -> MOBILE_UA
+            else -> DESKTOP_UA
+        }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,7 +134,7 @@ class NetdiskLoginActivity : AppCompatActivity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
-            settings.userAgentString = DESKTOP_UA
+            settings.userAgentString = uaForProvider()
             settings.loadWithOverviewMode = true
             settings.useWideViewPort = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW

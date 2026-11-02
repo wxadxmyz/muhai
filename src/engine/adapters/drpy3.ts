@@ -4,6 +4,7 @@ import { devLog } from '../../lib/log';
 import { ensureProxyPort, buildProxyUrl } from '../../lib/hlsPlayer';
 import { isTauri } from '../../lib/tauriBridge';
 import { getAllNetdiskTokens, injectAliRefreshToken } from '../../lib/netdisk';
+import { withTimeout } from '../http';
 
 // V3.8.9：删掉 netdiskShare 依赖。网盘分享解析（V3.7.5 #4）是 V3.7.0 之后加的，
 // 不在「V3.7.0 能播」的基准里，按回退清单一并去除。
@@ -362,7 +363,26 @@ export function createDrpy3Source(
 
     async getDetail(itemId: string): Promise<MediaItem> {
       await ensureInit();
-      const r = await call('detail', [itemId]);
+      // V4.2.2：加超时保护。
+      // 此前 getDetail **完全没有超时**，而 drpy3 的 HTTP 桥是**同步阻塞**的
+      // （Rust reqwest::blocking），且 Rust worker 池内是串行的 ——
+      // 弱网下实测多多一次 detail 要 5 次串行 HTTP ≈ 13.6 秒，
+      // 会把整个 worker 线程占满，界面一直转圈、后续所有源的请求全在排队。
+      // 12 秒还没回来的详情就放弃，并给出可读原因（不再让界面空着）。
+      let r: any;
+      try {
+        r = await withTimeout(call('detail', [itemId]), 12000);
+      } catch (e: any) {
+        const msg = String(e?.message || e || '');
+        if (msg === 'timeout') {
+          return {
+            id: itemId, sourceId: cfg.id, sourceName: cfg.name, title: '', mediaType: 'video',
+            desc: '【详情获取超时】该源超过 12 秒未返回（当前网络较慢或站点限流）。\n\n' +
+              '建议：① 换个网络（Wi-Fi 优于移动数据）；② 稍后重试；③ 换一个源。',
+          } as MediaItem;
+        }
+        throw e;
+      }
       // #4 错误显化：引擎返回的结构化错误必须抛出来，与 search/getPlayUrl 行为一致，
       // 否则前端拿到空详情还以为是源没数据，定位极难。
       if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '获取详情失败'));
@@ -426,7 +446,8 @@ export function createDrpy3Source(
       // itemId 是 vod_id（而非集数 url）且首集映射也没命中时，才兜底拉一次详情取首集
       if (!flag) {
         try {
-          const r = await call('detail', [itemId]);
+          // 同 getDetail：detail 也要有超时，否则这里会卡住整个播放流程
+          const r = await withTimeout(call('detail', [itemId]), 12000);
           const first = (r?.list ?? [])[0];
           if (first?.vod_play_url) {
             const eps = toEpisodesWithFlag(first.vod_play_url);
@@ -440,7 +461,17 @@ export function createDrpy3Source(
           /* 直传 itemId 再试 */
         }
       }
-      const r = await call('play', [flag, playId, []]);
+      // play 也要超时：play 内部同样会发多次 HTTP（取分享 token + 取直链）
+      let r: any;
+      try {
+        r = await withTimeout(call('play', [flag, playId, []]), 15000);
+      } catch (e: any) {
+        const m = String(e?.message || e || '');
+        if (m === 'timeout') {
+          throw new Error('解析播放地址超时（超过 15 秒）。当前网络较慢或网盘接口限流，请换个网络或稍后重试。');
+        }
+        throw e;
+      }
       if (r && r.__drpy3_error) throw new Error(String(r.__drpy3_error.error ?? '解析播放地址失败'));
       let url = '';
       let headers: Record<string, string> | undefined;

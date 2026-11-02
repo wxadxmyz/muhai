@@ -246,14 +246,20 @@ export default function VideoApp() {
       } catch (e: any) {
         // V4.2.0：原来这里静默 catch，导致详情失败时界面上只剩「暂无简介 +
         // 该源未提供选集列表」，用户完全无从判断是网络、被拦还是资源下架。
-        // 现在保留列表项数据，但把失败原因挂到 desc 末尾，至少能看到一句可读提示。
-        const reason = String(e?.message || e || '').slice(0, 160);
+        // V4.2.2 修正：上一版把原因挂到了 player.current.desc，但简介渲染读的是
+        // **detail.desc**（VideoPlayer.tsx:1779 `detail.desc || raw?.vod_content`），
+        // 挂错地方 → 界面依旧空白。现在正确地写进 detail 状态。
+        const reason = String(e?.message || e || '').slice(0, 200);
         if (reason) {
+          const failed = {
+            ...it,
+            desc: (it.desc || '') + (it.desc ? '\n\n' : '') + '【详情获取失败】' + reason,
+          } as typeof it;
+          setDetail(failed);
           try {
-            player.updateCurrent({
-              ...player.getState().current!,
-              desc: (it.desc || '') + '\n\n[详情获取失败] ' + reason,
-            });
+            if (player.getState().current) {
+              player.updateCurrent({ ...player.getState().current!, desc: failed.desc });
+            }
           } catch { /* 更新失败就算了，不影响播放 */ }
         }
       }

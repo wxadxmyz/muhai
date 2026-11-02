@@ -349,7 +349,12 @@ export function createDrpy3Source(
       // 所以慢源**不会**拖慢已经返回的源；这里加超时是为了**不让慢源占住 worker**。
       let r: any;
       try {
-        r = await withTimeout(call('search', [keyword, false, String(page ?? 1)]), 12000);
+        // 【V4.2.4】12s → 18s：盘搜公共实例的耗时**强烈依赖关键词热度**——
+        // 实测「小城良方」7~10s、「庆余年」9.6~10.9s，且可能随机返回
+        // "error code: 1102" 限流体需要重试。规则侧总预算已相应提到 14s，
+        // 这里必须同步放宽，否则 App 会先于规则超时，把「还能拿到数据」的
+        // 慢查询直接掐掉（表现为盘搜时有时无）。
+        r = await withTimeout(call('search', [keyword, false, String(page ?? 1)]), 18000);
       } catch (e: any) {
         const m = String(e?.message || e || '');
         if (m === 'timeout') {

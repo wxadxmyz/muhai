@@ -1294,7 +1294,9 @@ export function VideoPlayer({
       if (!m) m = raw.match(/(?:^|[^\d])0?(\d{1,4})\s*[集話]/);
       if (!m) m = raw.match(/^\s*0?(\d{1,4})(?:\s*[.\-_~、,，\s]|$)/);
       if (!m) m = raw.match(/\d+/);
-      if (m) return String(parseInt(m[1], 10)).padStart(2, '0');
+      // P12：/\d+/ 这个兜底匹配没有捕获组，m[1] 恒为 undefined → parseInt(undefined)=NaN。
+      // 综艺的日期集名（如 20261104）、电影的 HD1080P / 4K 几乎全中，格子里显示 NaN。
+      if (m) return String(parseInt(m[1] || m[0], 10)).padStart(2, '0');
     }
     return idx != null ? String(idx + 1).padStart(2, '0') : '';
   };

@@ -16,7 +16,7 @@ export interface NetdiskProvider {
   color: string;
   loginUrl: string;
   /** 抓 token 的方式 */
-  captureMode: 'localStorage' | 'cookie' | 'urlParam';
+  captureMode: 'localStorage' | 'cookie' | 'urlParam' | 'newCookieKeys';
   /** localStorage 的键名（captureMode=localStorage 时） */
   lsKey?: string;
   /** 登录态校验正则（源码字符串）：未登录时 cookie/缓存里也有跟踪类数据，
@@ -105,9 +105,12 @@ export const NETDISKS: NetdiskProvider[] = [
       'scope%3Dprofile%2Boffline%2Bpan%2Bsso%2Buser%26state%3Dstate-n94yq6zmz9%26response_type%3Dcode' +
       '%26code_challenge%3D0or8XWfxNA3GvcPFTG3ossf_MMfDO46uR3jIrEqAkx4%26code_challenge_method%3DS256' +
       '%26sign_out_uri%3Dhttps%253A%252F%252Fpan.xunlei.com%252F%253Fsso_sign_out%253D',
-    captureMode: 'cookie',
-    // 迅雷登录后的关键 cookie：uid / pass / access_token（未登录时只有 deviceid / xl_fp_rt）
-    mustMatch: 'uid=|pass=|access_token=',
+    // P4（方案 3）：实测官方移动页登录成功后并未出现 uid= / pass= / access_token=，
+    // 旧 mustMatch 永远不命中 → 顶栏不变「已登录」、onTokenCaptured 不触发、拿不到凭证。
+    // 改为「登录前后出现新 Cookie 键即抓全量 cookie」，不依赖固定键名。
+    // 基线由原生层每轮注入 __ND_NEW_KEYS；诊断只显示键名，绝不显示 cookie 值。
+    captureMode: 'newCookieKeys',
+    mustMatch: 'uid=|pass=|access_token=', // 仅作兼容说明，newCookieKeys 模式下不参与判定
     headerName: 'cookie',
     hint: '登录后自动抓取网页 cookie（迅雷分享直链接口需要）',
   },
@@ -454,6 +457,8 @@ export function buildCaptureScript(p: NetdiskProvider): string {
   const getter =
     p.captureMode === 'localStorage'
       ? `(function(){try{var v=localStorage.getItem(${JSON.stringify(p.lsKey)});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}return '';})()`
+      : p.captureMode === 'newCookieKeys'
+      ? `(function(){try{var c=${COOKIE_READ_EXPR};if(!c)return '';var ks=[];var ps=c.split(';');for(var i=0;i<ps.length;i++){var k=(ps[i].split('=')[0]||'').trim();if(k&&ks.indexOf(k)<0)ks.push(k);}if(!window.__ND_BASE_KEYS){window.__ND_BASE_KEYS=ks;return '';}var f=[];for(var j=0;j<ks.length;j++){if(window.__ND_BASE_KEYS.indexOf(ks[j])<0)f.push(ks[j]);}if(!f.length)return '';window.__ND_DIAG_KEYS=f;return c;}catch(e){return '';}})()`
       : `(function(){try{var c=${COOKIE_READ_EXPR};if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';})()`;
   return `(function(){
   if (window.__ndPoll) return;
@@ -491,6 +496,17 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
           try{var v=localStorage.getItem(${lsKey});if(v&&new RegExp(${must}).test(v))return v;}catch(e){}
           try{var b=(document.body&&document.body.innerText)||'';var m2=b.match(/access_token\\s*[=:]\\s*([A-Za-z0-9\\-_.]{16,})/);if(m2)return m2[1];}catch(e){}
           return '';}`
+      // P4（迅雷方案 3）：官方页真实登录态 Cookie 键名不固定，改由原生层比对基线，
+      // 把「新出现的键名」注入 __ND_NEW_KEYS。这里只消费键名、过滤跟踪键，
+      // 返回全量 cookie 串；__ND_DIAG_KEYS 供原生层显示诊断（只有键名，没有值）。
+      : p.captureMode === 'newCookieKeys'
+      ? `function(){try{var c=${COOKIE_READ_EXPR};if(!c)return '';
+          var n=window.__ND_NEW_KEYS||[];var f=[];
+          for(var i=0;i<n.length;i++){var k=String(n[i]||'');if(k&&!/^(deviceid|xl_fp_rt|_ga|_gid|_gat|Hm_lvt_|Hm_lpvt_|__utm|sensors|sa_jssdk)/i.test(k))f.push(k);}
+          if(f.length){window.__ND_DIAG_KEYS=f;return c;}
+          // 兜底：此前已登录过、基线里就带登录态特征键时，直接抓全量，避免永远等不到「新键」
+          if(new RegExp(${must}).test(c)){window.__ND_DIAG_KEYS=[];return c;}
+          return '';}catch(e){return '';}}`
       // V4.1.8 ①：合并原生 CookieManager 注入的 __ND_COOKIES，覆盖 HttpOnly 登录态 cookie
       : `function(){try{var c=${COOKIE_READ_EXPR};if(c&&new RegExp(${must}).test(c))return c;}catch(e){}return '';}`;
   // 回传通道说明（V4.1.5 ①②③）：抓到 token 后**仅暂存**到 window.__ND_TOKEN，不自动跳回；
@@ -634,6 +650,8 @@ export function buildCaptureNavScript(p: NetdiskProvider): string {
         // 原生模式：把抓到的 token 上报给原生层（用于顶栏文案 + 返回时回传主 App）
         if (window.NetdiskBridge && !window.__ND_NOTIFIED) {
           window.__ND_NOTIFIED = true;
+          // P4：把新 Cookie 键名（不含值）交给原生层做诊断展示
+          try { window.NetdiskBridge.onLoginDetected(JSON.stringify(window.__ND_DIAG_KEYS || [])); } catch(e){}
           try { window.NetdiskBridge.onTokenCaptured(t); } catch(e){}
         }
       }

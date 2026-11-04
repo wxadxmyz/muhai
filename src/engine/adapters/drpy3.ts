@@ -170,7 +170,7 @@ function parseOneLine(group: string): { name: string; url: string }[] {
 // V3.8.9：drpy 源已回退到 toEpisodesWithFlag，本函数当前不再被 drpy 链路调用，
 // 保留仅为将来需要「线路分组」时可直接复用。苹果CMS 源用的是 normal.ts 里那份同名实现，
 // 两者互不影响。
-export function toLineGroups(raw: any): {
+export function toLineGroups(raw: any, opts?: { sort?: boolean }): {
   lineGroups: { name: string; url: string }[][];
   lineNames: string[];
   episodes: EpisodeWithFlag[];
@@ -183,14 +183,17 @@ export function toLineGroups(raw: any): {
   const parsed = groups
     .map((g, i) => ({ name: names[i] || `线路${i + 1}`, eps: parseOneLine(g) }))
     .filter((g) => g.eps.length > 0);
-  parsed.sort((a, b) => {
-    const sa = lineDirectScore(a.eps);
-    const sb = lineDirectScore(b.eps);
-    if (sa !== sb) return sb - sa;
-    const aDirect = /\.(m3u8|mp4)(\?|$)/i.test(a.eps[0]?.url ?? '') ? 0 : 1;
-    const bDirect = /\.(m3u8|mp4)(\?|$)/i.test(b.eps[0]?.url ?? '') ? 0 : 1;
-    return aDirect - bDirect;
-  });
+  // P5/P6：保持源给出的线路顺序（不按直链占比重排），否则会换掉源自己排的第一条线路。
+  if (opts?.sort !== false) {
+    parsed.sort((a, b) => {
+      const sa = lineDirectScore(a.eps);
+      const sb = lineDirectScore(b.eps);
+      if (sa !== sb) return sb - sa;
+      const aDirect = /\.(m3u8|mp4)(\?|$)/i.test(a.eps[0]?.url ?? '') ? 0 : 1;
+      const bDirect = /\.(m3u8|mp4)(\?|$)/i.test(b.eps[0]?.url ?? '') ? 0 : 1;
+      return aDirect - bDirect;
+    });
+  }
   // episodes 保持 flat（兼容旧消费方），但按线路顺序把直链线路的集数放前面
   const episodes: EpisodeWithFlag[] = [];
   for (const g of parsed) {
@@ -272,8 +275,17 @@ export function createDrpy3Source(
     if (func === 'init') inited = true;
     let raw: string;
     try {
+      // P1：Rust 的 __DRPY3__.drpy3HasSource(key) 命中即复用已加载的源实例，
+      // 于是「源码注入」的凭证在首次加载后固化（首次没登录就永远是空串），重登不生效。
+      // 把凭证指纹编进 key：凭证一变就是新 key，强制重新求值规则。
+      // 规则侧另有 syncTokens() 读 globalThis.__netdiskTokens 作双保险。
+      const tk = getAllNetdiskTokens();
+      const fps = JSON.stringify(tk ?? {});
+      let fp = 0;
+      for (let i = 0; i < fps.length; i++) fp = (fp * 31 + fps.charCodeAt(i)) | 0;
+      const engineKey = `${String(jsCfg.id ?? jsCfg.name ?? 'drpy3')}@${(fp >>> 0).toString(36)}`;
       raw = await invoke<string>('drpy3run', {
-        payload: { code, key: String(jsCfg.id ?? jsCfg.name ?? 'drpy3'), func, args, ext: jsCfg.ext, netdiskTokens: getAllNetdiskTokens() },
+        payload: { code, key: engineKey, func, args, ext: jsCfg.ext, netdiskTokens: tk },
       });
     } catch (e: any) {
       const msg = `drpy3 ${func} 调用失败: ${e?.message ?? e}`;
@@ -420,14 +432,17 @@ export function createDrpy3Source(
       const items = toItems(list, cfg);
       const it = items[0];
       if (it) {
-        // V3.8.9：回退到 V3.7.0 的 toEpisodesWithFlag，不再写回 lineGroups/lineNames。
-        // V3.8.4 #1 引入的线路重排会换掉源自己排的第一条线路，是 V3.7.0 之后才有的行为。
-        // 播放器侧（VideoApp.tsx:142 / VideoPlayer.tsx:247）对 lineGroups 缺失本就有兜底
-        // （V3.7.0 及之前 drpy 源从不产出 lineGroups，线路数恒为 1），故此处可安全去除。
-        const eps = toEpisodesWithFlag(it.raw?.vod_play_url ?? '');
-        for (const e of eps) rememberFlag(cfg.id, e.url, e.flag);
-        rememberFirstEp(cfg.id, itemId, eps); // #4：记住首集，播放时无需再拉详情
-        it.episodes = eps.map((e) => ({ name: e.name, url: e.url }));
+        // P5/P6：把 vod_play_from 里的线路名（夸克网盘 / 百度网盘 / UC网盘 / 迅雷云盘…）
+        // 透传成 lineNames，并按 $$$ 分组写回 lineGroups。
+        // V3.8.9 起 drpy 链路不再写回这两项，播放器退回「单线路」，而 toEpisodesWithFlag
+        // 又把多线路 $$$ 全部拍平成一个 episodes 数组 → 默认线路错乱、集数重复/跳号。
+        // 这里保持源给的顺序（sort:false），episodes 只取第一条线路，切线路交给播放器。
+        const { lineGroups, lineNames, episodes: allEps } = toLineGroups(it.raw, { sort: false });
+        it.raw = { ...(it.raw ?? {}), lineGroups, lineNames };
+        for (const e of allEps) rememberFlag(cfg.id, e.url, e.flag);
+        const firstLine = lineNames[0] ?? '';
+        rememberFirstEp(cfg.id, itemId, allEps.filter((e) => e.flag === firstLine));
+        it.episodes = lineGroups[0] ?? allEps.map((e) => ({ name: e.name, url: e.url }));
       }
       // V3.6.7 修复④：电影 / 动漫剧场版等「单集片」在 detail 阶段常常不给 vod_play_url
       // （地址要到 play 阶段才现算）。旧实现在这里直接返回空 episodes，前端 openDetail 又

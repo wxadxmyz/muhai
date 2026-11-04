@@ -16,6 +16,7 @@ import android.widget.TextView
 import java.io.File
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -39,6 +40,8 @@ class NetdiskLoginActivity : AppCompatActivity() {
     private var script: String = ""
     private var resultPath: String = ""
     private var capturedToken: String? = null
+    // P4：登录前的 Cookie 键基线；登录后出现新键即视为登录态就绪
+    private var baseKeys: Set<String>? = null
     private var done: Boolean = false
 
     private val DESKTOP_UA =
@@ -188,11 +191,22 @@ class NetdiskLoginActivity : AppCompatActivity() {
      * 光靠页面脚本永远匹配不上登录态（表现为"已经登录进文件列表，顶栏却还显示登录xx网盘、
      * 已挂载列表里没有该盘"）。CookieManager 不受 HttpOnly 限制，这里作为兜底通道喂给注入脚本。
      */
+    private fun cookieKeys(cookies: String): Set<String> =
+        cookies.split(';').map { it.substringBefore('=').trim() }.filter { it.isNotEmpty() }.toSet()
+
     private fun injectScript() {
         if (done) return
         val cookies = readCookies()
+        val keys = cookieKeys(cookies)
+        // 首次注入时记录基线；之后每轮把「新出现的键名」喂给注入脚本。
+        // 只传键名，绝不把 cookie 值带进诊断文案。
+        if (baseKeys == null) baseKeys = keys
+        val base = baseKeys ?: emptySet()
+        val newKeys = keys - base
         val pre = "window.__ND_NATIVE_BAR=true;window.__ND_NO_TRAP=true;" +
-            "window.__ND_COOKIES=" + JSONObject.quote(cookies) + ";"
+            "window.__ND_COOKIES=" + JSONObject.quote(cookies) + ";" +
+            "window.__ND_BASE_KEYS=" + JSONArray(base).toString() + ";" +
+            "window.__ND_NEW_KEYS=" + JSONArray(newKeys).toString() + ";"
         if (script.isNotEmpty()) webView.evaluateJavascript(pre + script, null)
     }
 
@@ -247,7 +261,23 @@ class NetdiskLoginActivity : AppCompatActivity() {
         fun onTokenCaptured(token: String) {
             runOnUiThread {
                 if (capturedToken == null) capturedToken = token
-                titleView.text = "已登录 · 点击返回"
+                // 若 onLoginDetected 已写入带键名的诊断文案，不要用通用文案覆盖
+                if (!titleView.text.toString().contains("新 Cookie 键")) titleView.text = "已登录 · 点击返回"
+            }
+        }
+
+        /** P4：只展示新出现的 Cookie **键名**，绝不展示值。 */
+        @JavascriptInterface
+        fun onLoginDetected(keysJson: String) {
+            runOnUiThread {
+                val keys = try {
+                    val a = JSONArray(keysJson)
+                    (0 until a.length()).map { a.getString(it) }
+                } catch (e: Exception) {
+                    emptyList<String>()
+                }
+                titleView.text = if (keys.isNotEmpty())
+                    "已登录 · 新 Cookie 键：" + keys.joinToString(", ") else "已登录 · 点击返回"
             }
         }
 

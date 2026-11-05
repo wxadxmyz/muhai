@@ -1199,6 +1199,44 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .disclaimer-check { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted); margin: 14px 0; cursor: pointer; }
 .disclaimer-check input { width: 18px; height: 18px; accent-color: var(--accent); }
 
+/* V4.2.6 Q3：电视大屏免责声明。10-foot UI：大卡片、大字号、大按钮、默认焦点环。
+   遥控器按 OK/Enter 由 focusNav 转成 click，一键同意；无需去勾 18px 的小复选框。 */
+.disclaimer-tv { background: rgba(0, 0, 0, .9); }
+.disclaimer-tv .disclaimer-card {
+  max-width: 860px;
+  padding: 48px 56px;
+  border-radius: 28px;
+  border: 2px solid var(--line);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .6);
+}
+.disclaimer-tv-logo { font-size: 30px; font-weight: 800; color: var(--accent); margin-bottom: 8px; letter-spacing: 1px; }
+.disclaimer-tv .disclaimer-card h2 { font-size: 34px; margin: 0 0 24px; }
+.disclaimer-tv .disclaimer-body { font-size: 21px; line-height: 1.9; color: var(--text); }
+.disclaimer-tv .disclaimer-body p { margin: 0 0 16px; }
+.disclaimer-tv-hint { font-size: 18px; color: var(--muted); margin: 26px 0 20px; }
+.disclaimer-tv-btn {
+  display: block; width: 100%; box-sizing: border-box;
+  padding: 22px 28px; font-family: inherit; font-size: 26px; font-weight: 700;
+  color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: 3px solid transparent; border-radius: 18px;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.disclaimer-tv-btn:focus,
+.disclaimer-tv-btn[data-focusable]:focus {
+  outline: none; transform: scale(1.03);
+  border-color: #fff;
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, .22), 0 16px 40px rgba(0, 0, 0, .5);
+}
+/* 大屏但未进 TV 模式时也放宽一点，避免 340px 小卡片投到电视上过小的兜底 */
+@media (min-width: 1024px) {
+  .disclaimer-card { max-width: 520px; padding: 32px; }
+  .disclaimer-card h2 { font-size: 24px; }
+  .disclaimer-body { font-size: 16px; }
+  .disclaimer-check { font-size: 16px; }
+  .disclaimer-check input { width: 24px; height: 24px; }
+}
+
 /* 网盘登录（影视仓样式：阿里 / 夸克 / UC） */
 /* 网盘登录：横向列表行（1:1 对齐原型 .netdisk-row，行 289-292）：
    .netdisk-row{display:flex;align-items:center;gap:12px;padding:14px;background:var(--panel);

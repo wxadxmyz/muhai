@@ -504,7 +504,7 @@ export function VideoPlayer({
           if (!alive) return;
           detachHls(v);
           setResolving(false);
-          setErr(msg || '视频加载失败，可能是网络或防盗链限制，换个线路试试。');
+          setErr((msg || '视频加载失败') + '\n（可能是网络/防盗链/Cookie 失效；详情见「设置→播放→媒体链路诊断」）');
         },
       });
       const onMeta = () => {
@@ -525,7 +525,10 @@ export function VideoPlayer({
             if (alive && v.readyState < 1) {
               detachHls(v);
               setResolving(false);
-              setErr('视频加载超时，请检查网络或换源。');
+              setErr('视频加载超时：直链已返回但一直没能起播。\n' +
+                '排查：① 网盘 Cookie 过期/分享失效 → 「设置→网盘登录」重新登录；' +
+                '② 直链防盗链或已过期 → 换一集/换线路；' +
+                '③ 打开「设置→播放→媒体链路诊断」看是「直链没取到」还是「代理上游失败」。');
             }
           }, 12000);
         }

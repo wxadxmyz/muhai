@@ -5,6 +5,31 @@
 
 ---
 
+## V4.2.6
+
+**四项真机问题闭环（Q1–Q4）**：覆盖「夸克登录后仍不能播」「盘搜/玩偶偶尔搜不到」「电视布局与电视模式死循环」「玩偶集数解析崩溃」。
+
+### Q1 · 夸克登录后仍不能播放（播放诊断透明化）
+- **App**：`VideoPlayer`/`player`/`playback` 把播放失败与超时文案显式区分「网络 / 防盗链 / Cookie 失效」，新增「设置→播放→媒体链路诊断」入口，错误态不再只显示裸报错。
+- **规则**：`duoduo.js`/`wogg.js` 的 `qPlay()`/play 在失败时显化 stoken、下载接口、未登录、分享失效等根因，方便用户自查。
+
+### Q2 · 盘搜/玩偶偶尔搜不到（搜索稳定性）
+- `pansou.js`：移除耗时一刀切的 `break`；1102/限流时继续换实例，仅超时/预算不足才停止。
+- `duoduo.js`/`wogg.js`：新增 `orderedHosts()`、`_deadHosts`、`rememberGoodHost()`、`_lastGoodHost`——上次成功域名优先、失败域名熔断/退避，降低单次搜索 6 请求压力；清掉硬编码 `(WE)`。
+
+### Q3 · 电视布局与电视模式死循环（Android TV 适配）
+- `deviceMode`：放宽 Android + 宽≥1280 倾向 `tv`，手动覆盖优先级最高。
+- `focusNav`：`isFocusNavActive()` 直接返回 `isTV()`，移除误判路径。
+- **设置页**：普通模式新增「电视模式」开关（`TvModeRow`），打破「开关只在 TV 设置页、TV 设置页又进不去」的死循环。
+- **免责声明**：TV 下渲染大卡片 + 遥控器一键同意（Enter/OK 直接进）。
+- **Manifest**：`android.hardware.touchscreen required=false`，允许无触摸设备（盒子）安装。
+
+### Q4 · 玩偶集数解析崩溃（reading '0'）
+- **App**：`playEpisode()` 用 `Array.isArray(item.raw?.lineGroups) && length` 守卫，空分组回退到 `item.episodes`；`drpy3.getDetail()` 空分组不再写回 `raw.lineGroups=[]`。
+- **规则**：`repro_q4` 已证明带凭证成功路径正常（玩偶出「夸克网盘$$$UC网盘」5 集、多多 3 集），崩溃实际在 App 侧。
+
+---
+
 ## V4.1.1
 
 **真机八项修复**：全部来自用户真机截图取证 + 逐项根因定位，集中在「移动端 WebView 老坑」与「远程域权限」两类。

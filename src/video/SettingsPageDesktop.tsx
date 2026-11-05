@@ -3,6 +3,7 @@
 // 等数据逻辑，仅改呈现。新增电脑专属项：快捷键说明、开机自启、最小化到托盘、窗口关闭行为。
 // 危险操作保留红色「重置软件（清除数据）」，区别于手机端「重置 APP」命名。
 import { useEffect, useState } from 'react';
+import { getManualTvMode, setManualTvMode } from '../lib/deviceMode';
 import { useSources } from '../store';
 import { useSettings } from '../lib/settings';
 import { useSkin, SKINS } from '../lib/theme';
@@ -83,6 +84,7 @@ export function SettingsPageDesktop({
   const [ndTokens, setNdTokens] = useState<Partial<Record<NetdiskKey, string>>>({});
   const [autostart, setAutostart] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [tvMode, setTvMode] = useState(getManualTvMode());
   const dlTasks = useDownloads();
   const [cloudHead, setCloudHead] = useState<React.ReactNode>(null);
 
@@ -196,6 +198,10 @@ export function SettingsPageDesktop({
           <>
             <h3 style={{ marginTop: 0 }}>系统与快捷键</h3>
             <Field label="开机自启" desc="系统登录后自动启动幕海"><Toggle on={autostart} onChange={setAutoStart} /></Field>
+            {/* V4.2.6 Q3：电视被误判成桌面时，这里也能强制切到电视界面（无需先进入 TV 设置页） */}
+            <Field label="电视模式" desc="大屏 + 遥控器使用？开启后切到电视界面并启用方向键焦点">
+              <Toggle on={tvMode} onChange={(v) => { setManualTvMode(v); setTvMode(v); toast(v ? '已开启电视模式' : '已恢复自动识别'); }} />
+            </Field>
             <Field label="检查更新" desc={`当前 v${appVersion}`}>
               <button className="primary" disabled={updating} onClick={checkUpdate}><Icon name="refresh" size={16} /> {updating ? '检查中…' : '检查更新'}</button>
             </Field>

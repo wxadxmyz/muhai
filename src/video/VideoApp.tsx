@@ -158,9 +158,13 @@ export default function VideoApp() {
   }, []);
 
   const playEpisode = (item: MediaItem, index = 0, line = 0, resume = false) => {
-    const groups = (item.raw?.lineGroups as any[] | undefined) ?? [item.episodes ?? []];
-    const eps = groups[line] ?? groups[0];
-    const ep = eps[index] ?? eps[0];
+    // V4.2.6 Q4：lineGroups 可能是空数组 []（getDetail 对诊断卡写回的），
+    // 旧版 `groups[0]` 得 undefined → `eps[0]` 抛 'reading 0'，整条详情被吞成
+    // 「详情获取失败」。这里三级兜底：空分组回退到 episodes，eps/ep 用可选链。
+    const rawGroups = item.raw?.lineGroups as any[] | undefined;
+    const groups = rawGroups && rawGroups.length ? rawGroups : [item.episodes ?? []];
+    const eps = groups[line] ?? groups[0] ?? [];
+    const ep = eps?.[index] ?? eps?.[0];
     const playing: MediaItem = {
       ...item,
       episodes: eps,
@@ -302,8 +306,16 @@ export default function VideoApp() {
     JSON.stringify({ kind: 'video', favorites: library.lib.favorites, history: library.lib.history, watchProgress: library.lib.watchProgress });
 
   // 电视形态：整包复用，按 deviceMode 切到独立 Leanback 大屏界面（清单工作二）
+  // V4.2.6 Q3：TV 分支也必须渲染免责声明（合规入口）。Disclaimar 内部按 isTV()
+  // 自动切成大卡片 + 遥控器一键同意；z-index 200 会盖在 TVShell 之上。
+  // 旧版这里是 early-return，直接把免责声明跳过了。
   if (mode === 'tv') {
-    return <TVShell sources={store.sources} library={library} settings={settings} onReset={doReset} />;
+    return (
+      <>
+        <TVShell sources={store.sources} library={library} settings={settings} onReset={doReset} />
+        <Disclaimer onAccept={() => {}} />
+      </>
+    );
   }
 
   return (

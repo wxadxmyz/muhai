@@ -438,7 +438,17 @@ export function createDrpy3Source(
         // 又把多线路 $$$ 全部拍平成一个 episodes 数组 → 默认线路错乱、集数重复/跳号。
         // 这里保持源给的顺序（sort:false），episodes 只取第一条线路，切线路交给播放器。
         const { lineGroups, lineNames, episodes: allEps } = toLineGroups(it.raw, { sort: false });
-        it.raw = { ...(it.raw ?? {}), lineGroups, lineNames };
+        // V4.2.6 Q4：诊断卡/无选集详情会算出空 lineGroups=[]，写回 raw 会让
+        // VideoApp.playEpisode 的 groups[0] 变 undefined 并抛 'reading 0'。
+        // 只在确有线路时写回；否则显式清掉这两个键，让播放端回退到 episodes。
+        it.raw = { ...(it.raw ?? {}) };
+        if (lineGroups.length) {
+          it.raw.lineGroups = lineGroups;
+          it.raw.lineNames = lineNames;
+        } else {
+          delete it.raw.lineGroups;
+          delete it.raw.lineNames;
+        }
         for (const e of allEps) rememberFlag(cfg.id, e.url, e.flag);
         const firstLine = lineNames[0] ?? '';
         rememberFirstEp(cfg.id, itemId, allEps.filter((e) => e.flag === firstLine));

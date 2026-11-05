@@ -52,6 +52,19 @@ function viewportWidth(): number {
   return typeof window !== 'undefined' ? window.innerWidth : 1024;
 }
 
+/** 无 hover / 无精细指针：遥控器 + 电视的典型特征（鼠标/触屏设备一般至少具备其一）。 */
+function hasNoHoverPointer(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  try {
+    const noHover = window.matchMedia('(hover: none)').matches;
+    const noFine = window.matchMedia('(any-pointer: coarse)').matches ||
+                   !window.matchMedia('(any-pointer: fine)').matches;
+    return noHover && noFine;
+  } catch {
+    return false;
+  }
+}
+
 /** 手动电视模式开关（用户可在设置里强制开启/关闭）。读不到时回退 false。 */
 export function getManualTvMode(): boolean {
   try {
@@ -80,13 +93,18 @@ export function detectDeviceMode(): DeviceMode {
 
   if (!touch) {
     // 无触摸大屏：可能是桌面(键鼠)或电视(遥控器)
-    // 电视的强信号是 Android + (明确 leanback UA 或 大屏无触摸)；
-    // 非 Android 的无触摸大屏（Tauri 桌面端 / 桌面浏览器原型）一律视为 desktop。
     if (isAndroid() && (isLeanbackUA() || w >= 1024)) return 'tv';
     return 'desktop';
   }
 
-  // 有触摸：按宽度区分（确认 UI——竖屏平板=手机放大，横屏平板=电脑版）
+  // V4.2.6 Q3：国产电视/盒子 WebView 常谎报「支持触摸」（ontouchstart / pointer:coarse），
+  // 或外接了空鼠 → 旧版落到 desktop，遥控器焦点系统不激活、界面变成电脑版小字。
+  // 放宽：Android + 大屏(≥1024) + 无 hover/精细指针 → 判为电视。
+  // 手动「电视模式」开关仍可强制开启（优先级最高，见函数开头），
+  // 判定不准的横屏平板用户可在设置页关掉回到自动/桌面。
+  if (isAndroid() && w >= 1024 && (isLeanbackUA() || hasNoHoverPointer())) return 'tv';
+
+  // 有触摸：按宽度区分（竖屏平板=手机放大，横屏平板=电脑版）
   return w > 820 ? 'desktop' : 'phone';
 }
 

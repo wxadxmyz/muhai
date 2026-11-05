@@ -5,15 +5,21 @@
 //   2. 维护可聚焦元素（`data-focusable` + 自动补 `tabindex="0"`），方向键按几何就近匹配移动焦点；
 //   3. scroll-into-view：焦点项始终滚入可视区（电视无滚轮，靠方向键带滚动）；
 //   4. 浮层焦点陷阱：打开带 `data-focus-root` 的弹层时，焦点锁在该层内，关闭归还；与 backStack 协同；
-//   5. 对触屏透明：`isTV() && !isTouchDevice()` 才激活，手机/平板/桌面键鼠完全不受影响。
+//   5. 对非电视透明：仅 isTV() 时激活，手机/平板/桌面键鼠完全不受影响。
+//      （V4.2.6：不再叠加 !isTouchDevice()，详见 isFocusNavActive 注释。）
 //
 // 注意：本文件不渲染任何 UI，只管理焦点。视觉焦点环在 tv.css 里用 `[data-focusable]:focus` 实现。
 
-import { isTV, isTouchDevice } from './deviceMode';
+import { isTV } from './deviceMode';
 import { dispatchBack } from './backStack';
 
 export function isFocusNavActive(): boolean {
-  return isTV() && !isTouchDevice();
+  // V4.2.6 Q3：只要判定为电视，就无条件启用遥控器焦点导航。
+  // 旧版 `isTV() && !isTouchDevice()` 在国产盒子上会失效 —— 这些 WebView 常谎报
+  // 触摸（ontouchstart / pointer:coarse），于是进了 TV 界面却既没焦点框也没方向键导航。
+  // 「对触屏透明」的原意是别影响手机/平板的正常布局，而 isTV() 已把它们排除，
+  // 因此这里不需要再叠加 isTouchDevice()。getManualTvMode 仅用于上面的形态判定。
+  return isTV();
 }
 
 let installed = false;

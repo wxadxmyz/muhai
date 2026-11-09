@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="ringA" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff2d55"/><stop offset="1" stop-color="#ff9a3d"/>
+    </linearGradient>
+    <linearGradient id="ringB" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#38e1d0"/>
+    </linearGradient>
+  </defs>
+  <!-- 图形整体缩到 62%，居中，留出 adaptive icon 安全边距 -->
+  <g transform="translate(97,97) scale(0.62)">
+    <g transform="rotate(-42 256 256)">
+      <rect x="56"  y="180" width="236" height="152" rx="76" fill="none" stroke="url(#ringA)" stroke-width="40"/>
+      <rect x="220" y="180" width="236" height="152" rx="76" fill="none" stroke="#0c1120" stroke-width="56"/>
+      <rect x="220" y="180" width="236" height="152" rx="76" fill="none" stroke="url(#ringB)" stroke-width="40"/>
+    </g>
+    <path d="M234 206 L234 306 L316 256 Z" fill="#ffffff" stroke="#ffffff" stroke-width="16" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,6 +1,6 @@
 # 幕海 MuHai
 
-> 📌 **当前版本 V3.6.2**（2026-09-21 定版）
+> 📌 **当前版本 V4.3.0**（2026-11-10）
 
 > 支持 **自定义影视源 + 云盘** 的影视播放器，基于 Tauri 2 的桌面客户端。跨源搜索、跳过片头片尾、弹幕、字幕、投屏、云盘浏览，数据全部本地存储。
 
@@ -51,7 +51,7 @@ git push origin v0.1.0
 
 ## Android / iOS（移动端）
 
-仓库已通过 `tauri icon` 生成 Android / iOS 图标资源。完整移动端构建需在本机执行：
+仓库已通过 `tauri icon` 生成 Android / iOS 图标资源。V4.3.0 起统一更换为「相扣链环 + 播放三角」品牌图标（矢量源见 `branding/`）。完整移动端构建需在本机执行：
 
 ```bash
 pnpm tauri android init && pnpm tauri android build   # Android

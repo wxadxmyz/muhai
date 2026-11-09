@@ -5,6 +5,18 @@
 
 ---
 
+## V4.3.0
+
+**品牌图标全面更换**：应用图标统一改为「相扣链环 + 播放三角」标志（红橙 / 青蓝渐变链环 + 中央白色播放三角），品牌物料文字为「幕海 MuHai」。
+
+- 覆盖 `public/icon.png`、`src-tauri/icons/` 下桌面端 PNG、`icon.ico` / `icon.icns`、
+  Windows 磁贴、Android `mipmap-*` 五档密度（标准 / 圆形 / 自适应前景）、iOS `AppIcon-*` 全系列，共 51 个位图。
+- 新增 `branding/` 矢量源（`muhai-icon.svg`、`muhai-icon-foreground.svg`、`muhai-banner.svg`）与品牌横幅。
+- 版本号四处同步至 4.3.0（含 `Cargo.lock`，原为陈旧的 4.1.9），README 版本徽章更正。
+- 无功能逻辑改动。详见 `V4.3.0-更改清单.md`。
+
+---
+
 ## V4.2.7
 
 **电视自动识别加固 + 移除手动「电视模式」开关。**

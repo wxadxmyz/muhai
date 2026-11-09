@@ -5,20 +5,17 @@
 // TV 界面层（HomeTV/SearchTV/...）、focusNav（遥控器焦点）、横屏放开（orientation）
 // 都依赖"当前是什么设备形态"，统一在这里判定，避免各组件各写一套。
 //
-// 判定优先级（与《平板电视适配-更改清单.md》§1/§3.10 一致）：
-//   1. 手动「电视模式」开关（localStorage 覆盖，最稳，绕过不可靠的 TV UA 探测）；
-//   2. TV 启发式：无触摸 + 大屏 + (Android leanback UA 或 Android 无触摸大屏) → tv；
-//   3. 宽度 + 触摸：
-//      - 有触摸 且 宽 > 820 → desktop（横屏平板 = 电脑版，确认 UI）；
-//      - 有触摸 且 宽 ≤ 820 → phone（手机 / 竖屏平板，走手机布局整体放大）；
-//      - 无触摸 大屏(非 Android，如 Tauri 桌面端 / 桌面浏览器) → desktop（键鼠）。
+// 判定优先级（V4.2.7）：
+//   1. 大屏 Android 直接判电视（最高优先）：手机 CSS 逻辑宽最多 ~600px，
+//      ≥1280 在安卓生态里几乎只可能是电视 / 盒子 / 大屏设备；
+//      不再依赖会被国产盒子 ROM 谎报的「触摸 / 精细指针 / Leanback UA」信号。
+//   2. 无触摸大屏：Android + (Leanback UA 或 宽≥1024) → tv；否则 desktop。
+//   3. 有触摸：按宽度区分（竖屏平板=手机放大，横屏平板=电脑版）。
 //
 // 注意：本模块只"判定形态"，不强制渲染任何 UI。VideoApp 是否切到 TV 组件、orientation
 // 是否放开横屏，都由调用方读取这里的结果决定。这样本文件可以独立存在、不影响现有手机/桌面。
 
 export type DeviceMode = 'phone' | 'desktop' | 'tv';
-
-const TV_MODE_KEY = 'muhai_tv_mode';
 
 function hasTouch(): boolean {
   if (typeof window === 'undefined') return false;
@@ -65,31 +62,15 @@ function hasNoHoverPointer(): boolean {
   }
 }
 
-/** 手动电视模式开关（用户可在设置里强制开启/关闭）。读不到时回退 false。 */
-export function getManualTvMode(): boolean {
-  try {
-    return localStorage.getItem(TV_MODE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function setManualTvMode(on: boolean): void {
-  try {
-    localStorage.setItem(TV_MODE_KEY, on ? '1' : '0');
-  } catch {
-    /* 隐私模式 localStorage 不可用则忽略 */
-  }
-  recompute();
-}
-
 // 核心判定（纯函数，便于单测）。
 export function detectDeviceMode(): DeviceMode {
-  // 1) 手动开关最高优先
-  if (getManualTvMode()) return 'tv';
-
   const touch = hasTouch();
   const w = viewportWidth();
+
+  // V4.2.7：大屏 Android 直接判电视（最高优先）。手机 CSS 逻辑宽最多 ~600px，
+  // ≥1280 在安卓生态里几乎只可能是电视 / 盒子 / 大屏安卓设备；
+  // 不再依赖会被国产盒子 ROM 谎报的「触摸 / 精细指针 / Leanback UA」信号。
+  if (isAndroid() && w >= 1280) return 'tv';
 
   if (!touch) {
     // 无触摸大屏：可能是桌面(键鼠)或电视(遥控器)
@@ -97,11 +78,6 @@ export function detectDeviceMode(): DeviceMode {
     return 'desktop';
   }
 
-  // V4.2.6 Q3：国产电视/盒子 WebView 常谎报「支持触摸」（ontouchstart / pointer:coarse），
-  // 或外接了空鼠 → 旧版落到 desktop，遥控器焦点系统不激活、界面变成电脑版小字。
-  // 放宽：Android + 大屏(≥1024) + 无 hover/精细指针 → 判为电视。
-  // 手动「电视模式」开关仍可强制开启（优先级最高，见函数开头），
-  // 判定不准的横屏平板用户可在设置页关掉回到自动/桌面。
   if (isAndroid() && w >= 1024 && (isLeanbackUA() || hasNoHoverPointer())) return 'tv';
 
   // 有触摸：按宽度区分（竖屏平板=手机放大，横屏平板=电脑版）

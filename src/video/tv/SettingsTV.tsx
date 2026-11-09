@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useSettings } from '../../lib/settings';
 import { getVersion } from '@tauri-apps/api/app';
-import { getManualTvMode, setManualTvMode } from '../../lib/deviceMode';
 import { useSkin, SKINS } from '../../lib/theme';
 import { Icon } from '../../components/Icon';
 import { pushBackHandler } from '../../lib/backStack';
@@ -58,7 +57,6 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
   const { skin, selectedId, setSkinId } = useSkin();
   const [panel, setPanel] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState('…');
-  const [tvMode, setTvMode] = useState(getManualTvMode());
   const [cacheMsg, setCacheMsg] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -78,7 +76,6 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
     { key: 'look', icon: 'palette', t: '外观', v: skin.name },
     { key: 'net', icon: 'cloud', t: '网络/缓存', v: fmtCache(cacheBytes) },
     { key: 'source', icon: 'download', t: '添加源', v: '扫码' },
-    { key: 'tv', icon: 'tv', t: '电视模式', v: tvMode ? '已开' : '自动' },
     { key: 'about', icon: 'file-text', t: '关于', v: 'v' + appVersion },
   ];
 
@@ -176,26 +173,6 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
       {panel === 'source' && (
         <div className="tv-overlay" data-focus-root>
           <RemotePushTV onClose={() => setPanel(null)} mode="source" />
-        </div>
-      )}
-
-      {/* 电视模式：手动开关（清单 §3.10 / 风险 #2 兜底） */}
-      {panel === 'tv' && (
-        <div className="tv-overlay" data-focus-root>
-          <div className="tv-sheet">
-            <div className="tv-sheet-head">
-              <h3>电视模式</h3>
-              <button className="tv-action-btn" data-focusable="" onClick={() => setPanel(null)}><Icon name="x" size={18} /> 关闭</button>
-            </div>
-            <div className="tv-sheet-body">
-              <Row label="强制开启电视界面">
-                <TVSwitch on={tvMode} onChange={(v) => { setTvMode(v); setManualTvMode(v); toast(v ? '已开启电视模式' : '已恢复自动探测'); }} />
-              </Row>
-              <p className="muted sm" style={{ lineHeight: 1.7 }}>
-                电视 UA 大多不暴露 TV 字样，自动识别可能误判。开启后强制使用遥控器大屏界面；关闭则按设备自动探测（无触摸大屏识别为电视）。
-              </p>
-            </div>
-          </div>
         </div>
       )}
 

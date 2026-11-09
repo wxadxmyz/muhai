@@ -18,7 +18,7 @@ export function isFocusNavActive(): boolean {
   // 旧版 `isTV() && !isTouchDevice()` 在国产盒子上会失效 —— 这些 WebView 常谎报
   // 触摸（ontouchstart / pointer:coarse），于是进了 TV 界面却既没焦点框也没方向键导航。
   // 「对触屏透明」的原意是别影响手机/平板的正常布局，而 isTV() 已把它们排除，
-  // 因此这里不需要再叠加 isTouchDevice()。getManualTvMode 仅用于上面的形态判定。
+  // 因此这里不需要再叠加 isTouchDevice()。
   return isTV();
 }
 

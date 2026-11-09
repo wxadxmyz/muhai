@@ -1,4 +1,4 @@
-// V4.2.6 Q3 行为测试：验证 deviceMode 的 TV 判定放宽后，各类设备仍被正确分类。
+// V4.2.7 行为测试：验证 deviceMode 把「大屏 Android 直接判电视」后，各类设备仍被正确分类。
 // 用 esbuild 把 TS 转译到 /tmp 后注入 mock 的 window/navigator/localStorage 环境导入。
 // 用法：node verify_device_mode.mjs（在 muhai 根，先跑 build_esbuild 步骤）
 import { readFileSync } from 'node:fs';
@@ -7,11 +7,11 @@ const SRC = process.argv[2] || '/tmp/deviceMode_test.mjs';
 
 // 每次用例重新 import（模块会缓存 cached 形态），所以给 URL 加唯一 query。
 let seq = 0;
-async function detect({ ua, width, touch, pointerCoarse, hoverNone, anyPointerFine, manual }) {
+async function detect({ ua, width, touch, pointerCoarse, hoverNone, anyPointerFine }) {
   // 构造受控的全局环境
   globalThis.localStorage = {
     _d: {},
-    getItem(k) { return (manual === 'on' && k === 'muhai_tv_mode') ? '1' : (this._d[k] ?? null); },
+    getItem(k) { return this._d[k] ?? null; },
     setItem(k, v) { this._d[k] = String(v); },
   };
   Object.defineProperty(globalThis, 'navigator', {
@@ -45,25 +45,22 @@ const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120 Safari/
 const CASES = [
   // [说明, 环境, 期望]
   ['手机竖屏（有触摸、窄屏）', { ua: MOBILE_UA, width: 400, touch: true }, 'phone'],
-  ['横屏平板（有触摸、大屏、有 hover 鼠标）', { ua: MOBILE_UA, width: 1280, touch: true, hoverNone: false, anyPointerFine: true }, 'desktop'],
+  // 真平板：触摸 + 宽<1280（手机/小平板），不误判 tv
+  ['触摸 Android 宽 1000（小平板）→ desktop', { ua: MOBILE_UA, width: 1000, touch: true, hoverNone: false, anyPointerFine: true }, 'desktop'],
   ['桌面浏览器（非 Android、无触摸）', { ua: DESKTOP_UA, width: 1920, touch: false }, 'desktop'],
   ['Android TV（Leanback UA、无触摸）', { ua: TV_LEANBACK_UA, width: 1920, touch: false }, 'tv'],
   ['盒子无触摸大屏（旧版已能判 tv）', { ua: TV_BOX_UA, width: 1920, touch: false }, 'tv'],
-  // ↓ V4.2.6 新增能力：谎报触摸的国产盒子
-  ['【Q3 核心】国产盒子谎报触摸 + 大屏 + 无 hover/精细指针 → tv',
-    { ua: TV_BOX_UA, width: 1920, touch: true, pointerCoarse: true, hoverNone: true, anyPointerFine: false }, 'tv'],
-  ['国产盒子谎报触摸 + Leanback UA → tv（强信号）',
-    { ua: TV_LEANBACK_UA, width: 1920, touch: true, pointerCoarse: true, hoverNone: true, anyPointerFine: false }, 'tv'],
-  // 手动开关最高优先，任何环境都强制 tv
-  ['【Q3 死循环】手机里手动开电视模式 → 立即 tv',
-    { ua: MOBILE_UA, width: 400, touch: true, manual: 'on' }, 'tv'],
-  // 边界：有触摸大屏但 hover/精细指针都在（=真平板+鼠标），不应误判成 tv
-  ['有触摸大屏 + 有精细指针（真平板），不误判 tv',
-    { ua: MOBILE_UA, width: 1920, touch: true, hoverNone: false, anyPointerFine: true, pointerCoarse: false }, 'desktop'],
+  // ↓ V4.2.7 核心：大屏 Android 直接判电视，不再依赖会被谎报的指针/UA 信号
+  ['【V4.2.7 核心】国产盒子谎报触摸 + 有精细指针 + 无 Leanback（用户真机）→ tv',
+    { ua: TV_BOX_UA, width: 1920, touch: true, pointerCoarse: true, hoverNone: true, anyPointerFine: true }, 'tv'],
+  ['大屏 Android 盒子 + 空鼠（有精细指针）→ tv',
+    { ua: TV_BOX_UA, width: 1920, touch: true, anyPointerFine: true }, 'tv'],
+  // 边界：恰好 1280 的 Android 也算电视（阈值含等号）
+  ['Android 宽 1280（临界）→ tv', { ua: MOBILE_UA, width: 1280, touch: true, anyPointerFine: true }, 'tv'],
 ];
 
 let fail = 0;
-console.log('=== V4.2.6 Q3 · deviceMode 行为测试 ===');
+console.log('=== V4.2.7 · deviceMode 行为测试 ===');
 for (const [name, env, expect] of CASES) {
   const got = await detect(env);
   const ok = got === expect;

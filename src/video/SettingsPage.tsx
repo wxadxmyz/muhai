@@ -15,7 +15,6 @@ import { clearProxiedCache, proxiedCacheBytes } from '../components/ProxiedImg';
 import { checkForUpdate } from '../lib/tauriBridge';
 import { useSkin, SKINS } from '../lib/theme';
 import { useDownloads, downloadStore } from '../lib/downloads';
-import { getManualTvMode, setManualTvMode } from '../lib/deviceMode';
 import { toast } from '../lib/toast';
 import {
   getNetdiskToken,
@@ -124,21 +123,6 @@ function NavRow({
         <Icon name="chevron-right" size={18} />
       </span>
     </div>
-  );
-}
-
-// V4.2.6 Q3：电视模式开关（普通设置页可达）。用本地 state 跟随 deviceMode，
-// 切换后立刻生效（setManualTvMode → recompute → onDeviceModeChange → VideoApp 重渲染）。
-function TvModeRow() {
-  const [on, setOn] = useState(getManualTvMode());
-  return (
-    <ToggleRow
-      icon="tv"
-      label="电视模式"
-      desc="用遥控器在大屏上看？开启后切到电视界面（方向键+焦点框）"
-      on={on}
-      onChange={(v) => { setManualTvMode(v); setOn(v); toast(v ? '已开启电视模式' : '已恢复自动识别'); }}
-    />
   );
 }
 
@@ -377,9 +361,6 @@ export function SettingsPage({
             onClick={() => setSub('update')}
           />
           <NavRow icon="file-text" label="关于" onClick={() => setSub('about')} />
-          {/* V4.2.6 Q3：电视模式开关放进普通设置页，打破「开关只在 TV 设置页」的死循环。
-              任何形态下都可达；切换后 deviceMode 会通知 VideoApp 即时重渲染，无需重启。 */}
-          <TvModeRow />
           {/* #11：调试面板从悬浮 FAB / 模态移到「检查更新」下方 */}
           <NavRow icon="bug" label="开发者调试" onClick={() => setSub('debug')} />
         </div>

@@ -96,17 +96,26 @@ export function RemotePushTV({ onClose, mode = 'source' }: { onClose?: () => voi
 
       {status === 'missing' && (
         <>
+          <div className="tv-push-icon" aria-hidden>
+            <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+              <path d="M12 9v4M12 17h.01" />
+            </svg>
+          </div>
           <div className="status" style={{ color: 'var(--danger)' }}>后端推送服务未就绪</div>
           <div className="hint">
             当前构建未包含局域网推送后端（风险清单 #4，需在真机/盒子验证）。<br />
-            添加源仍可在手机/电脑端完成：将源 JSON 导入后，通过「设置 → 同步」或同账号云盘共享到电视端；<br />
-            后续版本将补齐 TV 端二维码 + 手机端承接页的端到端链路。
+            你仍可用以下方式添加影视源：
           </div>
+          <ul className="tv-push-tips">
+            <li>手机 / 电脑端导入源 JSON，再经「设置 → 同步」或同账号云盘共享到电视端；</li>
+            <li>后续版本将补齐 TV 端二维码 + 手机端承接页的端到端链路。</li>
+          </ul>
         </>
       )}
 
       {onClose && (
-        <button className="tv-action-btn" data-focusable="" onClick={onClose} style={{ marginTop: 8 }}>
+        <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={onClose} style={{ marginTop: 8 }}>
           关闭
         </button>
       )}

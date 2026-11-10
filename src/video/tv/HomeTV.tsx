@@ -50,34 +50,38 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
   );
 
   return (
-    <div className="tv-scroll" data-scroll>
-      <div className="tv-home-cats">
-        {CATS.map((c) => (
-          <div
-            key={c.key}
-            className={'tv-cat' + (cat === c.key ? ' active' : '')}
-            data-focusable=""
-            onClick={() => setCat(c.key)}
-            role="button"
-          >
-            {c.label}
-          </div>
-        ))}
+    <div className="tv-home">
+      <div className="tv-home-head">
+        <div className="tv-home-cats">
+          {CATS.map((c) => (
+            <div
+              key={c.key}
+              className={'tv-cat' + (cat === c.key ? ' active' : '')}
+              data-focusable=""
+              onClick={() => setCat(c.key)}
+              role="button"
+            >
+              {c.label}
+            </div>
+          ))}
+        </div>
       </div>
 
-      {cat === 'all' ? (
-        <>
-          {row('热门电视剧', hot.categories.tv)}
-          {row('热门电影', hot.categories.movie)}
-          {row('热门综艺', hot.categories.variety)}
-          {row('热门动漫', hot.categories.anime)}
-        </>
-      ) : (
-        row(
-          CATS.find((c) => c.key === cat)!.label,
-          hot.categories[CATS.find((c) => c.key === cat)!.field!] ?? []
-        )
-      )}
+      <div className="tv-home-body" data-scroll>
+        {cat === 'all' ? (
+          <>
+            {row('热门电视剧', hot.categories.tv)}
+            {row('热门电影', hot.categories.movie)}
+            {row('热门综艺', hot.categories.variety)}
+            {row('热门动漫', hot.categories.anime)}
+          </>
+        ) : (
+          row(
+            CATS.find((c) => c.key === cat)!.label,
+            hot.categories[CATS.find((c) => c.key === cat)!.field!] ?? []
+          )
+        )}
+      </div>
     </div>
   );
 }

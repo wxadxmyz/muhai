@@ -189,7 +189,7 @@ function onKeyDown(e: KeyboardEvent) {
   if (!list.length) return;
   let cur = activeFocusable();
   if (!cur || !scope.contains(cur) || !cur.hasAttribute('data-focusable')) {
-    focusEl(list[0]);
+    focusEl(autoFocusEl(list) || list[0]);
     return;
   }
   const next = bestCandidate(dir, cur, list);
@@ -208,13 +208,40 @@ export function initFocusNav() {
   installed = true;
   document.addEventListener('keydown', onKeyDown, true);
   document.addEventListener('focusin', onFocusIn, true);
+  // V4.3.3：弹层（带 data-focus-root）挂载后自动把焦点带到其 data-autofocus 元素
+  // （或首个可聚焦元素）。这样对话框一打开，遥控器光标就停在「关闭」等目标上，
+  // 无需用户再按方向键去找（清单第 12 题）。
+  try {
+    const obs = new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const node of Array.from(m.addedNodes)) {
+          if (!(node instanceof HTMLElement)) continue;
+          const root = node.matches('[data-focus-root]') ? node : node.querySelector('[data-focus-root]');
+          if (root) {
+            // 延迟到下一帧，确保 React 已把弹层子节点渲染进 DOM
+            window.requestAnimationFrame(() => focusFirstIn(root as HTMLElement));
+          }
+        }
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+  } catch {
+    /* 极端环境 MutationObserver 不可用，降级为「首次按键再聚焦」，不影响基本导航 */
+  }
 }
 
-/** 聚焦某作用域内第一个可聚焦元素（页面/弹层打开后调用，把焦点带进新视图）。 */
+/** 从可聚焦列表中挑出带 data-autofocus 的元素（弹层希望初始焦点落在其上的按钮）。 */
+function autoFocusEl(list: HTMLElement[]): HTMLElement | null {
+  return list.find((el) => el.hasAttribute('data-autofocus')) || null;
+}
+
+/** 聚焦某作用域内第一个可聚焦元素（页面/弹层打开后调用，把焦点带进新视图）。
+ *  若作用域内有带 data-autofocus 的元素，优先聚焦它（如弹层的「关闭」按钮）。 */
 export function focusFirstIn(scope?: HTMLElement | Document) {
   const root = scope || document;
   const list = focusablesIn((root as HTMLElement) || document.body);
-  if (list.length) focusEl(list[0]);
+  if (!list.length) return;
+  focusEl(autoFocusEl(list) || list[0]);
 }
 
 /** 聚焦某个具体元素（供组件在切页/开弹层后主动把焦点放到目标上）。 */

@@ -18,9 +18,9 @@ function TVSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => voi
       onClick={() => onChange(!on)}
       role="switch"
       aria-checked={on}
-      style={{ width: 64, height: 36, borderRadius: 999, background: on ? 'var(--accent)' : 'var(--panel2)', position: 'relative', cursor: 'pointer', flex: '0 0 auto' }}
+      style={{ width: 64, height: 36, borderRadius: 999, background: on ? 'var(--accent)' : 'var(--border)', position: 'relative', cursor: 'pointer', flex: '0 0 auto' }}
     >
-      <span style={{ position: 'absolute', top: 4, left: on ? 32 : 4, width: 28, height: 28, borderRadius: '50%', background: '#fff', transition: '.15s' }} />
+      <span style={{ position: 'absolute', top: 4, left: on ? 32 : 4, width: 28, height: 28, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.45)', transition: '.15s' }} />
     </div>
   );
 }
@@ -101,7 +101,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
           <div className="tv-sheet">
             <div className="tv-sheet-head">
               <h3>{cards.find((c) => c.key === panel)?.t}</h3>
-              <button className="tv-action-btn" data-focusable="" onClick={() => setPanel(null)}><Icon name="x" size={18} /> 关闭</button>
+              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setPanel(null)}><Icon name="x" size={18} /> 关闭</button>
             </div>
             <div className="tv-sheet-body">
               {panel === 'play' && (
@@ -183,7 +183,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
             <div className="tv-sheet-body">
               <p style={{ fontSize: 16, lineHeight: 1.7 }}>将清除所有导入的源、观看记录、缓存与登录信息，且<strong>不可恢复</strong>。确定继续吗？</p>
               <div style={{ display: 'flex', gap: 14, marginTop: 16 }}>
-                <button className="tv-action-btn" data-focusable="" onClick={() => setShowResetConfirm(false)}>取消</button>
+                <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setShowResetConfirm(false)}>取消</button>
                 <button className="tv-action-btn primary" data-focusable="" onClick={() => { setShowResetConfirm(false); onReset(); }}>确定重置</button>
               </div>
             </div>

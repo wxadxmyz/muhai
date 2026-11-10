@@ -63,7 +63,7 @@ export function SearchTV({
   }, [text, chip, indexes, hot]);
 
   const press = (k: string) => {
-    if (k === '⌫') setText((t) => t.slice(0, -1));
+    if (k === '删除' || k === '⌫') setText((t) => t.slice(0, -1));
     else if (k === '清空') setText('');
     else if (k === '搜索') { if (text.trim()) onSearch(text.trim()); }
     else if (k === '远程搜索') onRemote();

@@ -269,18 +269,11 @@ export function TVShell({
         </div>
       )}
 
-      {/* 搜索页「远程搜索」入口 → 扫码推送浮层 */}
+      {/* 搜索页「远程搜索」入口 → 扫码推送浮层。
+          V4.3.3：去掉浮层头部的多余「× 关闭」，电视端只保留组件内的「关闭」一个入口。 */}
       {remotePush && (
         <div className="tv-overlay" data-focus-root>
-          <div className="tv-sheet" style={{ width: 'min(620px,92vw)' }}>
-            <div className="tv-sheet-head">
-              <h3>远程搜索 / 添加</h3>
-              <button className="tv-action-btn" data-focusable="" onClick={() => setRemotePush(null)}><Icon name="x" size={18} /> 关闭</button>
-            </div>
-            <div className="tv-sheet-body">
-              <RemotePushTV onClose={() => setRemotePush(null)} mode={remotePush} />
-            </div>
-          </div>
+          <RemotePushTV onClose={() => setRemotePush(null)} mode={remotePush} />
         </div>
       )}
     </div>

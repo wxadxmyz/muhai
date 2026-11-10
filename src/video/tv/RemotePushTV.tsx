@@ -19,7 +19,7 @@ type Status = 'loading' | 'ready' | 'missing' | 'received';
 
 interface ListenerInfo { ip: string; port: number; token: string; }
 
-export function RemotePushTV({ onClose, mode = 'source' }: { onClose?: () => void; mode?: 'source' | 'search' }) {
+export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?: () => void; mode?: 'source' | 'search'; onSearch?: (q: string) => void }) {
   const store = useSources('video');
   const [status, setStatus] = useState<Status>('loading');
   const [qr, setQr] = useState('');
@@ -34,7 +34,8 @@ export function RemotePushTV({ onClose, mode = 'source' }: { onClose?: () => voi
         const r = await invoke<ListenerInfo>('start_push_listener');
         if (!alive) return;
         setInfo(r);
-        const url = `https://${r.ip}:${r.port}/?token=${encodeURIComponent(r.token)}&type=${mode}`;
+        // V4.3.4：局域网服务走 http（LAN 无受信证书，https 在手机浏览器会被拦）
+        const url = `http://${r.ip}:${r.port}/?token=${encodeURIComponent(r.token)}&type=${mode}`;
         setEndpoint(url);
         try { setQr(await QRCode.toDataURL(url, { width: 280, margin: 1 })); } catch { setQr(''); }
         setStatus('ready');
@@ -63,8 +64,9 @@ export function RemotePushTV({ onClose, mode = 'source' }: { onClose?: () => voi
                 toast(`已导入 ${r.added} 个源${r.skipped ? `，跳过 ${r.skipped} 个已存在` : ''}`);
               } else toast('收到的内容不是源数组');
             } else {
-              // 远程搜索：把提交的关键词回传给调用方（此处直接提示，SearchTV 可扩展监听）
-              toast('已收到远程搜索请求：' + payload.slice(0, 20));
+              // 远程搜索：把提交的关键词直接触发电视端搜索（切换到搜索页并展示结果）
+              if (onSearch) onSearch(payload.trim());
+              else toast('已收到远程搜索请求：' + payload.slice(0, 20));
             }
             if (timer.current) window.clearInterval(timer.current);
             setStatus('received');

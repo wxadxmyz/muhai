@@ -557,6 +557,168 @@ fn take_netdisk_token() -> Option<(String, String)> {
 // 此处只负责初始化插件与托盘菜单。
 // 注意：托盘、全局快捷键、自启、菜单均为桌面端专属能力，安卓/iOS 下用
 // cfg(desktop) 隔离，避免移动端 target 缺少对应 API 导致编译失败。
+// ─────────────────────────────────────────────────────────────
+// TV 扫码添加源 / 远程搜索 —— 局域网接收后端（V4.3.4 补全，原风险清单 #4）
+// 架构：TV 端起一个局域网 HTTP 服务并生成 token；二维码指向
+//   http://<lan-ip>:<port>/?token=<token>&type=<source|search>
+// 手机浏览器扫码打开承接页，提交源 JSON 或搜索词 → POST /submit?token=...&type=...
+// → 写入全局 payloads；前端 poll_push_result 轮询取到后导入源 / 触发搜索。
+// ─────────────────────────────────────────────────────────────
+struct PushState {
+    payloads: std::collections::HashMap<String, String>,
+    servers: std::collections::HashMap<String, tauri::async_runtime::JoinHandle<()>>,
+}
+static PUSH: OnceLock<Mutex<PushState>> = OnceLock::new();
+fn push_state() -> &'static Mutex<PushState> {
+    PUSH.get_or_init(|| {
+        Mutex::new(PushState {
+            payloads: std::collections::HashMap::new(),
+            servers: std::collections::HashMap::new(),
+        })
+    })
+}
+
+fn push_lan_ip() -> String {
+    use std::net::UdpSocket;
+    match UdpSocket::bind("0.0.0.0:0") {
+        Ok(s) => {
+            if s.connect("8.8.8.8:80").is_ok() {
+                if let Ok(a) = s.local_addr() {
+                    return a.ip().to_string();
+                }
+            }
+            "127.0.0.1".to_string()
+        }
+        Err(_) => "127.0.0.1".to_string(),
+    }
+}
+
+fn push_gen_token() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+    static C: AtomicU64 = AtomicU64::new(0);
+    let n = C.fetch_add(1, Ordering::SeqCst);
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{:x}{:x}", t, n)
+}
+
+fn push_query_param(q: &str, key: &str) -> Option<String> {
+    for pair in q.split('&') {
+        let mut it = pair.splitn(2, '=');
+        let k = it.next()?;
+        let v = it.next().unwrap_or("");
+        if k == key {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+type PushBody = BoxBody<Bytes, Box<dyn std::error::Error + Send + Sync>>;
+
+fn push_resp(status: u16, content_type: &str, body: String) -> Response<PushBody> {
+    Response::builder()
+        .status(status)
+        .header("content-type", content_type)
+        .header("access-control-allow-origin", "*")
+        .body(
+            Full::new(Bytes::from(body))
+                .map_err(|e: Infallible| -> Box<dyn std::error::Error + Send + Sync> { e.into() })
+                .boxed(),
+        )
+        .unwrap()
+}
+
+fn push_phone_page(token: &str, ptype: &str) -> String {
+    let title = if ptype == "search" { "远程搜索" } else { "添加影视源" };
+    let input = if ptype == "search" {
+        r#"<input id="q" placeholder="输入搜索关键词，如：庆余年" />"#
+    } else {
+        r#"<textarea id="q" placeholder='粘贴影视源 JSON，例如：[{"name":"我的源","api":"https://example.com","type":"drpy"}]'></textarea>"#
+    };
+    format!(
+        r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>幕海 · {title}</title><style>body{{font-family:-apple-system,"PingFang SC",sans-serif;max-width:560px;margin:40px auto;padding:0 16px;color:#222}}h1{{font-size:22px}}textarea,input{{width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:10px}}textarea{{min-height:180px;font-family:monospace}}button{{margin-top:14px;padding:12px 22px;font-size:17px;color:#fff;border:0;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#6366f1);cursor:pointer}}#msg{{margin-top:16px;color:#3b82f6;min-height:22px;white-space:pre-wrap}}</style></head><body><h1>幕海 · {title}</h1><p style="color:#666">用手机扫码后，在此提交，内容会推送到电视端。</p>{input}<button onclick="submit()">提交到电视</button><div id="msg"></div><script>function submit(){{var v=document.getElementById('q').value;if(!v){{document.getElementById('msg').textContent='请先填写内容';return;}}document.getElementById('msg').textContent='提交中…';fetch('/submit?token={token}&type={ptype}',{{method:'POST',headers:{{'content-type':'text/plain'}},body:v}}).then(function(r){{return r.text();}}).then(function(t){{document.getElementById('msg').textContent='已提交，请在电视上确认 ✓';}}).catch(function(e){{document.getElementById('msg').textContent='提交失败：'+e;}});}}</script></body></html>"#
+    )
+}
+
+async fn push_handler(req: Request<Incoming>, token: String) -> Result<Response<PushBody>, Infallible> {
+    let (parts, body) = req.into_parts();
+    let path = parts.uri.path().to_string();
+    let query = parts.uri.query().unwrap_or("").to_string();
+    if path == "/" {
+        let ptype = push_query_param(&query, "type").unwrap_or_default();
+        let page = push_phone_page(&token, &ptype);
+        return Ok(push_resp(200, "text/html; charset=utf-8", page));
+    }
+    if path == "/submit" {
+        let tk = push_query_param(&query, "token").unwrap_or_default();
+        if let Ok(c) = body.collect().await {
+            let data = String::from_utf8_lossy(&c.to_bytes()).to_string();
+            if !tk.is_empty() {
+                let mut st = push_state().lock().unwrap();
+                st.payloads.insert(tk, data);
+            }
+        }
+        return Ok(push_resp(200, "text/plain; charset=utf-8", "ok".to_string()));
+    }
+    Ok(push_resp(404, "text/plain; charset=utf-8", "not found".to_string()))
+}
+
+async fn serve_push(listener: TokioTcpListener, token: String) {
+    loop {
+        match listener.accept().await {
+            Ok((stream, _)) => {
+                let io = TokioIo::new(stream);
+                let token = token.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, service_fn(move |req| push_handler(req, token.clone())))
+                        .await;
+                });
+            }
+            Err(e) => {
+                eprintln!("push listener accept err: {e}");
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn start_push_listener() -> Result<serde_json::Value, String> {
+    let token = push_gen_token();
+    let ip = push_lan_ip();
+    let listener = TokioTcpListener::bind("0.0.0.0:0").await.map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let handle = tauri::async_runtime::spawn(serve_push(listener, token.clone()));
+    {
+        let mut st = push_state().lock().unwrap();
+        st.servers.insert(token.clone(), handle);
+    }
+    Ok(serde_json::json!({ "ip": ip, "port": port, "token": token }))
+}
+
+#[tauri::command]
+fn poll_push_result(token: String) -> Result<Option<String>, String> {
+    let mut g = push_state().lock().unwrap();
+    Ok(g.payloads.remove(&token))
+}
+
+#[tauri::command]
+fn stop_push_listener(token: String) -> Result<(), String> {
+    if let Some(st) = PUSH.get() {
+        let mut g = st.lock().unwrap();
+        if let Some(h) = g.servers.remove(&token) {
+            h.abort();
+        }
+        g.payloads.remove(&token);
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
@@ -600,7 +762,11 @@ pub fn run() {
             // P3：前端在 App 顶层主动取出登录抓到的 token（Rust 侧暂存）
             take_netdisk_token,
             // V4.1.4 ③：系统真实状态栏高度（CSS px），作为 --sat 权威值，冷启动/网盘返回同一数值
-            safe_area_top
+            safe_area_top,
+            // V4.3.4：电视端扫码添加源 / 远程搜索 局域网接收后端（原风险清单 #4 补全）
+            start_push_listener,
+            poll_push_result,
+            stop_push_listener
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

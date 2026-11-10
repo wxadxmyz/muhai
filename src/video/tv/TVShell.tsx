@@ -208,28 +208,29 @@ export function TVShell({
 
   return (
     <div className="tv" data-focus-root>
-      <nav className="tv-nav">
-        {/* V4.3.1：左上角品牌图标换成与安卓首页同款的 circle.apng 动态圆圈（带「幕海」文字） */}
+      {/* V4.3.4：左竖导航改为顶部居中 tab 栏（左品牌 / 中 5 个 tab 居中 / 右带秒时钟，常驻显示） */}
+      <div className="tv-topnav">
         <div className="brand">
           <img src="/circle.apng" alt="幕海" className="brand-logo" />
           <span className="brand-txt">幕海</span>
         </div>
-        {NAV.map((n) => (
-          <button
-            key={n.key}
-            className={'tv-nav-item' + (navTab === n.key ? ' active' : '')}
-            data-focusable=""
-            onClick={() => { setNavTab(n.key); if (n.key !== 'search') setSearchQuery(null); }}
-          >
-            <Icon name={n.icon} size={30} />
-            <span>{n.label}</span>
-          </button>
-        ))}
-      </nav>
+        <nav className="tv-tabs">
+          {NAV.map((n) => (
+            <button
+              key={n.key}
+              className={'tab' + (navTab === n.key ? ' active' : '')}
+              data-focusable=""
+              onClick={() => { setNavTab(n.key); if (n.key !== 'search') setSearchQuery(null); }}
+            >
+              <Icon name={n.icon} size={22} />
+              <span>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+        <TVClock className="inline" />
+      </div>
 
       <div className="tv-main">
-        {/* V4.3.1：首页右上角实时时钟（仅首页显示） */}
-        {navTab === 'home' && <TVClock />}
         {!playing && detail && (
           <DetailTV item={detail} onPlay={(i, l) => playEpisode(detail, i, l)} onOffline={handleOffline} library={library} />
         )}
@@ -273,7 +274,11 @@ export function TVShell({
           V4.3.3：去掉浮层头部的多余「× 关闭」，电视端只保留组件内的「关闭」一个入口。 */}
       {remotePush && (
         <div className="tv-overlay" data-focus-root>
-          <RemotePushTV onClose={() => setRemotePush(null)} mode={remotePush} />
+          <RemotePushTV
+            onClose={() => setRemotePush(null)}
+            mode={remotePush}
+            onSearch={remotePush === 'search' ? (q: string) => { setRemotePush(null); goSearch(q); } : undefined}
+          />
         </div>
       )}
     </div>

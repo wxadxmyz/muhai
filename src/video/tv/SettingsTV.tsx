@@ -18,9 +18,9 @@ function TVSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => voi
       onClick={() => onChange(!on)}
       role="switch"
       aria-checked={on}
-      style={{ width: 64, height: 36, borderRadius: 999, background: on ? 'var(--accent)' : 'var(--border)', position: 'relative', cursor: 'pointer', flex: '0 0 auto' }}
+      style={{ width: 64, height: 36, borderRadius: 999, background: on ? 'var(--accent)' : 'rgba(0,0,0,.18)', border: on ? 'none' : '1px solid rgba(0,0,0,.12)', boxSizing: 'border-box', position: 'relative', cursor: 'pointer', flex: '0 0 auto' }}
     >
-      <span style={{ position: 'absolute', top: 4, left: on ? 32 : 4, width: 28, height: 28, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 4px rgba(0,0,0,.45)', transition: '.15s' }} />
+      <span style={{ position: 'absolute', top: 4, left: on ? 32 : 4, width: 28, height: 28, borderRadius: '50%', background: '#fff', border: '1px solid rgba(0,0,0,.12)', boxShadow: '0 1px 4px rgba(0,0,0,.45)', transition: '.15s' }} />
     </div>
   );
 }

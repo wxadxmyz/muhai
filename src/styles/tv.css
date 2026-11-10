@@ -8,6 +8,7 @@
   position: fixed;
   inset: 0;
   display: flex;
+  flex-direction: column;
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
@@ -16,37 +17,38 @@
   --tv-safe: 48px;
 }
 
-/* ---------- 左竖导航（首页/搜索/直播/历史/设置） ---------- */
-.tv-nav {
-  width: 132px;
-  flex: 0 0 132px;
+/* ---------- 顶部导航（首页/搜索/直播/历史/设置）居中 ---------- */
+/* V4.3.4：由原先左竖导航重构为顶部栏（左品牌 / 中 5 个 tab 居中 / 右带秒时钟）。 */
+.tv-topnav {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 24px;
+  height: 92px; padding: 0 40px;
   background: var(--panel);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 40px 14px 40px;
+  border-bottom: 1px solid var(--border);
   box-sizing: border-box;
 }
-.tv-nav .brand {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 22px; font-weight: 800; margin-bottom: 22px; padding-left: 8px;
+.tv-topnav .brand {
+  display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
 }
-/* V4.3.1：左上角品牌图标 = 安卓同款 circle.apng 动态圆圈 */
-.tv-nav .brand .brand-logo {
-  width: 40px; height: 40px; border-radius: 50%; object-fit: cover; display: block;
-  flex: 0 0 40px;
+/* V4.3.1：品牌图标 = 安卓同款 circle.apng 动态圆圈 */
+.tv-topnav .brand .brand-logo {
+  width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block;
+  flex: 0 0 44px;
 }
-.tv-nav .brand .brand-txt { font-size: 20px; }
-.tv-nav-item {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  padding: 18px 6px; border-radius: 14px; color: var(--muted);
-  background: transparent; border: none; cursor: pointer; transition: .15s var(--ease);
-  font-size: 15px;
+.tv-topnav .brand .brand-txt { font-size: 24px; font-weight: 800; }
+.tv-tabs {
+  flex: 1 1 auto; display: flex; justify-content: center; gap: 16px;
 }
-.tv-nav-item svg { width: 30px; height: 30px; }
-.tv-nav-item.active {
+.tv-tabs .tab {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 28px; border-radius: 4px; color: var(--text2);
+  background: transparent; border: 2px solid transparent; cursor: pointer;
+  font-size: 20px; font-weight: 700; transition: .15s var(--ease);
+}
+.tv-tabs .tab svg { width: 24px; height: 24px; }
+.tv-tabs .tab.active {
   color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-color: transparent;
 }
 
 /* ---------- 内容区 ---------- */
@@ -74,27 +76,29 @@
 }
 /* V4.3.2：电视播放页右上角常驻带秒时钟——独立于播放器内部 overlay，置顶显示、不挡操作 */
 .tv-clock.tv-player-clock { z-index: 200; }
+/* V4.3.4：顶栏常驻时钟（行内布局，不绝对定位） */
+.tv-clock.inline { position: static; text-align: right; line-height: 1.25; pointer-events: none; }
 /* V4.3.3：电视端隐藏滚动条（不参与遥控器导航，显示反而碍眼）；手机/桌面端不受影响 */
 .tv .tv-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .tv .tv-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* ---------- 焦点环（替代 hover，电视无鼠标） ---------- */
-/* V4.3.3：选中态不再放大（避免往外鼓出、压到邻居），改为「白内环 + accent 主环 + 外发光」，
-   在任何深浅背景下都清晰可见；z-index 抬升避免被遮挡。 */
+/* V4.3.4：去掉浅色皮肤下会隐形的白内环；改用「页面底色内隔 + accent 主环 + 外发光」，
+   深浅皮肤都清晰（内隔用 --bg 与元素底色拉开层次，accent 主环保证对比）。选中态不再放大。 */
 .tv [data-focusable]:focus {
   outline: none;
   box-shadow:
-    0 0 0 3px #fff,
-    0 0 0 6px var(--accent),
-    0 0 26px 6px color-mix(in srgb, var(--accent) 60%, transparent);
+    0 0 0 3px var(--bg),
+    0 0 0 7px var(--accent),
+    0 0 26px 6px color-mix(in srgb, var(--accent) 55%, transparent);
   z-index: 3;
   transition: box-shadow .12s var(--ease);
 }
 .tv .tv-card:focus, .tv .tv-poster:focus {
   box-shadow:
-    0 0 0 3px #fff,
-    0 0 0 6px var(--accent),
-    0 0 26px 6px color-mix(in srgb, var(--accent) 60%, transparent);
+    0 0 0 3px var(--bg),
+    0 0 0 7px var(--accent),
+    0 0 26px 6px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 /* ---------- 通用 TV 卡片 / 海报 ---------- */
@@ -128,8 +132,8 @@
 .tv-home { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tv-home-head {
   flex: 0 0 auto;
-  /* 右侧给绝对定位的时钟留位，分类标签不延伸到时钟下方 */
-  padding-right: 230px;
+  /* V4.3.4：时钟已移至顶部栏，不再需要为绝对定位时钟预留右侧空间 */
+  padding-right: 0;
   margin-bottom: 18px;
 }
 .tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
@@ -144,7 +148,7 @@
 
 .tv-row-title { font-size: 20px; font-weight: 700; margin: 4px 0 14px; }
 .tv-corridor {
-  display: flex; gap: 18px; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px;
+  display: flex; gap: 28px; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px;
   scroll-snap-type: x proximity;
 }
 .tv-corridor .tv-poster { width: 168px; scroll-snap-align: start; }
@@ -193,7 +197,7 @@
 .tv-result-src .cnt { color: var(--muted); font-size: 13px; }
 .tv-result-grid {
   flex: 1; min-width: 0; overflow-y: auto; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 24px; align-content: start;
 }
 .tv-result-grid .tv-poster { width: 100%; }
 .tv-empty { color: var(--muted); font-size: 18px; padding: 40px; text-align: center; }
@@ -230,7 +234,7 @@
 
 /* ---------- 设置 TV ---------- */
 .tv-settings { height: 100%; min-height: 0; display: flex; flex-direction: column; }
-.tv-set-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.tv-set-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
 .tv-set-card {
   display: flex; flex-direction: column; gap: 8px; padding: 22px; border-radius: 16px;
   background: var(--panel2); border: 1px solid var(--border); cursor: pointer; min-height: 110px;
@@ -244,7 +248,7 @@
 /* ---------- 历史 TV ---------- */
 .tv-history-tabs { display: flex; gap: 12px; margin-bottom: 18px; }
 .tv-history-tabs .tv-cat { font-size: 16px; }
-.tv-history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 18px; }
+.tv-history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 24px; }
 
 /* ---------- 直播 TV ---------- */
 .tv-live-list { display: flex; flex-direction: column; gap: 10px; }

@@ -26,6 +26,28 @@ import { RemotePushTV } from './RemotePushTV';
 
 type NavTab = 'home' | 'search' | 'live' | 'history' | 'settings';
 
+// V4.3.1：首页右上角实时时钟（年月日 + 星期 + 带秒时间）。
+// 独立组件、pointer-events:none，不参与遥控器焦点导航；每秒刷新。
+function TVClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const p = (n: number) => String(n).padStart(2, '0');
+  return (
+    <div className="tv-clock" aria-hidden>
+      <div className="tv-clock-date">
+        {`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${wk[now.getDay()]}`}
+      </div>
+      <div className="tv-clock-time">
+        {`${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`}
+      </div>
+    </div>
+  );
+}
+
 const NAV: { key: NavTab; icon: any; label: string }[] = [
   { key: 'home', icon: 'home', label: '首页' },
   { key: 'search', icon: 'search', label: '搜索' },
@@ -187,7 +209,11 @@ export function TVShell({
   return (
     <div className="tv" data-focus-root>
       <nav className="tv-nav">
-        <div className="brand"><span className="logo"><Icon name="film" size={20} /></span> 幕海</div>
+        {/* V4.3.1：左上角品牌图标换成与安卓首页同款的 circle.apng 动态圆圈（带「幕海」文字） */}
+        <div className="brand">
+          <img src="/circle.apng" alt="幕海" className="brand-logo" />
+          <span className="brand-txt">幕海</span>
+        </div>
         {NAV.map((n) => (
           <button
             key={n.key}
@@ -202,6 +228,8 @@ export function TVShell({
       </nav>
 
       <div className="tv-main">
+        {/* V4.3.1：首页右上角实时时钟（仅首页显示） */}
+        {navTab === 'home' && <TVClock />}
         {!playing && detail && (
           <DetailTV item={detail} onPlay={(i, l) => playEpisode(detail, i, l)} onOffline={handleOffline} library={library} />
         )}

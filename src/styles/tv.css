@@ -32,10 +32,12 @@
   display: flex; align-items: center; gap: 10px;
   font-size: 22px; font-weight: 800; margin-bottom: 22px; padding-left: 8px;
 }
-.tv-nav .brand .logo {
-  width: 34px; height: 34px; display: grid; place-items: center;
-  border-radius: 9px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+/* V4.3.1：左上角品牌图标 = 安卓同款 circle.apng 动态圆圈 */
+.tv-nav .brand .brand-logo {
+  width: 40px; height: 40px; border-radius: 50%; object-fit: cover; display: block;
+  flex: 0 0 40px;
 }
+.tv-nav .brand .brand-txt { font-size: 20px; }
 .tv-nav-item {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   padding: 18px 6px; border-radius: 14px; color: var(--muted);
@@ -58,6 +60,17 @@
 .tv-scroll {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   box-sizing: border-box;
+}
+/* V4.3.1：首页右上角实时时钟（绝对定位于内容区右上角，不随内容滚动，不参与焦点导航） */
+.tv-clock {
+  position: absolute; top: var(--tv-safe); right: var(--tv-safe);
+  text-align: right; line-height: 1.25; z-index: 6; pointer-events: none;
+}
+.tv-clock-date { font-size: 18px; color: var(--muted); letter-spacing: 1px; }
+.tv-clock-time {
+  font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .tv-scroll::-webkit-scrollbar { width: 8px; }
 .tv-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

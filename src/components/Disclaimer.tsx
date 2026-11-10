@@ -22,6 +22,26 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     return () => window.clearTimeout(t);
   }, [tv, settings.disclaimerAccepted]);
 
+  // V4.3.1：独立 OK/Enter 监听，不依赖焦点系统。
+  // 部分电视盒子 WebView 的自动聚焦不可靠（焦点框不出现、按钮未成为 activeElement），
+  // 导致 focusNav 的「按钮必须是 activeElement 才点击」判定失效、遥控器 OK 失灵、卡在免责声明进不去。
+  // 这里直接在免责声明显示期间捕获 Enter/OK/Select，绕过焦点，保证一定能进入。
+  // 用 window 捕获阶段 + stopPropagation，确保先于此处的 focusNav(document 捕获) 处理，避免重复触发。
+  useEffect(() => {
+    if (settings.disclaimerAccepted) return;
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key;
+      if (k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || k === 'Spacebar') {
+        e.preventDefault();
+        e.stopPropagation();
+        accept();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.disclaimerAccepted]);
+
   if (settings.disclaimerAccepted) return null;
 
   const accept = () => {

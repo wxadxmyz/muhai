@@ -28,7 +28,7 @@ type NavTab = 'home' | 'search' | 'live' | 'history' | 'settings';
 
 // V4.3.1：首页右上角实时时钟（年月日 + 星期 + 带秒时间）。
 // 独立组件、pointer-events:none，不参与遥控器焦点导航；每秒刷新。
-function TVClock() {
+function TVClock({ className = '' }: { className?: string }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 1000);
@@ -37,9 +37,9 @@ function TVClock() {
   const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const p = (n: number) => String(n).padStart(2, '0');
   return (
-    <div className="tv-clock" aria-hidden>
+    <div className={`tv-clock ${className}`} aria-hidden>
       <div className="tv-clock-date">
-        {`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${wk[now.getDay()]}`}
+        {`${now.getFullYear()}年${p(now.getMonth() + 1)}月${p(now.getDate())}日 ${wk[now.getDay()]}`}
       </div>
       <div className="tv-clock-time">
         {`${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`}
@@ -264,6 +264,8 @@ export function TVShell({
               onOpenDownloads={() => toast('请在设置-下载管理查看')}
             />
           </ErrorBoundary>
+          {/* V4.3.2：电视播放页右上角常驻带秒时钟（独立于播放器内部 overlay，置顶显示、不挡操作） */}
+          <TVClock className="tv-player-clock" />
         </div>
       )}
 

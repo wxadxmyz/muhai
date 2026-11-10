@@ -96,6 +96,10 @@ jobs:
         run: |
           export ANDROID_HOME=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
           export ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-$ANDROID_HOME}
+          # V4.3.2：强制删除 gen/android，避免 CI runner 残留的旧 mipmap 被 tauri android init 沿用
+          # （init 不覆盖已存在的资源），导致打出的 APK 图标回退成旧版（场记板）。
+          # 每次从源码图标源（顶层 icon.png 与 icons/android/ 全套）重新生成，确保 APK 图标为 V4.3.0 新图标。
+          rm -rf src-tauri/gen/android
           set -o pipefail
           pnpm tauri android init 2>&1 | tee /tmp/init.log
 

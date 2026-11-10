@@ -72,6 +72,8 @@
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
+/* V4.3.2：电视播放页右上角常驻带秒时钟——独立于播放器内部 overlay，置顶显示、不挡操作 */
+.tv-clock.tv-player-clock { z-index: 200; }
 .tv-scroll::-webkit-scrollbar { width: 8px; }
 .tv-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 

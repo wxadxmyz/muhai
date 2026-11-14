@@ -31,7 +31,11 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     if (settings.disclaimerAccepted) return;
     const onKey = (e: KeyboardEvent) => {
       const k = e.key;
-      if (k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || k === 'Spacebar') {
+      const code = (e as any).keyCode || (e as any).which || 0;
+      // V4.3.5：除字符串匹配外，也认硬件 keyCode 13(Enter)/23(DPAD_CENTER/OK)，
+      // 部分电视盒子的 OK 键上报的 key 串不被上面字符串覆盖，需靠 keyCode 兜底，
+      // 否则只能先按方向键把焦点挪到按钮、借浏览器原生点击才能进入。
+      if (k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || k === 'Spacebar' || code === 13 || code === 23) {
         e.preventDefault();
         e.stopPropagation();
         accept();
@@ -78,6 +82,13 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
             className="disclaimer-tv-btn"
             data-focusable=""
             onClick={accept}
+            onKeyDown={(e) => {
+              const c = (e as any).keyCode || 0;
+              if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23) {
+                e.preventDefault();
+                accept();
+              }
+            }}
           >
             一键同意并进入（按遥控器 OK 键）
           </button>

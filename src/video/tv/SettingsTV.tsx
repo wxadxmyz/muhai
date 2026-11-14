@@ -6,6 +6,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { useSkin, SKINS } from '../../lib/theme';
 import { Icon } from '../../components/Icon';
 import { pushBackHandler } from '../../lib/backStack';
+import { useSources } from '../../store';
 import { clearProxiedCache, proxiedCacheBytes } from '../../components/ProxiedImg';
 import { toast } from '../../lib/toast';
 import { RemotePushTV } from './RemotePushTV';
@@ -13,7 +14,7 @@ import { RemotePushTV } from './RemotePushTV';
 function TVSwitch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <div
-      className={'switch' + (on ? ' on' : '')}
+      className={'tv-switch' + (on ? ' on' : '')}
       data-focusable=""
       onClick={() => onChange(!on)}
       role="switch"
@@ -55,6 +56,7 @@ function Seg({ value, options, onChange }: { value: string; options: { v: string
 export function SettingsTV({ onReset }: { onReset: () => void }) {
   const { settings, update } = useSettings();
   const { skin, selectedId, setSkinId } = useSkin();
+  const srcStore = useSources('video');
   const [panel, setPanel] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState('…');
   const [cacheMsg, setCacheMsg] = useState('');
@@ -76,6 +78,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
     { key: 'look', icon: 'palette', t: '外观', v: skin.name },
     { key: 'net', icon: 'cloud', t: '网络/缓存', v: fmtCache(cacheBytes) },
     { key: 'source', icon: 'download', t: '添加源', v: '扫码' },
+    { key: 'sourcelist', icon: 'list', t: '源管理', v: srcStore.sources.length + ' 个' },
     { key: 'about', icon: 'file-text', t: '关于', v: 'v' + appVersion },
   ];
 
@@ -96,7 +99,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
         </div>
       </div>
 
-      {panel && panel !== 'source' && panel !== 'tv' && (
+      {panel && panel !== 'source' && panel !== 'tv' && panel !== 'sourcelist' && (
         <div className="tv-overlay" data-focus-root>
           <div className="tv-sheet">
             <div className="tv-sheet-head">
@@ -173,6 +176,33 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
       {panel === 'source' && (
         <div className="tv-overlay" data-focus-root>
           <RemotePushTV onClose={() => setPanel(null)} mode="source" />
+        </div>
+      )}
+
+      {/* V4.3.5：源管理——列出已添加的影视源并可逐个删除（此前 TV 端无入口，用户加完找不到） */}
+      {panel === 'sourcelist' && (
+        <div className="tv-overlay" data-focus-root>
+          <div className="tv-sheet">
+            <div className="tv-sheet-head">
+              <h3>源管理（{srcStore.sources.length}）</h3>
+              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setPanel(null)}><Icon name="x" size={18} /> 关闭</button>
+            </div>
+            <div className="tv-sheet-body">
+              {srcStore.sources.length === 0 ? (
+                <div className="tv-empty">还没有添加任何影视源</div>
+              ) : (
+                srcStore.sources.map((s: any) => (
+                  <div key={s.id} className="tv-src-row">
+                    <div className="tv-src-meta">
+                      <div className="t">{s.name}</div>
+                      <div className="v">{s.type}{s.api || s.baseUrl ? ' · ' + (s.api || s.baseUrl) : ''}</div>
+                    </div>
+                    <button className="tv-action-btn danger" data-focusable="" onClick={() => srcStore.remove(s.id)}>删除</button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -25,6 +25,7 @@ export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?:
   const [qr, setQr] = useState('');
   const [endpoint, setEndpoint] = useState('');
   const [info, setInfo] = useState<ListenerInfo | null>(null);
+  const [error, setError] = useState('');
   const timer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -40,9 +41,11 @@ export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?:
         try { setQr(await QRCode.toDataURL(url, { width: 280, margin: 1 })); } catch { setQr(''); }
         setStatus('ready');
         poll(r.token);
-      } catch {
+      } catch (e: any) {
         if (!alive) return;
-        // 后端未实现 / 非 Tauri 环境：优雅降级，显示说明，不阻塞 TV 使用
+        // V4.3.5：把真实报错暴露出来（不再笼统显示「未就绪」），方便定位是权限/端口/网络策略。
+        const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || '未知错误（请查看终端/日志）';
+        setError(msg);
         setStatus('missing');
       }
     })();
@@ -105,13 +108,17 @@ export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?:
             </svg>
           </div>
           <div className="status" style={{ color: 'var(--danger)' }}>后端推送服务未就绪</div>
+          {error && (
+            <div style={{ maxWidth: 560, color: 'var(--danger)', fontSize: 14, background: 'color-mix(in srgb, var(--danger) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--danger) 35%, transparent)', borderRadius: 10, padding: '10px 14px', textAlign: 'left', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              错误详情：{error}
+            </div>
+          )}
           <div className="hint">
-            当前构建未包含局域网推送后端（风险清单 #4，需在真机/盒子验证）。<br />
-            你仍可用以下方式添加影视源：
+            电视端已尝试在局域网起接收服务但失败了。你仍可用以下方式添加影视源：
           </div>
           <ul className="tv-push-tips">
             <li>手机 / 电脑端导入源 JSON，再经「设置 → 同步」或同账号云盘共享到电视端；</li>
-            <li>后续版本将补齐 TV 端二维码 + 手机端承接页的端到端链路。</li>
+            <li>把上面的错误详情发给我，我可针对性修复（多为 Android 监听端口权限问题）。</li>
           </ul>
         </>
       )}

@@ -48,12 +48,14 @@ function TVClock({ className = '' }: { className?: string }) {
   );
 }
 
+// V4.3.5：顶栏 tab 图标对齐手机/桌面版（tab-home / tab-live / tab-history / tab-settings），
+// 搜索沿用通用 search 图标（手机版搜索 tab 亦使用 search）。
 const NAV: { key: NavTab; icon: any; label: string }[] = [
-  { key: 'home', icon: 'home', label: '首页' },
+  { key: 'home', icon: 'tab-home', label: '首页' },
   { key: 'search', icon: 'search', label: '搜索' },
-  { key: 'live', icon: 'tv', label: '直播' },
+  { key: 'live', icon: 'tab-live', label: '直播' },
   { key: 'history', icon: 'tab-history', label: '历史' },
-  { key: 'settings', icon: 'settings', label: '设置' },
+  { key: 'settings', icon: 'tab-settings', label: '设置' },
 ];
 
 export function TVShell({

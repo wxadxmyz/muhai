@@ -83,22 +83,15 @@
 .tv .tv-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* ---------- 焦点环（替代 hover，电视无鼠标） ---------- */
-/* V4.3.4：去掉浅色皮肤下会隐形的白内环；改用「页面底色内隔 + accent 主环 + 外发光」，
-   深浅皮肤都清晰（内隔用 --bg 与元素底色拉开层次，accent 主环保证对比）。选中态不再放大。 */
+/* V4.3.5：焦点环改用 outline + 负偏移（画在元素「内部」），
+   不再用 box-shadow（环在元素外部、被滚动容器 overflow 裁剪，方向键导航时完全不可见）。
+   深浅皮肤均清晰，且不会被 .tv-scroll / .tv-corridor 等 overflow 容器裁掉。 */
 .tv [data-focusable]:focus {
-  outline: none;
-  box-shadow:
-    0 0 0 3px var(--bg),
-    0 0 0 7px var(--accent),
-    0 0 26px 6px color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: 5px solid var(--accent);
+  outline-offset: -5px;
   z-index: 3;
-  transition: box-shadow .12s var(--ease);
-}
-.tv .tv-card:focus, .tv .tv-poster:focus {
-  box-shadow:
-    0 0 0 3px var(--bg),
-    0 0 0 7px var(--accent),
-    0 0 26px 6px color-mix(in srgb, var(--accent) 55%, transparent);
+  filter: brightness(1.06);
+  transition: filter .12s var(--ease);
 }
 
 /* ---------- 通用 TV 卡片 / 海报 ---------- */
@@ -244,6 +237,12 @@
 .tv-set-card .v { font-size: 14px; color: var(--muted); }
 .tv-set-card.danger .t { color: var(--danger); }
 .tv-set-group-title { font-size: 16px; color: var(--muted); margin: 18px 0 10px; }
+
+/* V4.3.5：TV 源管理列表行 */
+.tv-src-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 4px; border-bottom: 1px solid var(--border); }
+.tv-src-row .tv-src-meta { min-width: 0; }
+.tv-src-row .tv-src-meta .t { font-size: 17px; font-weight: 600; }
+.tv-src-row .tv-src-meta .v { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 460px; }
 
 /* ---------- 历史 TV ---------- */
 .tv-history-tabs { display: flex; gap: 12px; margin-bottom: 18px; }

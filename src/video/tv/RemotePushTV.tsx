@@ -14,6 +14,7 @@ import QRCode from 'qrcode';
 import { invoke } from '@tauri-apps/api/core';
 import { useSources } from '../../store';
 import { toast } from '../../lib/toast';
+import { fetchFromUrl, parsePasted } from '../../lib/sourceFetch';
 
 type Status = 'loading' | 'ready' | 'missing' | 'received';
 
@@ -61,15 +62,61 @@ export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?:
         if (payload) {
           try {
             if (mode === 'source') {
-              const arr = JSON.parse(payload);
+              // V4.3.8：承接页提交的是 {name, text} 包装；text 可为订阅链接或源 JSON。
+              // 兼容旧版纯 JSON / 纯链接：能解出 name 就用，解不出就当纯内容。
+              let sourceName = '';
+              let content = payload.trim();
+              try {
+                const wrapped = JSON.parse(payload);
+                if (wrapped && !Array.isArray(wrapped) && typeof wrapped.text === 'string') {
+                  sourceName = String(wrapped.name ?? '').trim();
+                  content = wrapped.text.trim();
+                }
+              } catch { /* 非包装：按纯内容处理 */ }
+
+              // A1：推送的是订阅链接 → 先下载、解析出源，再导入（不再把网址当 JSON 解析）
+              let payloadToImport = content;
+              if (/^https?:\/\//i.test(content)) {
+                const fr = await fetchFromUrl(content);
+                if (fr.kind === 'error') throw new Error(fr.message);
+                let list = fr.kind === 'sources' ? fr.sources : [];
+                if (list.length === 0 && fr.kind === 'links') {
+                  // 订阅页给出的是链接列表：逐个抓取并合并
+                  for (const u of (fr as any).links as string[]) {
+                    try {
+                      const sub = await fetchFromUrl(u);
+                      if (sub.kind === 'sources') list = list.concat(sub.sources);
+                    } catch { /* 单个链接失败跳过 */ }
+                  }
+                }
+                if (list.length === 0) throw new Error('订阅链接里未识别到可用源配置');
+                payloadToImport = JSON.stringify(list);
+              }
+
+              // A3：用户填了源名称 → 覆盖导入源的名字（单个源直接改名；多源加序号）
+              if (sourceName) {
+                const arr = JSON.parse(payloadToImport);
+                if (Array.isArray(arr)) {
+                  payloadToImport = JSON.stringify(
+                    arr.map((s: any, i: number) => ({ ...s, name: arr.length === 1 ? sourceName : `${sourceName} ${i + 1}` }))
+                  );
+                }
+              }
+
+              const arr = JSON.parse(payloadToImport);
               if (Array.isArray(arr)) {
-                const r = store.importSources(payload);
+                const r = store.importSources(payloadToImport);
                 toast(`已导入 ${r.added} 个源${r.skipped ? `，跳过 ${r.skipped} 个已存在` : ''}`);
               } else toast('收到的内容不是源数组');
             } else {
               // 远程搜索：把提交的关键词直接触发电视端搜索（切换到搜索页并展示结果）
-              if (onSearch) onSearch(payload.trim());
-              else toast('已收到远程搜索请求：' + payload.slice(0, 20));
+              let q = payload.trim();
+              try {
+                const wrapped = JSON.parse(payload);
+                if (wrapped && !Array.isArray(wrapped) && typeof wrapped.text === 'string') q = wrapped.text.trim();
+              } catch { /* 纯文本搜索词 */ }
+              if (onSearch) onSearch(q);
+              else toast('已收到远程搜索请求：' + q.slice(0, 20));
             }
             if (timer.current) window.clearInterval(timer.current);
             setStatus('received');

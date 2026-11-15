@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchHot, type HotData, type HotItem } from '../../lib/hot';
 import { buildPinyinIndex, matchPinyin, type PinyinEntry } from '../../lib/pinyinSearch';
 import { useLibrary } from '../../lib/library';
+import { loadSuggestIndex, subscribeSuggest } from '../../lib/suggestIndex';
 
 const KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
 const CHIPS: { key: string; label: string; field?: keyof HotData['categories'] }[] = [
@@ -25,6 +26,7 @@ export function SearchTV({
   const [hot, setHot] = useState<HotData | null>(null);
   const [text, setText] = useState('');
   const [chip, setChip] = useState('all');
+  const [suggestVersion, setSuggestVersion] = useState(0);
   const library = useLibrary('video');
 
   useEffect(() => {
@@ -32,6 +34,9 @@ export function SearchTV({
     fetchHot().then((d) => { if (alive && d) setHot(d); }).catch(() => {});
     return () => { alive = false; };
   }, []);
+
+  // V4.3.8：订阅「源片名预热索引」，后台预热完成后重算联想。
+  useEffect(() => subscribeSuggest(() => setSuggestVersion((v) => v + 1)), []);
 
   // 各分类的拼音索引（一次性构建）
   const indexes = useMemo(() => {
@@ -44,11 +49,13 @@ export function SearchTV({
         allNames.push(...ns);
       });
     }
-    // 搜索历史也并入「热榜」联想
+    // 搜索历史 + V4.3.8 源片名预热索引 并入「热榜」联想
     allNames.push(...library.lib.searchHistory);
+    allNames.push(...loadSuggestIndex().map((e) => e.name));
     map['all'] = buildPinyinIndex(allNames);
     return map;
-  }, [hot, library.lib.searchHistory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hot, library.lib.searchHistory, suggestVersion]);
 
   const suggestions: HotItem[] = useMemo(() => {
     if (!hot) return [];

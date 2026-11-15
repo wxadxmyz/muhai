@@ -633,15 +633,60 @@ fn push_resp(status: u16, content_type: &str, body: String) -> Response<PushBody
 }
 
 fn push_phone_page(token: &str, ptype: &str) -> String {
-    let title = if ptype == "search" { "远程搜索" } else { "添加影视源" };
-    let input = if ptype == "search" {
-        r#"<input id="q" placeholder="输入搜索关键词，如：庆余年" />"#
+    // V4.3.8：手机承接页改为「品牌渐变卡片风」（与软件深色主题一致），并给添加源模式
+    // 增加「源名称」输入框，提交时把 {name,text} 一起 POST，电视端据此命名导入的源。
+    // 用占位符 + replace 注入，避免 format! 与大段 CSS/JS 花括号冲突。
+    let (title, subtitle, input_block, submit_js) = if ptype == "search" {
+        (
+            "远程搜索",
+            "输入想搜的片名，提交后电视端立刻全站搜索。",
+            r##"<div class="field"><label>搜索关键词</label><input id="q" placeholder="例如：庆余年" /></div>"##,
+            "var v=document.getElementById('q').value.trim();",
+        )
     } else {
-        r#"<textarea id="q" placeholder='粘贴影视源 JSON，例如：[{"name":"我的源","api":"https://example.com","type":"drpy"}]'></textarea>"#
+        (
+            "添加影视源",
+            "填入订阅链接或源 JSON，提交后电视端自动导入。",
+            r##"<div class="field"><label>源名称（可选）</label><input id="nm" placeholder="给这个源起个名字" /></div><div class="field"><label>订阅链接 / 源 JSON</label><textarea id="q" placeholder="https://example.com/all-sources.json&#10;或粘贴源 JSON 数组"></textarea></div><div class="tip">支持订阅链接（推荐）：电视端会自动下载链接里的 JSON 再导入；也可直接粘贴源数组。</div>"##,
+            "var v=document.getElementById('q').value.trim();var nm=document.getElementById('nm').value.trim();v=JSON.stringify({name:nm,text:v});",
+        )
     };
-    format!(
-        r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>幕海 · {title}</title><style>body{{font-family:-apple-system,"PingFang SC",sans-serif;max-width:560px;margin:40px auto;padding:0 16px;color:#222}}h1{{font-size:22px}}textarea,input{{width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:1px solid #ccc;border-radius:10px}}textarea{{min-height:180px;font-family:monospace}}button{{margin-top:14px;padding:12px 22px;font-size:17px;color:#fff;border:0;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#6366f1);cursor:pointer}}#msg{{margin-top:16px;color:#3b82f6;min-height:22px;white-space:pre-wrap}}</style></head><body><h1>幕海 · {title}</h1><p style="color:#666">用手机扫码后，在此提交，内容会推送到电视端。</p>{input}<button onclick="submit()">提交到电视</button><div id="msg"></div><script>function submit(){{var v=document.getElementById('q').value;if(!v){{document.getElementById('msg').textContent='请先填写内容';return;}}document.getElementById('msg').textContent='提交中…';fetch('/submit?token={token}&type={ptype}',{{method:'POST',headers:{{'content-type':'text/plain'}},body:v}}).then(function(r){{return r.text();}}).then(function(t){{document.getElementById('msg').textContent='已提交，请在电视上确认 ✓';}}).catch(function(e){{document.getElementById('msg').textContent='提交失败：'+e;}});}}</script></body></html>"#
-    )
+    let tpl = r##"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>幕海 · __TITLE__</title><style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang SC",sans-serif;background:linear-gradient(160deg,#0f172a,#1e293b);min-height:100vh;color:#e2e8f0}
+.hd{padding:26px 20px 46px;text-align:center;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;position:relative;overflow:hidden}
+.hd .ring{width:52px;height:52px;margin:0 auto 10px;border:3px solid rgba(255,255,255,.9);border-radius:50%;position:relative;animation:mhspin 6s linear infinite}
+.hd .ring:after{content:"";position:absolute;inset:-6px;border:2px dashed rgba(255,255,255,.55);border-radius:50%}
+@keyframes mhspin{to{transform:rotate(360deg)}}
+.hd h1{margin:0;font-size:20px;letter-spacing:1px}.hd p{margin:6px 0 0;font-size:13px;opacity:.9}
+.wrap{max-width:520px;margin:-28px auto 0;padding:0 16px 30px;position:relative}
+.card{background:#fff;border-radius:18px;padding:22px 18px;box-shadow:0 12px 30px rgba(0,0,0,.18);color:#1f2736}
+.field{margin-bottom:16px}.field label{display:block;font-size:13px;color:#64748b;margin-bottom:7px;font-weight:600}
+input,textarea{width:100%;border:1.5px solid #e2e8f0;border-radius:11px;padding:12px;font-size:15px;outline:none;background:#f8fafc;color:#1f2736;font-family:inherit}
+textarea{min-height:128px;resize:vertical;font-family:ui-monospace,monospace;font-size:13px;line-height:1.5}
+input:focus,textarea:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+.tip{font-size:12px;color:#94a3b8;line-height:1.6;margin:-6px 0 16px}
+button{width:100%;padding:14px;border:0;border-radius:12px;font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,#3b82f6,#6366f1);cursor:pointer;box-shadow:0 6px 16px rgba(99,102,241,.35)}button:active{transform:translateY(1px)}
+#msg{margin-top:14px;font-size:13px;text-align:center;min-height:20px;line-height:1.5}
+.foot{text-align:center;color:#64748b;font-size:12px;margin-top:20px;line-height:1.7}
+</style></head><body>
+<div class="hd"><div class="ring"></div><h1>幕海 · __TITLE__</h1><p>__SUBTITLE__</p></div>
+<div class="wrap"><div class="card">__INPUT__<button onclick="submit()">提交到电视</button><div id="msg"></div></div>
+<div class="foot">仅在电视与手机处于同一 WLAN 时可用<br/>提交内容仅在本机局域网传输，不会上传云端</div></div>
+<script>
+function msg(t,c){var m=document.getElementById('msg');m.textContent=t;m.style.color=c||'#64748b';}
+function submit(){
+__SUBMITJS__
+if(!v){msg('请先填写内容','#ef4444');return;}
+msg('提交中…','#3b82f6');
+fetch('/submit?token=__TOKEN__&type=__PTYPE__',{method:'POST',headers:{'content-type':'text/plain'},body:v}).then(function(r){return r.text();}).then(function(){msg('✓ 已提交，请在电视上确认','#16a34a');}).catch(function(e){msg('提交失败：'+e,'#ef4444');});
+}
+</script></body></html>"##;
+    tpl.replace("__TITLE__", title)
+        .replace("__SUBTITLE__", subtitle)
+        .replace("__INPUT__", input_block)
+        .replace("__SUBMITJS__", submit_js)
+        .replace("__TOKEN__", token)
+        .replace("__PTYPE__", ptype)
 }
 
 async fn push_handler(req: Request<Incoming>, token: String) -> Result<Response<PushBody>, Infallible> {

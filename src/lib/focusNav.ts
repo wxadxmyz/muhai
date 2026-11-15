@@ -192,6 +192,28 @@ function onKeyDown(e: KeyboardEvent) {
     focusEl(autoFocusEl(list) || list[0]);
     return;
   }
+  // V4.3.8：网格导航（首页卡片 6 列 × 2 行）。当前元素带 data-grid-col 时，
+  // ←/→ 在同一 grid 组内找「同排、列号±1」的卡片；到头（无相邻列）则原地不动，封边防回环。
+  // ↑/↓ 优先走显式 data-nav（如「顶排↑→分类」「底排↓→停在自己」），由下方 hint 逻辑处理。
+  const gcol = cur.getAttribute('data-grid-col');
+  if ((dir === 'left' || dir === 'right') && gcol !== null) {
+    const col = parseInt(gcol, 10);
+    const row = cur.getAttribute('data-grid-row');
+    const targetCol = col + (dir === 'left' ? -1 : 1);
+    if (targetCol >= 0) {
+      // 同一 grid 组（同一 section 走廊内）找同排同列号元素
+      const cand = list.find((el) => {
+        if (el === cur) return false;
+        if (el.getAttribute('data-grid-col') !== String(targetCol)) return false;
+        // row 相同（都带 row 且一致）或都无 row
+        return (el.getAttribute('data-grid-row') || '') === (row || '');
+      });
+      if (cand) { focusEl(cand); return; }
+    }
+    // 到最左/最右：封边不动（不跳去分类标签、不回环）
+    return;
+  }
+
   // V4.3.7：支持显式导航提示 data-nav-<dir>（CSS 选择器），用于像电视首页那样的分区导航。
   // 若当前元素带该属性：命中且非自身 → 直接聚焦目标；命中自身 → 原地不动（封顶/封底，防回环）；
   // 未命中（选择器无效/目标不存在）→ 回退到空间就近匹配。

@@ -145,6 +145,13 @@
   scroll-snap-type: x proximity;
 }
 .tv-corridor .tv-poster { width: 168px; scroll-snap-align: start; }
+/* V4.3.8：首页卡片改 6 列 × 2 行网格，一屏铺满、不左右滑。
+   海报比例从 3:4 调为更扁的 4:5，让 2 行在横屏一屏内放得下。 */
+.tv-corridor.tv-grid {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px 20px; overflow: visible; padding-bottom: 6px; scroll-snap-type: none;
+}
+.tv-corridor.tv-grid .tv-poster { width: auto; aspect-ratio: 4 / 5; scroll-snap-align: unset; }
 /* V4.3.3：选中不再放大，避免相邻卡片被挤出；选中态清晰度靠焦点环保证（见上） */
 .tv-corridor .tv-poster:focus { transform: none; }
 

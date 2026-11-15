@@ -15,6 +15,12 @@ export function TVPoster({
   onClick,
   focusable = true,
   navUp,
+  navDown,
+  navLeft,
+  navRight,
+  gridRow,
+  gridCol,
+  domId,
 }: {
   name: string;
   cover?: string;
@@ -24,14 +30,26 @@ export function TVPoster({
   onClick?: () => void;
   focusable?: boolean;
   navUp?: string;
+  navDown?: string;
+  navLeft?: string;
+  navRight?: string;
+  gridRow?: number;
+  gridCol?: number;
+  domId?: string;
 }) {
   const { sources } = useSources('video');
   const show = cover || '';
   return (
     <div
+      id={domId}
       className="tv-poster"
       data-focusable={focusable ? '' : undefined}
       data-nav-up={navUp}
+      data-nav-down={navDown}
+      data-nav-left={navLeft}
+      data-nav-right={navRight}
+      data-grid-row={gridRow}
+      data-grid-col={gridCol}
       onClick={onClick}
       role="button"
       title={name}

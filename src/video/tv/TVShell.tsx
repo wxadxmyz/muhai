@@ -14,6 +14,7 @@ import { requestOrientation } from '../../lib/orientation';
 import { isTV } from '../../lib/deviceMode';
 import { downloadStore } from '../../lib/downloads';
 import { toast } from '../../lib/toast';
+import { prewarmSuggestIndex } from '../../lib/suggestIndex';
 import { getDeviceMode } from '../../lib/deviceMode';
 import { HomeTV } from './HomeTV';
 import { SearchTV } from './SearchTV';
@@ -92,6 +93,13 @@ export function TVShell({
   useEffect(() => {
     requestOrientation('landscape');
   }, []);
+
+  // V4.3.8：启动时后台预热各源片名 → 本地拼音索引，供搜索联想覆盖源内容（不阻塞 UI）。
+  useEffect(() => {
+    const t = window.setTimeout(() => { prewarmSuggestIndex(sources).catch(() => {}); }, 1500);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sources]);
 
   // 返回键：栈式调度（dispatchBack 优先，未消费再走外壳分级）
   useEffect(() => {

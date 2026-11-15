@@ -5,6 +5,17 @@
 
 ---
 
+## V4.3.6
+
+**桌面端启动崩溃修复（Windows / macOS / Linux）。**
+
+- 修复 `tauri_plugin_updater` 在缺少 `plugins.updater` 配置时初始化失败、导致应用启动即 panic 退出（退出码 101）的问题。发布版为 GUI 子系统程序，panic 不弹窗、不写事件日志，表现为「能安装但打不开」。
+- 桌面端暂不注册 updater 插件；设置里的「检查更新」会提示失败，待补齐 endpoints 与签名公钥后再恢复自动更新（前端已有 try/catch，不影响主界面）。
+- 统一版本号至 4.3.6（此前 `Cargo.toml` / `Cargo.lock` 停留在 4.3.4）。
+- Android 端不受此问题影响（该插件注册位于 `#[cfg(desktop)]` 内）。
+
+---
+
 ## V4.3.5
 
 **电视端 7 项问题修复（用户逐条反馈核实）。**

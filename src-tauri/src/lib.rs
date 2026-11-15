@@ -552,8 +552,8 @@ fn take_netdisk_token() -> Option<(String, String)> {
     PENDING_ND.lock().ok().and_then(|mut g| g.take())
 }
 
-// P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键/更新），
-// 并建立系统托盘。全局快捷键与更新检查由前端通过 @tauri-apps JS 插件调用，
+// P2 原生能力层：注册系统插件（对话框/文件系统/通知/自启/全局快捷键），
+// 并建立系统托盘。全局快捷键由前端通过 @tauri-apps JS 插件调用，
 // 此处只负责初始化插件与托盘菜单。
 // 注意：托盘、全局快捷键、自启、菜单均为桌面端专属能力，安卓/iOS 下用
 // cfg(desktop) 隔离，避免移动端 target 缺少对应 API 导致编译失败。
@@ -734,7 +734,10 @@ pub fn run() {
                 None,
             ))
             .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-            .plugin(tauri_plugin_updater::Builder::new().build())
+            // V4.3.6：暂不注册 updater 插件。tauri.conf.json 未提供 plugins.updater
+            // 配置，注册会在启动时反序列化 null 失败并 panic（退出码 101），而发布版
+            // 是 GUI 子系统程序，panic 不弹窗、不留事件日志，表现为「装得上打不开」。
+            // 待补齐 endpoints + 签名公钥后再恢复自动更新。
             .setup(|app| {
                 build_tray(app)?;
                 Ok(())

@@ -14,6 +14,7 @@ export function TVPoster({
   rating,
   onClick,
   focusable = true,
+  navUp,
 }: {
   name: string;
   cover?: string;
@@ -22,6 +23,7 @@ export function TVPoster({
   rating?: number;
   onClick?: () => void;
   focusable?: boolean;
+  navUp?: string;
 }) {
   const { sources } = useSources('video');
   const show = cover || '';
@@ -29,6 +31,7 @@ export function TVPoster({
     <div
       className="tv-poster"
       data-focusable={focusable ? '' : undefined}
+      data-nav-up={navUp}
       onClick={onClick}
       role="button"
       title={name}

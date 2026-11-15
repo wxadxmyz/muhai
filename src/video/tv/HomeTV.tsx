@@ -41,6 +41,7 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
               type={it.type}
               year={it.year}
               rating={it.rating}
+              navUp=".tv-cat.active"
               onClick={() => onSearch(it.name)}
             />
           ))}
@@ -58,6 +59,7 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
               key={c.key}
               className={'tv-cat' + (cat === c.key ? ' active' : '')}
               data-focusable=""
+              data-nav-up="[data-tv-tab='home']"
               onClick={() => setCat(c.key)}
               role="button"
             >

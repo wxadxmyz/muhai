@@ -31,15 +31,15 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     if (settings.disclaimerAccepted) return;
     const onKey = (e: KeyboardEvent) => {
       const k = e.key;
-      const code = (e as any).keyCode || (e as any).which || 0;
-      // V4.3.5：除字符串匹配外，也认硬件 keyCode 13(Enter)/23(DPAD_CENTER/OK)，
-      // 部分电视盒子的 OK 键上报的 key 串不被上面字符串覆盖，需靠 keyCode 兜底，
-      // 否则只能先按方向键把焦点挪到按钮、借浏览器原生点击才能进入。
-      if (k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || k === 'Spacebar' || code === 13 || code === 23) {
-        e.preventDefault();
-        e.stopPropagation();
-        accept();
-      }
+      // V4.3.7：放宽确认判定 —— 免责声明只有「一键同意」一个按钮，方向键无意义、返回键需放行。
+      // 其余任意键（含遥控器 OK / 确认键，无论其 key 串或 keyCode 为何）一律视为确认，直接 accept()，
+      // 彻底解决「必须先用方向键把焦点移到按钮、再按 OK 才能进入」的问题。
+      const isNav = k === 'ArrowUp' || k === 'Up' || k === 'ArrowDown' || k === 'Down' || k === 'ArrowLeft' || k === 'Left' || k === 'ArrowRight' || k === 'Right';
+      const isBack = k === 'Backspace' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || k === 'Back' || k === 'Go back';
+      if (isNav || isBack) return;
+      e.preventDefault();
+      e.stopPropagation();
+      accept();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);

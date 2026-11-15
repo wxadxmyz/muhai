@@ -28,6 +28,9 @@
     "allow-proxy-probe-set-recording",
     "allow-open-netdisk-login",
     "allow-close-netdisk-login",
-    "allow-take-netdisk-token"
+    "allow-take-netdisk-token",
+    "allow-start-push-listener",
+    "allow-poll-push-result",
+    "allow-stop-push-listener"
   ]
 }

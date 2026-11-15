@@ -1,11 +1,12 @@
 // TV 设置页（清单 §3.5）：2~3 列网格大按钮（图标 + 标题 + 当前值 + 右箭头），
 // 点击进入子设置弹层；子页保持 TV 大按钮列表。遥控器方向键在网格中移动焦点。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSettings } from '../../lib/settings';
 import { getVersion } from '@tauri-apps/api/app';
 import { useSkin, SKINS } from '../../lib/theme';
 import { Icon } from '../../components/Icon';
 import { pushBackHandler } from '../../lib/backStack';
+import { focusElement } from '../../lib/focusNav';
 import { useSources } from '../../store';
 import { clearProxiedCache, proxiedCacheBytes } from '../../components/ProxiedImg';
 import { toast } from '../../lib/toast';
@@ -64,10 +65,21 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => setAppVersion('0.0.0')); }, []);
 
-  const open = (p: string) => setPanel(p);
+  const openRef = useRef<string | null>(null);
+  const openPanel = (p: string) => { openRef.current = p; setPanel(p); };
+  const focusCard = (k: string) => {
+    const el = document.querySelector(`[data-card-key="${k}"]`) as HTMLElement | null;
+    if (el) focusElement(el);
+  };
+  // V4.3.7：关闭子面板时把光标交还来源卡片（修复「关闭后光标丢失、要再按方向键才出现」）
+  const closePanel = () => {
+    const k = openRef.current;
+    setPanel(null);
+    window.setTimeout(() => focusCard(k || 'reset'), 40);
+  };
   useEffect(() => {
     if (!panel) return;
-    return pushBackHandler(() => { setPanel(null); return true; });
+    return pushBackHandler(() => { closePanel(); return true; });
   }, [panel]);
 
   const cacheBytes = proxiedCacheBytes();
@@ -86,13 +98,13 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
     <div className="tv-scroll" data-scroll>
       <div className="tv-set-grid">
         {cards.map((c) => (
-          <div key={c.key} className="tv-set-card" data-focusable="" onClick={() => open(c.key)} role="button">
+          <div key={c.key} className="tv-set-card" data-focusable="" data-card-key={c.key} onClick={() => openPanel(c.key)} role="button">
             <span className="ic"><Icon name={c.icon as any} size={26} /></span>
             <span className="t">{c.t}</span>
             <span className="v">{c.v}</span>
           </div>
         ))}
-        <div className="tv-set-card danger" data-focusable="" onClick={() => setShowResetConfirm(true)} role="button">
+        <div className="tv-set-card danger" data-focusable="" data-card-key="reset" onClick={() => setShowResetConfirm(true)} role="button">
           <span className="ic"><Icon name="trash" size={26} /></span>
           <span className="t">重置软件（清除数据）</span>
           <span className="v">清空所有数据</span>
@@ -104,7 +116,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
           <div className="tv-sheet">
             <div className="tv-sheet-head">
               <h3>{cards.find((c) => c.key === panel)?.t}</h3>
-              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setPanel(null)}><Icon name="x" size={18} /> 关闭</button>
+              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => closePanel()}>关闭</button>
             </div>
             <div className="tv-sheet-body">
               {panel === 'play' && (
@@ -175,7 +187,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
       {/* 添加源：TV 下用扫码远程推送（清单 §3.8），复用 RemotePushTV */}
       {panel === 'source' && (
         <div className="tv-overlay" data-focus-root>
-          <RemotePushTV onClose={() => setPanel(null)} mode="source" />
+          <RemotePushTV onClose={() => closePanel()} mode="source" />
         </div>
       )}
 
@@ -185,7 +197,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
           <div className="tv-sheet">
             <div className="tv-sheet-head">
               <h3>源管理（{srcStore.sources.length}）</h3>
-              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setPanel(null)}><Icon name="x" size={18} /> 关闭</button>
+              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => closePanel()}>关闭</button>
             </div>
             <div className="tv-sheet-body">
               {srcStore.sources.length === 0 ? (
@@ -213,7 +225,7 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
             <div className="tv-sheet-body">
               <p style={{ fontSize: 16, lineHeight: 1.7 }}>将清除所有导入的源、观看记录、缓存与登录信息，且<strong>不可恢复</strong>。确定继续吗？</p>
               <div style={{ display: 'flex', gap: 14, marginTop: 16 }}>
-                <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setShowResetConfirm(false)}>取消</button>
+                <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => { setShowResetConfirm(false); focusCard('reset'); }}>取消</button>
                 <button className="tv-action-btn primary" data-focusable="" onClick={() => { setShowResetConfirm(false); onReset(); }}>确定重置</button>
               </div>
             </div>

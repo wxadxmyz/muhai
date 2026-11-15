@@ -192,6 +192,17 @@ function onKeyDown(e: KeyboardEvent) {
     focusEl(autoFocusEl(list) || list[0]);
     return;
   }
+  // V4.3.7：支持显式导航提示 data-nav-<dir>（CSS 选择器），用于像电视首页那样的分区导航。
+  // 若当前元素带该属性：命中且非自身 → 直接聚焦目标；命中自身 → 原地不动（封顶/封底，防回环）；
+  // 未命中（选择器无效/目标不存在）→ 回退到空间就近匹配。
+  const hint = cur.getAttribute('data-nav-' + dir);
+  if (hint) {
+    const tgt = (scope.querySelector(hint) as HTMLElement) || null;
+    if (tgt) {
+      if (tgt !== cur) focusEl(tgt);
+      return;
+    }
+  }
   const next = bestCandidate(dir, cur, list);
   if (next) focusEl(next);
   else scrollScope(dir, scope);

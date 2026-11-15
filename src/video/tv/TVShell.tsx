@@ -220,8 +220,10 @@ export function TVShell({
           {NAV.map((n) => (
             <button
               key={n.key}
+              id={`tvtab-${n.key}`}
               className={'tab' + (navTab === n.key ? ' active' : '')}
               data-focusable=""
+              data-nav-up={`#tvtab-${n.key}`}
               onClick={() => { setNavTab(n.key); if (n.key !== 'search') setSearchQuery(null); }}
             >
               <Icon name={n.icon} size={22} />

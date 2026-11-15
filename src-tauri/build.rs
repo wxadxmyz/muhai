@@ -29,6 +29,11 @@ fn main() {
                     "close_netdisk_login",
                     // P3：前端在 App 顶层主动取出登录抓到的 token（Rust 侧暂存）
                     "take_netdisk_token",
+                    // V4.3.7：局域网推送后端（扫码添加源 / 远程搜索）。此前漏列 → 权限文件未生成、
+                    // 且 default.json 也未放行，前端 invoke 直接被 ACL 拦下，报 "Command ... not allowed by ACL"。
+                    "start_push_listener",
+                    "poll_push_result",
+                    "stop_push_listener",
                 ]),
         ),
     )

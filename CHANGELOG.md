@@ -5,6 +5,30 @@
 
 ---
 
+## V4.3.7
+
+**电视端 6 项问题修复（基于 V4.3.5 实测反馈逐项核实）。**
+
+### 免责声明需先↓再OK（#1）
+- `Disclaimer.tsx`：免责显示期间，**任何非方向键/返回键的输入都直接视为确认**（不再依赖特定 key 串或 keyCode），遥控器 OK 键无论上报何种键值都能一次进入，彻底消除「先↓把焦点移到按钮、再按 OK」的绕弯。
+
+### 添加源 / 远程搜索报 "not allowed by ACL"（#2·#3，真因）
+- 根因：推送后端命令 `start_push_listener / poll_push_result / stop_push_listener` 虽在 `lib.rs` 注册，但 **`build.rs` 命令清单漏列**（权限文件从未生成）且 **`capabilities/default.json` 未放行**，前端 invoke 被 Tauri ACL 直接拦下。
+- 修复：`build.rs` 补列 3 命令 + `default.json` 放行 `allow-start-push-listener / allow-poll-push-result / allow-stop-push-listener`（标识符遵循下划线→连字符规则），并手动补 3 个权限 toml 双保险。重打 APK 后即可进入「等待扫码」并显示二维码。
+
+### 关闭子面板后光标丢失（#4）
+- `SettingsTV.tsx`：新增 `openRef` 记录打开面板的来源卡片；关闭（按钮 / 返回键 / 扫码关闭）统一走 `closePanel()`，**关闭后把焦点交还来源卡片**（含"添加源""源管理"等），不再落在首个"播放"卡片、也不再需要再按方向键才出现。
+
+### 首页上键在分类间乱跳、回环（#5）
+- `focusNav.ts`：新增显式导航提示 `data-nav-<dir>`（CSS 选择器），命中则直接聚焦目标、命中自身则原地不动（封顶/封底防回环），未命中回退空间就近匹配。
+- `TVShell.tsx`：顶栏 5 个 tab 加 `data-nav-up` 自指 → 到顶封顶不绕回。
+- `HomeTV.tsx`：分类标签 `data-nav-up → 顶栏首页`；卡片 `data-nav-up → 当前选中分类`；分类标签之间走←→。首页三层（顶栏 / 分类 / 卡片）上键逐层上移、到顶停下。
+
+### 关闭/退出按钮去掉前面的 X 图标（#X）
+- 电视版 4 处 `<Icon name="x"/> 关闭/退出`（设置子面板×2、详情"简介"×1、直播"退出"×1）改为只保留文字，去掉 X 图标，与用户要求一致。
+
+---
+
 ## V4.3.6
 
 **桌面端启动崩溃修复（Windows / macOS / Linux）。**

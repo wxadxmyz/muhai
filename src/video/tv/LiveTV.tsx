@@ -140,7 +140,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
           <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           <div style={{ position: 'absolute', top: 14, left: 16, fontSize: 20, fontWeight: 700, textShadow: '0 2px 6px #000' }}>{activeName}</div>
           <button className="tv-action-btn" data-focusable="" style={{ position: 'absolute', top: 12, right: 12 }} onClick={() => { setPlaying(false); setChannels(null); setActiveName(''); }}>
-            <Icon name="x" size={18} /> 退出
+            退出
           </button>
           <button className="tv-action-btn" data-focusable="" style={{ position: 'absolute', bottom: 14, right: 14 }} onClick={() => setPlaying(false)}>
             <Icon name="list" size={18} /> 选台

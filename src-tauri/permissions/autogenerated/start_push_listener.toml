@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-push-listener"
+description = "Enables the start_push_listener command without any pre-configured scope."
+commands.allow = ["start_push_listener"]
+
+[[permission]]
+identifier = "deny-start-push-listener"
+description = "Denies the start_push_listener command without any pre-configured scope."
+commands.deny = ["start_push_listener"]

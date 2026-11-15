@@ -124,7 +124,7 @@ export function DetailTV({
             <div className="tv-sheet-head">
               <h3>{name} · 简介</h3>
               <button className="tv-action-btn" data-focusable="" onClick={() => setShowDesc(false)}>
-                <Icon name="x" size={18} /> 关闭
+                关闭
               </button>
             </div>
             <div className="tv-sheet-body">

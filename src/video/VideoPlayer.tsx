@@ -195,7 +195,10 @@ export function VideoPlayer({
   const [scaleMode, setScaleMode] = useState<string>(() => localStorage.getItem('rf_scale') || '默认');
   const [audioMode, setAudioMode] = useState<string>(() => localStorage.getItem('rf_audio') || '关闭');
   const [autoPlay, setAutoPlay] = useState<boolean>(() => localStorage.getItem('rf_autoplay') !== '0');
-  const [landscape, setLandscape] = useState(false);
+  // V4.3.9：电视端进入播放即强制横屏全屏（landscape=true），不走手机版竖屏 UI。
+  // 手机/平板保持原逻辑（初始竖屏，需手动点横屏）。
+  const tvMode = getDeviceMode() === 'tv';
+  const [landscape, setLandscape] = useState(() => getDeviceMode() === 'tv');
   const [clock, setClock] = useState('');
   // 进度条真实镜像：直接读 <video>.currentTime/duration，不依赖 store 阈值（避免 HLS 下"假进度条"）
   const [liveCur, setLiveCur] = useState(0);
@@ -410,11 +413,12 @@ export function VideoPlayer({
       // B6：锁定态不要求「先解锁再返回」。先解掉锁，再继续走原本的返回逻辑 ——
       //     横屏锁定：一次返回键同时「解锁 + 退横屏」；竖屏锁定：解锁后直接关闭播放页。
       if (locked) setLocked(false);
-      if (landscape) { toggleLandscape(); return false; }
+      // V4.3.9：电视端恒横屏，返回键不「先退横屏」，直接交外层关闭播放页。
+      if (landscape && !tvMode) { toggleLandscape(); return false; }
       return typeof prev === 'function' ? prev() : true;
     };
     return () => { (window as any).__onAndroidBack = prev; };
-  }, [landscape, locked]);
+  }, [landscape, locked, tvMode]);
 
   // ② 原生画中画状态回调：进入时隐藏控件（纯视频）；退出时回到横屏（小窗全屏钮语义）
   // V3.3.4 #2：Android 在 Activity 配置变化（系统栏显隐、方向切换等）时也会触发
@@ -916,6 +920,7 @@ export function VideoPlayer({
   //   现在：先请求原生旋转，确认真的横过来了（innerWidth > innerHeight）才切横屏 UI；
   //   失败则留在竖屏并提示，最坏情况只是「点了没反应」，永不出现假横屏。
   const toggleLandscape = () => {
+    if (tvMode) return; // V4.3.9：电视端锁定横屏全屏，禁止任何切回竖屏入口
     if (landscape) { setLandscape(false); return; } // 退出横屏无需等待，立即退回竖屏播放页
     if (landPendingRef.current) return;
     landPendingRef.current = true;
@@ -933,7 +938,7 @@ export function VideoPlayer({
   // 自动退回竖屏播放页，避免停在「已铺满但屏幕是竖的」状态。
   // 延时 3 秒是为了避开系统旋转动画的中间帧（V3.3.6 一 的血泪教训：过早监听会把手动横屏自己作废）。
   useEffect(() => {
-    if (!landscape) return;
+    if (!landscape || tvMode) return; // V4.3.9：电视端锁定横屏，不因 resize/orientationchange 退回竖屏
     let cleanup: (() => void) | undefined;
     const t = window.setTimeout(() => {
       const onCheck = () => {

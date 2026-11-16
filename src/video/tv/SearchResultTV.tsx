@@ -1,5 +1,6 @@
 // TV 搜索结果页（清单 §3.4）：左侧源筛选栏（x/总数 + 各源命中数），右侧结果网格。
-// 同一关键词可在多源间切换查看，不需要返回重搜。卡片再点才进详情页。
+// V4.3.9：左侧窄源栏「焦点移上去即切源」（影视仓式，不用按 OK）；右侧固定 5 列网格、卡片固定高度不再被压缩。
+// 卡片再点才进详情页。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { aggregateSearch, expandSources, MediaItem, SourceConfig } from '../../engine';
 import { TVPoster, tvItemPoster } from './common';
@@ -87,7 +88,11 @@ export function SearchResultTV({
   return (
     <div className="tv-result">
       <div className="tv-result-srcs">
-        <div className="tv-result-src active" data-focusable="" onClick={() => setActiveSource(ALL_KEY)} role="button">
+        <div
+          className="tv-result-src active" data-focusable=""
+          onFocus={() => setActiveSource(ALL_KEY)}
+          onClick={() => setActiveSource(ALL_KEY)} role="button"
+        >
           <span>全部</span>
           <span className="cnt">{items.length}</span>
         </div>
@@ -101,6 +106,7 @@ export function SearchResultTV({
                 key={s.id}
                 className={'tv-result-src' + (activeSource === s.id ? ' active' : '')}
                 data-focusable=""
+                onFocus={() => setActiveSource(s.id)}
                 onClick={() => setActiveSource(s.id)}
                 role="button"
               >
@@ -112,7 +118,7 @@ export function SearchResultTV({
       </div>
 
       <div className="tv-result-grid">
-        <div style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 15, marginBottom: 4 }}>
+        <div className="tv-result-summary">
           {loading ? '跨源搜索中…' : `共 ${visibleItems.length} 部`}
           {activeSource === ALL_KEY && !loading ? ` · 来自 ${okSourceCount} 个源` : ''}
         </div>

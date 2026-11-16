@@ -13,6 +13,16 @@
 import { isTV } from './deviceMode';
 import { dispatchBack } from './backStack';
 
+/** V4.3.9：统一的「确认键」判定（遥控器 OK / 回车 / DPAD_CENTER）。
+ *  供需要「按 OK 才执行」的元素（顶栏 tab / 首页分类）复用，避免方向键误触发切页。
+ *  兼容字符串键名与硬件 keyCode（13 Enter / 23 DPAD_CENTER / 66 Android KEYCODE_ENTER）。 */
+export function isTvConfirmKey(e: { key?: string; keyCode?: number; which?: number }): boolean {
+  const k = e.key;
+  const code = e.keyCode || e.which || 0;
+  return k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || k === 'Spacebar' ||
+    code === 13 || code === 23 || code === 66;
+}
+
 export function isFocusNavActive(): boolean {
   // V4.2.6 Q3：只要判定为电视，就无条件启用遥控器焦点导航。
   // 旧版 `isTV() && !isTouchDevice()` 在国产盒子上会失效 —— 这些 WebView 常谎报
@@ -167,9 +177,12 @@ function onKeyDown(e: KeyboardEvent) {
   else if (key === 'ArrowLeft' || key === 'Left') dir = 'left';
   else if (key === 'ArrowRight' || key === 'Right') dir = 'right';
 
-  if (key === 'Enter' || key === 'OK' || key === 'Select' || key === ' ' || key === 'Spacebar') {
+  if (isTvConfirmKey(e)) {
     const a = activeFocusable();
     if (a && a === document.activeElement) {
+      // V4.3.9：带 data-ok-handled 的元素（顶栏 tab / 首页分类）在自身 onKeyDown 里认 OK，
+      // 这里直接放行，避免全局 click + 元素 onKeyDown 双触发；也避免方向键误报 Enter 时原生 click。
+      if (a.hasAttribute('data-ok-handled')) return;
       e.preventDefault();
       a.click();
     }

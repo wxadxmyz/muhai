@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { fetchHot, type HotData, type HotItem } from '../../lib/hot';
 import { TVPoster } from './common';
+import { isTvConfirmKey } from '../../lib/focusNav';
 
 const CATS: { key: string; label: string; field?: keyof HotData['categories'] }[] = [
   { key: 'all', label: '推荐' },
@@ -26,16 +27,16 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
     return <div className="tv-empty">正在加载推荐内容…</div>;
   }
 
-  // V4.3.8：每类 12 部改为 6 列 × 2 行网格（一屏铺满、不左右滑）。
+  // V4.3.9：热榜实际每类 10 部，改为 5 列 × 2 行网格（一屏铺满、对齐不留空）。
   // 导航规则（用户明确要求）：
   //   ←→ 同一行卡片间移动，到最左/最右那张就停住（focusNav 用 data-grid-col 实现封边）；
   //   ↑ 一行行往上（同列），到整页最顶行再↑才到分类标签；分类标签再↑才到顶栏 tab；
   //   ↓ 一行行往下，到整页最底行停住（封底自指）。
-  const COLS = 6;
+  const COLS = 5;
   // 全局行号：让不同 section 的卡片构成一张连续网格，「上一行」能跨 section 到上一类的卡片。
   let globalRow = 0;
   const row = (title: string, items: HotItem[], sectionIdx: number, totalSections: number) => {
-    const slice = items.slice(0, 12);
+    const slice = items.slice(0, 10);
     if (slice.length === 0) return null;
     const rowsInSection = Math.ceil(slice.length / COLS);
     const startRow = globalRow;
@@ -87,7 +88,9 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
               data-focusable=""
               data-nav-up="#tvtab-home"
               data-nav-down=".tv-grid .tv-poster"
+              data-ok-handled=""
               onClick={() => setCat(c.key)}
+              onKeyDown={(e) => { if (isTvConfirmKey(e)) { e.preventDefault(); e.stopPropagation(); setCat(c.key); } }}
               role="button"
             >
               {c.label}

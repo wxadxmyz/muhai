@@ -10,6 +10,7 @@ import { Icon } from '../../components/Icon';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { VideoPlayer } from '../VideoPlayer';
 import { dispatchBack, pushBackHandler } from '../../lib/backStack';
+import { isTvConfirmKey } from '../../lib/focusNav';
 import { requestOrientation } from '../../lib/orientation';
 import { isTV } from '../../lib/deviceMode';
 import { downloadStore } from '../../lib/downloads';
@@ -218,7 +219,9 @@ export function TVShell({
 
   return (
     <div className="tv" data-focus-root>
-      {/* V4.3.4：左竖导航改为顶部居中 tab 栏（左品牌 / 中 5 个 tab 居中 / 右带秒时钟，常驻显示） */}
+      {/* V4.3.9：搜索结果页 / 详情页隐藏整行顶栏（含 tab），界面更沉浸；
+          返回完全靠遥控器返回键（外壳已有的分级返回逻辑：详情→关闭、结果→关闭）。 */}
+      {!detail && !searchQuery && (
       <div className="tv-topnav">
         <div className="brand">
           <img src="/circle.apng" alt="幕海" className="brand-logo" />
@@ -232,7 +235,11 @@ export function TVShell({
               className={'tab' + (navTab === n.key ? ' active' : '')}
               data-focusable=""
               data-nav-up={`#tvtab-${n.key}`}
+              data-ok-handled=""
               onClick={() => { setNavTab(n.key); if (n.key !== 'search') setSearchQuery(null); }}
+              onKeyDown={(e) => {
+                if (isTvConfirmKey(e)) { e.preventDefault(); e.stopPropagation(); setNavTab(n.key); if (n.key !== 'search') setSearchQuery(null); }
+              }}
             >
               <Icon name={n.icon} size={22} />
               <span>{n.label}</span>
@@ -241,6 +248,7 @@ export function TVShell({
         </nav>
         <TVClock className="inline" />
       </div>
+      )}
 
       <div className="tv-main">
         {!playing && detail && (

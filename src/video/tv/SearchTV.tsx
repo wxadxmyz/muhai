@@ -1,13 +1,14 @@
-// TV 搜索页（清单 §3.3）：左侧拼音软键盘（A-Z、0-9 + 搜索/清空/删除/远程搜索），
-// 右侧实时模糊联想列表 + 热榜/分类芯片。遥控器方向键移动焦点，OK 输入。
+// TV 搜索页（清单 §3.3）：左侧拼音软键盘（A-Z、0-9），V4.3.9 起 4 个功能键改为键盘下方 2×2 大按钮；
+// 右侧影视仓式「标签墙」：无输入显示热榜词标签、输入首字母显示联想词标签，点标签直接出结果；
+// 顶部新增「搜索历史」胶囊行（可单个删除 / 一键清空）。遥控器方向键移动焦点，OK 输入。
 // 输入串既按「拼音首字母」前缀匹配，也兼容中文/数字子串（见 pinyinSearch.ts）。
 import { useEffect, useMemo, useState } from 'react';
-import { fetchHot, type HotData, type HotItem } from '../../lib/hot';
+import { fetchHot, type HotData } from '../../lib/hot';
 import { buildPinyinIndex, matchPinyin, type PinyinEntry } from '../../lib/pinyinSearch';
 import { useLibrary } from '../../lib/library';
 import { loadSuggestIndex, subscribeSuggest } from '../../lib/suggestIndex';
 
-const KEYS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
 const CHIPS: { key: string; label: string; field?: keyof HotData['categories'] }[] = [
   { key: 'all', label: '热榜' },
   { key: 'tv', label: '电视剧榜', field: 'tv' },
@@ -49,7 +50,6 @@ export function SearchTV({
         allNames.push(...ns);
       });
     }
-    // 搜索历史 + V4.3.8 源片名预热索引 并入「热榜」联想
     allNames.push(...library.lib.searchHistory);
     allNames.push(...loadSuggestIndex().map((e) => e.name));
     map['all'] = buildPinyinIndex(allNames);
@@ -57,28 +57,35 @@ export function SearchTV({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hot, library.lib.searchHistory, suggestVersion]);
 
-  const suggestions: HotItem[] = useMemo(() => {
+  // V4.3.9 标签墙词表：有输入 → 拼音首字母联想；无输入 → 当前分类热榜词（影视仓「热门搜索」观感）
+  const tags: string[] = useMemo(() => {
     if (!hot) return [];
-    const idx = indexes[chip] ?? indexes['all'] ?? [];
-    const names = matchPinyin(text, idx);
-    // 把命中的名字映射回 HotItem（取首条同名的海报/类型/评分），找不到则用纯名构造
-    const byName = new Map<string, HotItem>();
-    (['tv', 'movie', 'variety', 'anime'] as const).forEach((f) => {
-      hot.categories[f].forEach((it) => { if (!byName.has(it.name)) byName.set(it.name, it); });
-    });
-    return names.slice(0, 30).map((n) => byName.get(n) ?? ({ id: n, name: n } as HotItem));
+    if (text.trim()) {
+      const idx = indexes[chip] ?? indexes['all'] ?? [];
+      return matchPinyin(text, idx).slice(0, 60);
+    }
+    const f = CHIPS.find((c) => c.key === chip)?.field;
+    const ns = f ? hot.categories[f].map((x) => x.name) : [];
+    return (ns.length ? ns : [
+      ...hot.categories.tv, ...hot.categories.movie, ...hot.categories.variety, ...hot.categories.anime,
+    ].map((x) => x.name)).slice(0, 60);
   }, [text, chip, indexes, hot]);
 
   const press = (k: string) => {
-    if (k === '删除' || k === '⌫') setText((t) => t.slice(0, -1));
+    if (k === '删除') setText((t) => t.slice(0, -1));
     else if (k === '清空') setText('');
-    else if (k === '搜索') { if (text.trim()) onSearch(text.trim()); }
+    else if (k === '搜索') { if (text.trim()) { library.addSearch(text.trim()); onSearch(text.trim()); } }
     else if (k === '远程搜索') onRemote();
     else setText((t) => t + k);
   };
 
-  const keys: string[] = [...KEYS, '清空', '删除', '搜索', '远程搜索'];
-  // 36 字母数字进 6×6 网格；4 个功能键单独成行
+  // 点标签（联想/热榜/历史）= 按这个词全站搜索（中文，源站可识别）
+  const pickTag = (name: string) => {
+    library.addSearch(name);
+    onSearch(name);
+  };
+
+  const searchHistory = library.lib.searchHistory ?? [];
 
   return (
     <div className="tv-search">
@@ -88,21 +95,36 @@ export function SearchTV({
           <span className="caret" />
         </div>
         <div className="tv-kb-grid">
-          {KEYS.map((k) => (
-            <div key={k} className="tv-key" data-focusable="" onClick={() => press(k)} role="button">
-              {k}
-            </div>
+          {LETTERS.map((k) => (
+            <div key={k} className="tv-key" data-focusable="" onClick={() => press(k)} role="button">{k}</div>
           ))}
         </div>
-        <div className="tv-kb-grid" style={{ marginTop: 10 }}>
-          <div className="tv-key fn" data-focusable="" onClick={() => press('清空')} role="button">清空</div>
-          <div className="tv-key fn danger" data-focusable="" onClick={() => press('删除')} role="button">删除</div>
+        {/* V4.3.9：4 个功能键从键盘网格拎出，独立成键盘下方 2×2 大按钮 */}
+        <div className="tv-kb-actions">
           <div className="tv-key fn primary" data-focusable="" onClick={() => press('搜索')} role="button">搜索</div>
+          <div className="tv-key fn" data-focusable="" onClick={() => press('清空')} role="button">清空</div>
           <div className="tv-key fn" data-focusable="" onClick={() => press('远程搜索')} role="button">远程搜索</div>
+          <div className="tv-key fn danger" data-focusable="" onClick={() => press('删除')} role="button">删除</div>
         </div>
       </div>
 
       <div className="tv-search-right">
+        {/* 搜索历史胶囊行（影视仓图 3）：点词直接搜、× 删单条、末尾一键清空 */}
+        {searchHistory.length > 0 && (
+          <div className="tv-hist-row">
+            <span className="tv-hist-title">搜索历史</span>
+            <div className="tv-hist-tags">
+              {searchHistory.slice(0, 12).map((h) => (
+                <div key={h} className="tv-tag" data-focusable="" onClick={() => pickTag(h)} role="button">
+                  <span>{h}</span>
+                  <span className="tv-tag-x" data-focusable="" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }} role="button">×</span>
+                </div>
+              ))}
+            </div>
+            <div className="tv-hist-clear" data-focusable="" onClick={() => library.clearSearch()} role="button">清空</div>
+          </div>
+        )}
+
         <div className="tv-chips">
           {CHIPS.map((c) => (
             <div
@@ -116,20 +138,14 @@ export function SearchTV({
             </div>
           ))}
         </div>
-        <div className="tv-suggest">
-          {suggestions.length === 0 ? (
-            <div className="tv-empty">{text ? '无匹配，按「搜索」全站查找' : '输入拼音首字母，如 dsj → 电视剧'}</div>
+        {/* V4.3.9：影视仓式标签墙（无输入=热门搜索，有输入=首字母联想），点标签直接出结果 */}
+        <div className="tv-tagwall">
+          {tags.length === 0 ? (
+            <div className="tv-empty">{text ? '无匹配，按「搜索」全站查找' : '暂无热门搜索'}</div>
           ) : (
-            suggestions.map((it) => (
-              <div
-                key={it.id}
-                className="tv-suggest-item"
-                data-focusable=""
-                onClick={() => onSearch(it.name)}
-                role="button"
-              >
-                <span>{it.name}</span>
-                {it.type ? <span className="sm">{it.year ?? ''}</span> : null}
+            tags.map((name, i) => (
+              <div key={`${name}-${i}`} className="tv-wall-tag" data-focusable="" onClick={() => pickTag(name)} role="button">
+                {name}
               </div>
             ))
           )}

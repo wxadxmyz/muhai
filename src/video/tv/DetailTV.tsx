@@ -53,29 +53,39 @@ export function DetailTV({
 
   return (
     <div className="tv-detail" data-scroll>
-      <div className="tv-detail-poster">
-        {cover ? <img src={cover} alt="" /> : <div className="ph-big">{name.slice(0, 1)}</div>}
+      {/* V4.4.0 #3：左侧播放小窗口（封面做底 + 中央播放按钮，点整窗即播） */}
+      <div
+        className="tv-detail-player"
+        data-focusable=""
+        onClick={() => onPlay(index, line)}
+        onKeyDown={(e) => { const c = (e as any).keyCode || 0; if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23 || c === 66) { e.preventDefault(); onPlay(index, line); } }}
+        role="button"
+        title="立即播放"
+      >
+        {cover ? <img src={cover} alt="" /> : <div className="ph-big" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 90, color: '#fff' }}>{name.slice(0, 1)}</div>}
+        <div className="dshade" />
+        <div className="dplay"><Icon name="play" size={38} /></div>
+        <div className="dlabel">{name} · 立即播放</div>
       </div>
 
       <div className="tv-detail-body">
         <h1 className="tv-detail-title">{name}</h1>
         <div className="tv-detail-meta">{meta}</div>
 
-        <div className="tv-detail-actions">
-          <button ref={playRef} className="tv-action-btn primary" data-focusable="" onClick={() => onPlay(index, line)}>
+        <p className={'tv-detail-desc' + (item.desc ? '' : ' empty')}>{item.desc || '暂无剧情简介。'}</p>
+
+        {/* V4.4.0 #3：彩色胶囊按钮（影视仓四色） */}
+        <div className="tv-pillrow">
+          <button ref={playRef} className="tv-pill c1" data-focusable="" onClick={() => onPlay(index, line)}>
             <Icon name="play" size={20} /> 立即播放
           </button>
-          <button className="tv-action-btn" data-focusable="" onClick={() => onOffline(item)}>
+          <button className="tv-pill c2" data-focusable="" onClick={() => onOffline(item)}>
             <Icon name="download" size={20} /> 离线缓存
           </button>
-          <button
-            className={'tv-action-btn' + (fav ? ' active' : '')}
-            data-focusable=""
-            onClick={() => library.toggleFavorite(item)}
-          >
-            <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> 收藏
+          <button className={'tv-pill c3' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
+            <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '收藏'}
           </button>
-          <button className="tv-action-btn" data-focusable="" onClick={() => setShowDesc(true)}>
+          <button className="tv-pill c4" data-focusable="" onClick={() => setShowDesc(true)}>
             <Icon name="file-text" size={20} /> 内容简介
           </button>
         </div>

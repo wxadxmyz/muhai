@@ -89,7 +89,28 @@ export function SearchTV({
 
   return (
     <div className="tv-search">
+      {/* V4.4.0 #1/#2/#15：左侧键盘栏整体布局——搜索历史框 → 输入框 → 键盘 → 2×2 功能键，
+          历史从右栏移到左栏输入框上方；整体上移、功能键完整落屏不再被裁。 */}
       <div className="tv-keyboard-wrap">
+        {/* #2：搜索历史移到左侧键盘栏（输入框上方），不再放右侧 */}
+        <div className="tv-histbox">
+          <div className="tv-histbox-head">
+            <span>搜索历史</span>
+            {searchHistory.length > 0 && (
+              <span className="tv-histbox-clear" data-focusable="" onClick={() => library.clearSearch()} role="button">清空</span>
+            )}
+          </div>
+          <div className="tv-histbox-tags">
+            {searchHistory.length === 0 ? (
+              <span className="tv-histbox-empty">暂无搜索历史</span>
+            ) : searchHistory.slice(0, 10).map((h) => (
+              <div key={h} className="tv-histag" data-focusable="" onClick={() => pickTag(h)} role="button">
+                <span>{h}</span>
+                <span className="tv-tag-x" data-focusable="" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }} role="button">×</span>
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="tv-kb-text">
           {text}
           <span className="caret" />
@@ -99,7 +120,7 @@ export function SearchTV({
             <div key={k} className="tv-key" data-focusable="" onClick={() => press(k)} role="button">{k}</div>
           ))}
         </div>
-        {/* V4.3.9：4 个功能键从键盘网格拎出，独立成键盘下方 2×2 大按钮 */}
+        {/* #15：4 个功能键 2×2 大按钮，独立成键盘下方（影视仓式） */}
         <div className="tv-kb-actions">
           <div className="tv-key fn primary" data-focusable="" onClick={() => press('搜索')} role="button">搜索</div>
           <div className="tv-key fn" data-focusable="" onClick={() => press('清空')} role="button">清空</div>
@@ -109,22 +130,6 @@ export function SearchTV({
       </div>
 
       <div className="tv-search-right">
-        {/* 搜索历史胶囊行（影视仓图 3）：点词直接搜、× 删单条、末尾一键清空 */}
-        {searchHistory.length > 0 && (
-          <div className="tv-hist-row">
-            <span className="tv-hist-title">搜索历史</span>
-            <div className="tv-hist-tags">
-              {searchHistory.slice(0, 12).map((h) => (
-                <div key={h} className="tv-tag" data-focusable="" onClick={() => pickTag(h)} role="button">
-                  <span>{h}</span>
-                  <span className="tv-tag-x" data-focusable="" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }} role="button">×</span>
-                </div>
-              ))}
-            </div>
-            <div className="tv-hist-clear" data-focusable="" onClick={() => library.clearSearch()} role="button">清空</div>
-          </div>
-        )}
-
         <div className="tv-chips">
           {CHIPS.map((c) => (
             <div

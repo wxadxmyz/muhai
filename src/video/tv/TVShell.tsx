@@ -10,7 +10,7 @@ import { Icon } from '../../components/Icon';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { VideoPlayer } from '../VideoPlayer';
 import { dispatchBack, pushBackHandler } from '../../lib/backStack';
-import { isTvConfirmKey } from '../../lib/focusNav';
+import { isTvConfirmKey, focusElement } from '../../lib/focusNav';
 import { requestOrientation } from '../../lib/orientation';
 import { isTV } from '../../lib/deviceMode';
 import { downloadStore } from '../../lib/downloads';
@@ -29,15 +29,46 @@ import { RemotePushTV } from './RemotePushTV';
 type NavTab = 'home' | 'search' | 'live' | 'history' | 'settings';
 
 // V4.3.1：首页右上角实时时钟（年月日 + 星期 + 带秒时间）。
-// 独立组件、pointer-events:none，不参与遥控器焦点导航；每秒刷新。
+// V4.4.0 #4/#6：播放器时钟改写影视仓风格——大字时间 + 网速；数秒后自动淡出，
+// 任意按键（方向键/OK/返回）再显示并重新计时；首页/顶栏时钟保持常驻不变。
 function TVClock({ className = '' }: { className?: string }) {
   const [now, setNow] = useState(() => new Date());
+  const isPlayer = className.includes('tv-player-clock');
+  const [visible, setVisible] = useState(true);
+  const hideTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(t);
   }, []);
+  // #6：播放器时钟几秒后淡出、任意键再显示
+  useEffect(() => {
+    if (!isPlayer) return;
+    const arm = () => {
+      setVisible(true);
+      window.clearTimeout(hideTimer.current);
+      hideTimer.current = window.setTimeout(() => setVisible(false), 4000);
+    };
+    arm();
+    const onKey = () => arm();
+    const onPointer = () => arm();
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer, true);
+    return () => {
+      window.clearTimeout(hideTimer.current);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPointer, true);
+    };
+  }, [isPlayer]);
   const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const p = (n: number) => String(n).padStart(2, '0');
+  if (isPlayer) {
+    return (
+      <div className={`tv-clock tv-player-clock${visible ? '' : ' faded'}`} aria-hidden>
+        <div className="pc-time">{`${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`}</div>
+        <div className="pc-net">● 网络已连接</div>
+      </div>
+    );
+  }
   return (
     <div className={`tv-clock ${className}`} aria-hidden>
       <div className="tv-clock-date">
@@ -81,6 +112,29 @@ export function TVShell({
   const [remotePush, setRemotePush] = useState<'source' | 'search' | null>(null);
 
   const navRef = useRef({ navTab, detail, playing, searchQuery, remotePush });
+  const resultWrapRef = useRef<HTMLDivElement | null>(null);
+  const prevDetailRef = useRef<MediaItem | null>(null);
+  const lastFocusInResultRef = useRef<HTMLElement | null>(null);
+
+  // V4.4.0 #5：进详情前记住结果页当前聚焦的卡片；从详情返回后把焦点还给原卡片（滚动位置随挂载保留）。
+  useEffect(() => {
+    const wasDetail = prevDetailRef.current;
+    if (!wasDetail && detail && resultWrapRef.current) {
+      // 刚进详情：抓取结果页里仍聚焦的元素
+      const a = document.activeElement as HTMLElement | null;
+      if (a && resultWrapRef.current.contains(a)) lastFocusInResultRef.current = a;
+    }
+    prevDetailRef.current = detail;
+    if (wasDetail && !detail && navTab === 'search' && searchQuery && !playing) {
+      const t = window.setTimeout(() => {
+        const last = lastFocusInResultRef.current;
+        // 校验旧节点仍在 DOM（结果页保持挂载，通常仍在）
+        if (last && last.isConnected) focusElement(last);
+        else if (resultWrapRef.current) focusElement(resultWrapRef.current.querySelector<HTMLElement>('[data-focusable]'));
+      }, 60);
+      return () => window.clearTimeout(t);
+    }
+  }, [detail, navTab, searchQuery, playing]);
 
   // 主题色注入（与 VideoApp 一致）
   useEffect(() => {
@@ -93,6 +147,16 @@ export function TVShell({
   // 电视强制横屏（清单 §3.12：电视只有横屏，不进入竖屏播放器 UI）
   useEffect(() => {
     requestOrientation('landscape');
+  }, []);
+
+  // V4.4.0 #8：进软件光标直接落首页（顶栏「首页」tab）。
+  // 免责声明显示期间不抢焦点（它有自己的自动聚焦与任意键进入），故以前端是否已接受声明为准。
+  const homeTabRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!(settings as any)?.disclaimerAccepted) return;
+    const t = window.setTimeout(() => focusElement(homeTabRef.current), 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // V4.3.8：启动时后台预热各源片名 → 本地拼音索引，供搜索联想覆盖源内容（不阻塞 UI）。
@@ -173,8 +237,9 @@ export function TVShell({
   };
 
   const openDetail = async (it: MediaItem) => {
+    // V4.4.0 #5：进详情「不清搜索态」——保留 searchQuery，返回时才能逐级回到结果页并还原卡片位置。
+    // （旧版 V4.3.9 在此 setSearchQuery(null)，导致从结果页进详情后返回直接掉回搜索输入页。）
     setDetail(it);
-    setSearchQuery(null);
     const cfg = findSourceConfig(sources, it.sourceId);
     if (!cfg) return;
     try {
@@ -231,6 +296,7 @@ export function TVShell({
           {NAV.map((n) => (
             <button
               key={n.key}
+              ref={n.key === 'home' ? homeTabRef : undefined}
               id={`tvtab-${n.key}`}
               className={'tab' + (navTab === n.key ? ' active' : '')}
               data-focusable=""
@@ -256,8 +322,12 @@ export function TVShell({
         )}
 
         {!playing && !detail && navTab === 'home' && <HomeTV onSearch={goSearch} />}
-        {!playing && !detail && navTab === 'search' && searchQuery && (
-          <SearchResultTV query={searchQuery} sources={sources} onOpenDetail={openDetail} library={library} />
+        {/* V4.4.0 #5：结果页在进详情时保持挂载（仅隐藏），返回后滚动位置与卡片焦点原样还原，
+            不被卸载重建。detail/playing 时用 display:none 隐藏，DOM 与内部 state 保留。 */}
+        {navTab === 'search' && searchQuery && (
+          <div ref={resultWrapRef} style={{ height: '100%', display: (!playing && !detail) ? 'block' : 'none' }}>
+            <SearchResultTV query={searchQuery} sources={sources} onOpenDetail={openDetail} library={library} />
+          </div>
         )}
         {!playing && !detail && navTab === 'search' && !searchQuery && (
           <SearchTV onSearch={goSearch} onRemote={() => setRemotePush('search')} />

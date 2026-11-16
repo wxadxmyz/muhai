@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { aggregateSearch, expandSources, MediaItem, SourceConfig } from '../../engine';
 import { TVPoster, tvItemPoster } from './common';
 import { useLibrary } from '../../lib/library';
+import { focusElement } from '../../lib/focusNav';
 
 const ALL_KEY = '__all__';
 
@@ -27,6 +28,13 @@ export function SearchResultTV({
   const [activeSource, setActiveSource] = useState<string>(ALL_KEY);
   const [expanded, setExpanded] = useState<SourceConfig[]>([]);
   const seq = useRef(0);
+  const allRef = useRef<HTMLDivElement | null>(null);
+
+  // V4.4.0 #8：进入结果页光标直接落「全部」子站
+  useEffect(() => {
+    const t = window.setTimeout(() => focusElement(allRef.current), 80);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const my = ++seq.current;
@@ -88,8 +96,10 @@ export function SearchResultTV({
   return (
     <div className="tv-result">
       <div className="tv-result-srcs">
+        <div className="src-title">影视源</div>
         <div
-          className="tv-result-src active" data-focusable=""
+          ref={allRef}
+          className="tv-result-src active" data-focusable="" data-autofocus=""
           onFocus={() => setActiveSource(ALL_KEY)}
           onClick={() => setActiveSource(ALL_KEY)} role="button"
         >

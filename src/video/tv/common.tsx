@@ -72,6 +72,8 @@ export function TVPoster({
         <div className="ph-big">{name.slice(0, 1)}</div>
       )}
       {type ? <span className="tv-tag">{TYPE_LABEL[type] ?? type}</span> : null}
+      {/* V4.4.0 #10：影视仓角标——左上年份（青）/ 右上评分（金） */}
+      {year ? <span className={'tv-year' + (type ? ' has-type' : '')}>{year}</span> : null}
       {rating ? <span className="tv-score">★ {rating}</span> : null}
       <div className="tv-pname">{name}</div>
     </div>

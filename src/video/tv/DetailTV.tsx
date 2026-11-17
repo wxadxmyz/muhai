@@ -2,23 +2,27 @@
 // 上方海报 + 片名 + 信息行；操作按钮一排：立即播放 / 离线缓存 / 收藏；
 // 点「内容简介」弹居中白字浮层；下方剧集网格 + 线路切换。无屏幕返回按钮，靠遥控器返回键退出。
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MediaItem, Episode } from '../../engine/types';
+import { MediaItem, Episode, SourceConfig } from '../../engine/types';
 import { useLibrary } from '../../lib/library';
 import { Icon } from '../../components/Icon';
 import { focusElement } from '../../lib/focusNav';
 import { pushBackHandler } from '../../lib/backStack';
 import { tvItemPoster } from './common';
+import { resolvePlay } from '../../player';
+import { attachHlsWithBackend, detachHls } from '../../lib/hlsPlayer';
 
 export function DetailTV({
   item,
   onPlay,
   onOffline,
   library,
+  sources,
 }: {
   item: MediaItem;
   onPlay: (index: number, line: number) => void;
   onOffline: (it: MediaItem) => void;
   library: ReturnType<typeof useLibrary>;
+  sources: SourceConfig[];
 }) {
   const groups = useMemo(
     () => ((item.raw?.lineGroups as any[] | undefined) ?? [item.episodes ?? []]) as Episode[][],
@@ -28,12 +32,51 @@ export function DetailTV({
   const [index, setIndex] = useState(0);
   const [showDesc, setShowDesc] = useState(false);
   const playRef = useRef<HTMLButtonElement | null>(null);
+  const miniVideoRef = useRef<HTMLVideoElement | null>(null);
+  const [miniPlaying, setMiniPlaying] = useState(false);
 
   const eps = groups[line] ?? groups[0] ?? [];
   const fav = library.isFavorite(item);
 
   // 进入详情：焦点默认落在「立即播放」（清单 §3.6）
   useEffect(() => { focusElement(playRef.current); }, [item]);
+
+  // V4.4.1 D1：左上角小窗「真实播放」——复用 HTML5 <video> + 现有 HLS 能力（不打包原生内核，APK 不增大）。
+  // 地址来源优先级：当前集 ep.url → item.playUrl → 交给 resolvePlay 按源解析。
+  // 静音 + 循环 + 自动播放；切集/切线路自动换源重播。
+  // 生命周期：进入全屏播放时 TVShell 会卸载整块 DetailTV，cleanup 里 detachHls + pause，天然「进全屏停小窗、返回恢复」。
+  useEffect(() => {
+    const v = miniVideoRef.current;
+    if (!v) return;
+    let alive = true;
+    setMiniPlaying(false);
+    (async () => {
+      try {
+        const ep = eps[index];
+        const seed: MediaItem = {
+          ...item,
+          playUrl: ep?.url || item.playUrl,
+          raw: { ...item.raw, episode: ep?.name, line },
+        };
+        const resolved = await resolvePlay(seed, sources);
+        if (!alive || !resolved.playUrl) return;
+        await attachHlsWithBackend(v, resolved.playUrl, {
+          headers: resolved.raw?.headers as Record<string, string> | undefined,
+          onError: () => { if (alive) setMiniPlaying(false); },
+        });
+        if (!alive) return;
+        v.muted = true;
+        v.loop = true;
+        v.playsInline = true;
+        try { await v.play(); if (alive) setMiniPlaying(true); } catch { /* 自动播放被拦则停在封面 */ }
+      } catch { /* 解析失败：保持封面底图，不影响进详情/点播放 */ }
+    })();
+    return () => {
+      alive = false;
+      try { detachHls(v); v.pause(); } catch { /* ignore */ }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, item.sourceId, index, line]);
 
   // 简介浮层：焦点陷阱 + 返回键关闭
   useEffect(() => {
@@ -65,6 +108,12 @@ export function DetailTV({
           title="立即播放"
         >
           {cover ? <img src={cover} alt="" /> : <div className="ph-big" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 90, color: '#fff' }}>{name.slice(0, 1)}</div>}
+          {/* V4.4.1 D1：小窗内嵌 <video> 真实循环预览；起播成功盖住封面底图 */}
+          <video
+            ref={miniVideoRef}
+            className={'tv-detail-mini-video' + (miniPlaying ? ' on' : '')}
+            muted playsInline loop preload="metadata"
+          />
           <div className="dshade" />
           <div className="dplay"><Icon name="play" size={38} /></div>
           <div className="dlabel">{name} · 立即播放</div>

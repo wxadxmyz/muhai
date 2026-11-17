@@ -22,7 +22,8 @@
 .tv-topnav {
   flex: 0 0 auto;
   display: flex; align-items: center; gap: 24px;
-  height: 96px; padding: 0 46px;
+  /* V4.4.1 I1：顶栏 96px → 68px（对齐 UI 定稿，给内容区更多高度） */
+  height: 68px; padding: 0 40px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
@@ -32,20 +33,22 @@
 }
 /* V4.3.1：品牌图标 = 安卓同款 circle.apng 动态圆圈 */
 .tv-topnav .brand .brand-logo {
-  width: 44px; height: 44px; border-radius: 50%; object-fit: cover; display: block;
-  flex: 0 0 44px;
+  /* V4.4.1 I1：logo 44 → 34 适配 68px 顶栏 */
+  width: 34px; height: 34px; border-radius: 50%; object-fit: cover; display: block;
+  flex: 0 0 34px;
 }
-.tv-topnav .brand .brand-txt { font-size: 24px; font-weight: 800; }
+.tv-topnav .brand .brand-txt { font-size: 20px; font-weight: 800; }
 .tv-tabs {
   flex: 1 1 auto; display: flex; justify-content: center; gap: 16px;
 }
 .tv-tabs .tab {
   display: flex; align-items: center; gap: 8px;
-  padding: 12px 28px; border-radius: 4px; color: var(--text2);
+  /* V4.4.1 I1：tab padding 12px 28px → 8px 24px，适配 68px 顶栏 */
+  padding: 8px 24px; border-radius: 4px; color: var(--text2);
   background: transparent; border: 2px solid transparent; cursor: pointer;
-  font-size: 20px; font-weight: 700; transition: .15s var(--ease);
+  font-size: 19px; font-weight: 700; transition: .15s var(--ease);
 }
-.tv-tabs .tab svg { width: 24px; height: 24px; }
+.tv-tabs .tab svg { width: 22px; height: 22px; }
 .tv-tabs .tab.active {
   color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2));
   border-color: transparent;
@@ -274,6 +277,12 @@
   border: 1px solid var(--border);
 }
 .tv-detail-player > img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .82; }
+/* V4.4.1 D1：小窗内嵌真实播放的 <video>，默认透明，起播成功后盖住封面图 */
+.tv-detail-player > .tv-detail-mini-video {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  display: block; opacity: 0; transition: opacity .3s var(--ease); pointer-events: none;
+}
+.tv-detail-player > .tv-detail-mini-video.on { opacity: 1; }
 .tv-detail-player .dshade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.55)); }
 .tv-detail-player .dplay {
   position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%);
@@ -415,3 +424,7 @@
   background: rgba(0,0,0,.62); color: #fff; font-size: 18px; font-weight: 700; letter-spacing: 2px;
   text-shadow: 0 2px 12px rgba(0,0,0,.95), 0 0 3px rgba(0,0,0,.9);
 }
+
+/* V4.4.1 E2：加载时去掉海报占位图（暗色径向渐变底 / 横屏信息海报），改纯黑屏 + 中间转圈。仅 TV 作用域。 */
+.tv .player-card .poster, .tv .player-card .info-poster { display: none !important; }
+.tv .player-card .screen { background: #000 !important; }

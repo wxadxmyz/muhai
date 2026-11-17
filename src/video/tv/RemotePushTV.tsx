@@ -20,7 +20,7 @@ type Status = 'loading' | 'ready' | 'missing' | 'received';
 
 interface ListenerInfo { ip: string; port: number; token: string; }
 
-export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?: () => void; mode?: 'source' | 'search'; onSearch?: (q: string) => void }) {
+export function RemotePushTV({ onClose, onDone, mode = 'source', onSearch }: { onClose?: () => void; onDone?: () => void; mode?: 'source' | 'search'; onSearch?: (q: string) => void }) {
   const store = useSources('video');
   const [status, setStatus] = useState<Status>('loading');
   const [qr, setQr] = useState('');
@@ -106,7 +106,12 @@ export function RemotePushTV({ onClose, mode = 'source', onSearch }: { onClose?:
               const arr = JSON.parse(payloadToImport);
               if (Array.isArray(arr)) {
                 const r = store.importSources(payloadToImport);
-                toast(`已导入 ${r.added} 个源${r.skipped ? `，跳过 ${r.skipped} 个已存在` : ''}`);
+                toast(`已添加 ${r.added} 个源链接${r.skipped ? `，跳过 ${r.skipped} 个已存在` : ''}`);
+                // V4.4.1 H1：扫码推送添加源成功后，自动关弹窗并回首页（不再要求手动点关闭）。
+                // toast 保留提示「已添加 N 个源链接」，由外部 onDone 负责关闭 + 回首页。
+                if (timer.current) window.clearInterval(timer.current);
+                setStatus('received');
+                window.setTimeout(() => { if (onDone) onDone(); else if (onClose) onClose(); }, 700);
               } else toast('收到的内容不是源数组');
             } else {
               // 远程搜索：把提交的关键词直接触发电视端搜索（切换到搜索页并展示结果）

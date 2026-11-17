@@ -318,7 +318,7 @@ export function TVShell({
 
       <div className="tv-main">
         {!playing && detail && (
-          <DetailTV item={detail} onPlay={(i, l) => playEpisode(detail, i, l)} onOffline={handleOffline} library={library} />
+          <DetailTV item={detail} onPlay={(i, l) => playEpisode(detail, i, l)} onOffline={handleOffline} library={library} sources={sources} />
         )}
 
         {!playing && !detail && navTab === 'home' && <HomeTV onSearch={goSearch} />}
@@ -334,7 +334,13 @@ export function TVShell({
         )}
         {!playing && !detail && navTab === 'live' && <LiveTV sources={sources} />}
         {!playing && !detail && navTab === 'history' && <HistoryTV library={library} onOpenDetail={openDetail} />}
-        {!playing && !detail && navTab === 'settings' && <SettingsTV onReset={onReset} />}
+        {!playing && !detail && navTab === 'settings' && (
+          <SettingsTV
+            onReset={onReset}
+            // V4.4.1 H1：扫码添加源成功后自动回首页（源已写入单例 store，首页自动读取新源刷新）。
+            onAdded={() => { setDetail(null); setSearchQuery(null); setNavTab('home'); toast('影视源已添加，已返回首页'); }}
+          />
+        )}
       </div>
 
       {/* 播放器：全屏覆盖（电视全屏，不显示屏幕返回按钮） */}

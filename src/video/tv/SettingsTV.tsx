@@ -54,7 +54,7 @@ function Seg({ value, options, onChange }: { value: string; options: { v: string
   );
 }
 
-export function SettingsTV({ onReset }: { onReset: () => void }) {
+export function SettingsTV({ onReset, onAdded }: { onReset: () => void; onAdded?: () => void }) {
   const { settings, update } = useSettings();
   const { skin, selectedId, setSkinId } = useSkin();
   const srcStore = useSources('video');
@@ -184,10 +184,11 @@ export function SettingsTV({ onReset }: { onReset: () => void }) {
         </div>
       )}
 
-      {/* 添加源：TV 下用扫码远程推送（清单 §3.8），复用 RemotePushTV */}
+      {/* 添加源：TV 下用扫码远程推送（清单 §3.8），复用 RemotePushTV。
+          V4.4.1 H1：收到源成功后 onDone → 关面板 + 刷新回首页，不再要求手动点关闭。 */}
       {panel === 'source' && (
         <div className="tv-overlay" data-focus-root>
-          <RemotePushTV onClose={() => closePanel()} mode="source" />
+          <RemotePushTV onClose={() => closePanel()} mode="source" onDone={() => { setPanel(null); onAdded?.(); }} />
         </div>
       )}
 

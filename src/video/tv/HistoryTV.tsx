@@ -1,10 +1,14 @@
 // TV 历史页（清单左竖导航「历史」）：观看历史 / 影视收藏 两个标签 + 海报网格。
-// V4.3.9：新增「管理」模式——进入后每条卡片带 × 可删单条，另有「清空」按钮删全部（带确认）。
-// 卡片点击 → 进详情页（管理模式下点击 × 才删，点卡片仍进详情）。
+// V4.4.1：按 UI 定稿重写删除交互——
+//   · 顶栏同一行：左「观看历史 / 影视收藏」子标签，右「删除记录 / 一键清空」按钮靠最右；
+//   · 卡片默认无 ×；点「删除记录」进入删除模式（按钮变「完成」、卡片红框提示），
+//     光标移到卡片上按 OK（点击）即删单条、不弹确认窗；点「完成」退出删除（不删）；
+//   · 「一键清空」直接清空，不弹确认窗；正常模式点卡片 → 进详情页。
 import { useState } from 'react';
 import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { TVPoster, tvItemPoster } from './common';
+import { toast } from '../../lib/toast';
 
 export function HistoryTV({
   library,
@@ -14,8 +18,7 @@ export function HistoryTV({
   onOpenDetail: (it: MediaItem) => void;
 }) {
   const [tab, setTab] = useState<'history' | 'fav'>('history');
-  const [manage, setManage] = useState(false);
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const list = (tab === 'history' ? library.lib.history : library.lib.favorites).filter((i) => i.mediaType === 'video');
 
   const removeOne = (it: MediaItem) => {
@@ -25,54 +28,48 @@ export function HistoryTV({
   const clearAll = () => {
     if (tab === 'history') library.clearHistory();
     else library.lib.favorites.slice().forEach((it) => library.toggleFavorite(it));
-    setConfirmClear(false);
-    setManage(false);
+    setDeleting(false);
+    toast('已清空全部记录');
+  };
+
+  const switchTab = (t: 'history' | 'fav') => {
+    setTab(t);
+    setDeleting(false);
   };
 
   return (
     <div className="tv-scroll" data-scroll>
       <div className="tv-history-bar">
         <div className="tv-history-tabs">
-          <div className={'tv-cat' + (tab === 'history' ? ' active' : '')} data-focusable="" onClick={() => { setTab('history'); setManage(false); }} role="button">观看历史</div>
-          <div className={'tv-cat' + (tab === 'fav' ? ' active' : '')} data-focusable="" onClick={() => { setTab('fav'); setManage(false); }} role="button">影视收藏</div>
+          <div className={'tv-cat' + (tab === 'history' ? ' active' : '')} data-focusable="" onClick={() => switchTab('history')} role="button">观看历史</div>
+          <div className={'tv-cat' + (tab === 'fav' ? ' active' : '')} data-focusable="" onClick={() => switchTab('fav')} role="button">影视收藏</div>
+          <span className="tv-hist-tip">{deleting ? '光标移到卡片上按 OK 即删除，点「完成」退出' : '点「删除记录」后可删除单条'}</span>
         </div>
         {list.length > 0 && (
           <div className="tv-history-actions">
-            <div className="tv-hist-clear" data-focusable="" onClick={() => setManage((m) => !m)} role="button">{manage ? '完成' : '管理'}</div>
-            {manage && (
-              <div className="tv-hist-clear danger" data-focusable="" onClick={() => setConfirmClear(true)} role="button">清空</div>
-            )}
+            <div className={'tv-hist-clear' + (deleting ? ' primary' : ' danger')} data-focusable="" onClick={() => setDeleting((m) => !m)} role="button">{deleting ? '完成' : '删除记录'}</div>
+            <div className="tv-hist-clear danger" data-focusable="" onClick={clearAll} role="button">一键清空</div>
           </div>
         )}
       </div>
       {list.length === 0 ? (
         <div className="tv-empty">{tab === 'history' ? '还没有观看记录，去搜部剧看吧～' : '还没有收藏，详情页点 ♡ 即可收藏。'}</div>
       ) : (
-        <div className="tv-history-grid">
+        <div className={'tv-history-grid' + (deleting ? ' deleting' : '')}>
           {list.map((it) => {
             const { cover, name } = tvItemPoster(it);
             return (
               <div key={`${it.sourceId}:${it.id}`} className="tv-hist-cell">
-                <TVPoster name={name} cover={cover} year={it.year} onClick={() => { if (!manage) onOpenDetail(it); }} focusable={!manage} />
-                {manage && (
-                  <div className="tv-hist-del" data-focusable="" onClick={() => removeOne(it)} role="button">×</div>
-                )}
+                <TVPoster
+                  name={name}
+                  cover={cover}
+                  year={it.year}
+                  onClick={() => { if (deleting) { removeOne(it); toast('已删除该记录'); } else onOpenDetail(it); }}
+                  focusable
+                />
               </div>
             );
           })}
-        </div>
-      )}
-
-      {confirmClear && (
-        <div className="tv-overlay" data-focus-root>
-          <div className="tv-sheet" style={{ padding: 28, maxWidth: 520 }}>
-            <h3 style={{ marginTop: 0 }}>确认清空{tab === 'history' ? '观看历史' : '影视收藏'}？</h3>
-            <p style={{ color: 'var(--muted)' }}>此操作不可恢复，共 {list.length} 条记录。</p>
-            <div style={{ display: 'flex', gap: 14, marginTop: 24 }}>
-              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={() => setConfirmClear(false)}>取消</button>
-              <button className="tv-action-btn danger" data-focusable="" onClick={clearAll}>确认清空</button>
-            </div>
-          </div>
         </div>
       )}
     </div>

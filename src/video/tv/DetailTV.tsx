@@ -53,43 +53,47 @@ export function DetailTV({
 
   return (
     <div className="tv-detail" data-scroll>
-      {/* V4.4.0 #3：左侧播放小窗口（封面做底 + 中央播放按钮，点整窗即播） */}
-      <div
-        className="tv-detail-player"
-        data-focusable=""
-        onClick={() => onPlay(index, line)}
-        onKeyDown={(e) => { const c = (e as any).keyCode || 0; if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23 || c === 66) { e.preventDefault(); onPlay(index, line); } }}
-        role="button"
-        title="立即播放"
-      >
-        {cover ? <img src={cover} alt="" /> : <div className="ph-big" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 90, color: '#fff' }}>{name.slice(0, 1)}</div>}
-        <div className="dshade" />
-        <div className="dplay"><Icon name="play" size={38} /></div>
-        <div className="dlabel">{name} · 立即播放</div>
-      </div>
-
-      <div className="tv-detail-body">
-        <h1 className="tv-detail-title">{name}</h1>
-        <div className="tv-detail-meta">{meta}</div>
-
-        <p className={'tv-detail-desc' + (item.desc ? '' : ' empty')}>{item.desc || '暂无剧情简介。'}</p>
-
-        {/* V4.4.0 #3：彩色胶囊按钮（影视仓四色） */}
-        <div className="tv-pillrow">
-          <button ref={playRef} className="tv-pill c1" data-focusable="" onClick={() => onPlay(index, line)}>
-            <Icon name="play" size={20} /> 立即播放
-          </button>
-          <button className="tv-pill c2" data-focusable="" onClick={() => onOffline(item)}>
-            <Icon name="download" size={20} /> 离线缓存
-          </button>
-          <button className={'tv-pill c3' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
-            <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '收藏'}
-          </button>
-          <button className="tv-pill c4" data-focusable="" onClick={() => setShowDesc(true)}>
-            <Icon name="file-text" size={20} /> 内容简介
-          </button>
+      {/* V4.4.1：上排 = 播放小窗 + 片名/信息/胶囊；下排 = 线路 + 选集（按 UI 定稿移到播放窗与简介下方） */}
+      <div className="dt-top">
+        {/* 播放小窗口（封面做底 + 中央播放按钮，点整窗即播） */}
+        <div
+          className="tv-detail-player"
+          data-focusable=""
+          onClick={() => onPlay(index, line)}
+          onKeyDown={(e) => { const c = (e as any).keyCode || 0; if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23 || c === 66) { e.preventDefault(); onPlay(index, line); } }}
+          role="button"
+          title="立即播放"
+        >
+          {cover ? <img src={cover} alt="" /> : <div className="ph-big" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 90, color: '#fff' }}>{name.slice(0, 1)}</div>}
+          <div className="dshade" />
+          <div className="dplay"><Icon name="play" size={38} /></div>
+          <div className="dlabel">{name} · 立即播放</div>
         </div>
 
+        <div className="tv-detail-body">
+          <h1 className="tv-detail-title">{name}</h1>
+          <div className="tv-detail-meta">{meta}</div>
+          <p className={'tv-detail-desc' + (item.desc ? '' : ' empty')}>{item.desc || '暂无剧情简介。'}</p>
+          {/* 胶囊按钮：播放 → 离线缓存 → 收藏 → 内容简介（真实软件四色胶囊） */}
+          <div className="tv-pillrow">
+            <button ref={playRef} className="tv-pill c1" data-focusable="" onClick={() => onPlay(index, line)}>
+              <Icon name="play" size={20} /> 立即播放
+            </button>
+            <button className="tv-pill c2" data-focusable="" onClick={() => onOffline(item)}>
+              <Icon name="download" size={20} /> 离线缓存
+            </button>
+            <button className={'tv-pill c3' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
+              <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '收藏'}
+            </button>
+            <button className="tv-pill c4" data-focusable="" onClick={() => setShowDesc(true)}>
+              <Icon name="file-text" size={20} /> 内容简介
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 下排：线路 + 选集，位于播放窗与简介下方 */}
+      <div className="dt-bottom">
         {groups.length > 1 && (
           <div className="tv-line-row">
             <span className="lbl">线路</span>

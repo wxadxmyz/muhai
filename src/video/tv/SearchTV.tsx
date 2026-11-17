@@ -92,25 +92,23 @@ export function SearchTV({
       {/* V4.4.0 #1/#2/#15：左侧键盘栏整体布局——搜索历史框 → 输入框 → 键盘 → 2×2 功能键，
           历史从右栏移到左栏输入框上方；整体上移、功能键完整落屏不再被裁。 */}
       <div className="tv-keyboard-wrap">
-        {/* #2：搜索历史移到左侧键盘栏（输入框上方），不再放右侧 */}
-        <div className="tv-histbox">
-          <div className="tv-histbox-head">
-            <span>搜索历史</span>
-            {searchHistory.length > 0 && (
+        {/* V4.4.1：搜索历史框仅在「进过结果页产生历史」后显示；清空后为空自动隐藏，
+            回到纯键盘（26字母+10数字）+ 4 功能键 + 右侧联想墙。历史词不带小 ×。 */}
+        {searchHistory.length > 0 && (
+          <div className="tv-histbox">
+            <div className="tv-histbox-head">
+              <span>搜索历史</span>
               <span className="tv-histbox-clear" data-focusable="" onClick={() => library.clearSearch()} role="button">清空</span>
-            )}
+            </div>
+            <div className="tv-histbox-tags">
+              {searchHistory.slice(0, 10).map((h) => (
+                <div key={h} className="tv-histag" data-focusable="" onClick={() => pickTag(h)} role="button">
+                  <span>{h}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="tv-histbox-tags">
-            {searchHistory.length === 0 ? (
-              <span className="tv-histbox-empty">暂无搜索历史</span>
-            ) : searchHistory.slice(0, 10).map((h) => (
-              <div key={h} className="tv-histag" data-focusable="" onClick={() => pickTag(h)} role="button">
-                <span>{h}</span>
-                <span className="tv-tag-x" data-focusable="" onClick={(e) => { e.stopPropagation(); library.removeSearch(h); }} role="button">×</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
         <div className="tv-kb-text">
           {text}
           <span className="caret" />

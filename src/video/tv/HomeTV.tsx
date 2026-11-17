@@ -33,8 +33,8 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
   //   ↑ 一行行往上（同列），到整页最顶行再↑才到分类标签；分类标签再↑才到顶栏 tab；
   //   ↓ 一行行往下，到整页最底行停住（封底自指）。
   const COLS = 5;
-  // V4.4.0：每个分类一行 5 部（3:4 竖版较高），一屏展示 1 个完整分类 + 下个分类露头。
-  const PER_SECTION = 5;
+  // V4.4.1：每个分类 10 部（一行 5 个 × 2 行），对齐 UI 定稿「一个标签 10 个卡片」。
+  const PER_SECTION = 10;
   // 全局行号：让不同 section 的卡片构成一张连续网格，「上一行」能跨 section 到上一类的卡片。
   let globalRow = 0;
   const row = (title: string, items: HotItem[], sectionIdx: number, totalSections: number) => {

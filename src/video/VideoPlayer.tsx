@@ -1224,6 +1224,59 @@ export function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
+  // ===== V4.4.2 #14/#15：电视端遥控器专属交互 =====
+  // ←/→ 快进快退并弹出秒数气泡；↓ 调出功能键控制层；OK(确认键) 暂停/播放。
+  // 用 window 捕获阶段 + stopPropagation，抢在全局 shortcuts.ts（冒泡）之前处理，避免 ←→ 被重复 seek。
+  useEffect(() => {
+    if (!tvMode) return;
+    const STEP = 10; // 每次快进/快退 10 秒
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key;
+      const code = (e as any).keyCode || (e as any).which || 0;
+      const dur = player.getState().duration || liveDur || 0;
+      const cur = player.getState().progress;
+
+      const isLeft = k === 'ArrowLeft' || k === 'Left' || code === 21;
+      const isRight = k === 'ArrowRight' || k === 'Right' || code === 22;
+      const isDown = k === 'ArrowDown' || k === 'Down' || code === 20;
+      const isOk = k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || code === 13 || code === 23 || code === 66;
+
+      if (isLeft || isRight) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (player.getState().current) {
+          const target = isLeft
+            ? Math.max(0, cur - STEP)
+            : Math.min(dur > 0 ? dur : 1e9, cur + STEP);
+          player.seek(target);
+          setLiveCur(target);
+          setSeekBubble({ dir: isRight ? 1 : -1, delta: STEP, target });
+          if (seekBubbleTimer.current) window.clearTimeout(seekBubbleTimer.current);
+          seekBubbleTimer.current = window.setTimeout(() => setSeekBubble(null), 1200);
+        }
+        return;
+      }
+      if (isDown) {
+        // ↓ 调出功能键控制层（不抢音量；音量交给播放器内 +/- 或设置）
+        e.preventDefault();
+        e.stopPropagation();
+        setControlsVisible(true);
+        return;
+      }
+      if (isOk) {
+        // OK 暂停 / 播放
+        e.preventDefault();
+        e.stopPropagation();
+        player.toggle();
+        setControlsVisible(true);
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tvMode, liveDur]);
+
   // V3.3.13：原「横屏弹幕长按唤出面板」的长按手势（V3.3.7~V3.3.8 引入）已整段移除——
   // 用户要求弹幕按钮=纯开关、面板改由底部「弹幕」按钮负责。相关死代码（longPressTimer /
   // dmStart / dmPressStart/Move/End / dmClick）随之删除。

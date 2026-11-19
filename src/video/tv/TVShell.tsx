@@ -115,6 +115,11 @@ export function TVShell({
   const resultWrapRef = useRef<HTMLDivElement | null>(null);
   const prevDetailRef = useRef<MediaItem | null>(null);
   const lastFocusInResultRef = useRef<HTMLElement | null>(null);
+  // V4.4.2 #9：记录搜索来源。'home-card'=从首页卡片点进（返回应直接回首页、不闪搜索输入页）；
+  // 'search'=从搜索页主动搜索（返回应回搜索页并还原标签焦点）。
+  const searchFromRef = useRef<'home-card' | 'search'>('search');
+  // V4.4.2 #8：记录进入结果页前，搜索页里当前聚焦的标签（返回时还原光标到该标签）。
+  const lastFocusInSearchRef = useRef<HTMLElement | null>(null);
 
   // V4.4.0 #5：进详情前记住结果页当前聚焦的卡片；从详情返回后把焦点还给原卡片（滚动位置随挂载保留）。
   useEffect(() => {
@@ -152,12 +157,15 @@ export function TVShell({
   // V4.4.0 #8：进软件光标直接落首页（顶栏「首页」tab）。
   // 免责声明显示期间不抢焦点（它有自己的自动聚焦与任意键进入），故以前端是否已接受声明为准。
   const homeTabRef = useRef<HTMLButtonElement | null>(null);
+  // V4.4.2 #2：把 disclaimerAccepted 纳入依赖。旧版空依赖数组只在挂载跑一次，
+  // 若挂载时免责还没接受就 return，之后免责接受了也不再重跑 → 光标永远不落首页 tab。
+  // 现在免责一接受（值变 true）立即补聚焦首页 tab。
   useEffect(() => {
     if (!(settings as any)?.disclaimerAccepted) return;
-    const t = window.setTimeout(() => focusElement(homeTabRef.current), 120);
+    const t = window.setTimeout(() => focusElement(homeTabRef.current), 140);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [(settings as any)?.disclaimerAccepted]);
 
   // V4.3.8：启动时后台预热各源片名 → 本地拼音索引，供搜索联想覆盖源内容（不阻塞 UI）。
   useEffect(() => {
@@ -165,6 +173,28 @@ export function TVShell({
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
+
+  // V4.4.2 #6/#8/#9：分级返回的统一动作。
+  //  - 从结果页返回：若是首页卡片进来的，直接回首页并聚焦首页 tab（#9）；
+  //    否则回搜索页，并把光标还原到进结果页前聚焦的那个标签（#8）。
+  //  - 在任意非首页 tab 返回：回首页并聚焦首页 tab（#6）。
+  const focusHomeTab = () => window.setTimeout(() => focusElement(homeTabRef.current), 80);
+  const leaveSearch = () => {
+    if (searchFromRef.current === 'home-card') {
+      setSearchQuery(null);
+      setNavTab('home');
+      focusHomeTab();
+    } else {
+      setSearchQuery(null);
+      // 回到搜索页后，把光标还原到之前的标签
+      const t = window.setTimeout(() => {
+        const last = lastFocusInSearchRef.current;
+        if (last && last.isConnected) focusElement(last);
+      }, 90);
+      void t;
+    }
+  };
+  const returnHome = () => { setNavTab('home'); setSearchQuery(null); setDetail(null); focusHomeTab(); };
 
   // 返回键：栈式调度（dispatchBack 优先，未消费再走外壳分级）
   useEffect(() => {
@@ -174,8 +204,8 @@ export function TVShell({
       if (s.playing) { closeVideo(); return false; }
       if (s.detail) { setDetail(null); return false; }
       if (s.remotePush) { setRemotePush(null); return false; }
-      if (s.searchQuery) { setSearchQuery(null); return false; }
-      if (s.navTab !== 'home') { setNavTab('home'); return false; }
+      if (s.searchQuery) { leaveSearch(); return false; }
+      if (s.navTab !== 'home') { returnHome(); return false; }
       return true;
     };
     return () => { delete (window as any).__onAndroidBack; };
@@ -207,8 +237,8 @@ export function TVShell({
         if (s.playing) { closeVideo(); return true; }
         if (s.detail) { setDetail(null); return true; }
         if (s.remotePush) { setRemotePush(null); return true; }
-        if (s.searchQuery) { setSearchQuery(null); return true; }
-        if (s.navTab !== 'home') { setNavTab('home'); return true; }
+        if (s.searchQuery) { leaveSearch(); return true; }
+        if (s.navTab !== 'home') { returnHome(); return true; }
         return false;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -262,7 +292,15 @@ export function TVShell({
     setPlaying(false);
   };
 
-  const goSearch = (q: string) => {
+  const goSearch = (q: string, from: 'home-card' | 'search' = 'search') => {
+    // V4.4.2 #8：进结果页前记住搜索页当前聚焦的标签，供返回时还原。
+    if (from === 'search') {
+      const a = document.activeElement as HTMLElement | null;
+      if (a && a.hasAttribute && a.hasAttribute('data-focusable')) lastFocusInSearchRef.current = a;
+    } else {
+      lastFocusInSearchRef.current = null;
+    }
+    searchFromRef.current = from;
     setSearchQuery(q);
     setNavTab('search');
     setDetail(null);
@@ -318,7 +356,8 @@ export function TVShell({
 
       <div className="tv-main">
         {!playing && detail && (
-          <DetailTV item={detail} onPlay={(i, l) => playEpisode(detail, i, l)} onOffline={handleOffline} library={library} sources={sources} />
+          // V4.4.2 #17：从小窗进全屏时传 resume=true，播放页从 watchProgress 读同一进度续播，与小窗无缝衔接。
+          <DetailTV item={detail} onPlay={(i, l) => playEpisode(detail, i, l, true)} onOffline={handleOffline} library={library} sources={sources} />
         )}
 
         {!playing && !detail && navTab === 'home' && <HomeTV onSearch={goSearch} />}
@@ -329,8 +368,12 @@ export function TVShell({
             <SearchResultTV query={searchQuery} sources={sources} onOpenDetail={openDetail} library={library} />
           </div>
         )}
-        {!playing && !detail && navTab === 'search' && !searchQuery && (
-          <SearchTV onSearch={goSearch} onRemote={() => setRemotePush('search')} />
+        {/* V4.4.2 #8：搜索页与结果页同时保持挂载（display 切换），返回后之前聚焦的标签节点仍在 DOM，
+            leaveSearch() 才能把光标还原到原标签；否则 SearchTV 卸载重建，节点失效无法还原。 */}
+        {navTab === 'search' && (
+          <div style={{ height: '100%', display: (!playing && !detail && !searchQuery) ? 'block' : 'none' }}>
+            <SearchTV onSearch={goSearch} onRemote={() => setRemotePush('search')} library={library} />
+          </div>
         )}
         {!playing && !detail && navTab === 'live' && <LiveTV sources={sources} />}
         {!playing && !detail && navTab === 'history' && <HistoryTV library={library} onOpenDetail={openDetail} />}

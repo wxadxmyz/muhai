@@ -31,12 +31,12 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     if (settings.disclaimerAccepted) return;
     const onKey = (e: KeyboardEvent) => {
       const k = e.key;
-      // V4.3.7：放宽确认判定 —— 免责声明只有「一键同意」一个按钮，方向键无意义、返回键需放行。
-      // 其余任意键（含遥控器 OK / 确认键，无论其 key 串或 keyCode 为何）一律视为确认，直接 accept()，
-      // 彻底解决「必须先用方向键把焦点移到按钮、再按 OK 才能进入」的问题。
-      const isNav = k === 'ArrowUp' || k === 'Up' || k === 'ArrowDown' || k === 'Down' || k === 'ArrowLeft' || k === 'Left' || k === 'ArrowRight' || k === 'Right';
-      const isBack = k === 'Backspace' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || k === 'Back' || k === 'Go back';
-      if (isNav || isBack) return;
+      // V4.4.2 #1：进一步放宽 —— 部分电视盒子把遥控器 OK 键上报成带方向语义的键值
+      // （key==='Down'/keyCode 方向值），旧逻辑把方向键排除，导致第一次按 OK 被当成方向键忽略、
+      // 必须先按↓再按 OK 才能进入。免责页只有一个按钮，方向键毫无意义，
+      // 因此这里只放行明确的「返回键」，其余任意键（含被误报成方向键的 OK）一律 accept()。
+      const isBack = k === 'Backspace' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || k === 'Back' || k === 'Go back' || (e as any).keyCode === 4 || (e as any).keyCode === 27;
+      if (isBack) return;
       e.preventDefault();
       e.stopPropagation();
       accept();

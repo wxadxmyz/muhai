@@ -41,14 +41,18 @@ export function DetailTV({
   // 进入详情：焦点默认落在「立即播放」（清单 §3.6）
   useEffect(() => { focusElement(playRef.current); }, [item]);
 
-  // V4.4.1 D1：左上角小窗「真实播放」——复用 HTML5 <video> + 现有 HLS 能力（不打包原生内核，APK 不增大）。
-  // 地址来源优先级：当前集 ep.url → item.playUrl → 交给 resolvePlay 按源解析。
-  // 静音 + 循环 + 自动播放；切集/切线路自动换源重播。
-  // 生命周期：进入全屏播放时 TVShell 会卸载整块 DetailTV，cleanup 里 detachHls + pause，天然「进全屏停小窗、返回恢复」。
+  // V4.4.2 #12/#17：左上角小窗「真实播放」+ 无缝续播。
+  //  - 带声音：先静音保证自动播放成功，play() 成功后立即取消静音（TV WebView 通常允许有声播放）。
+  //  - 无缝续播：起播后从 library.watchProgress[resumeKey] 读进度 seek 过去；播放中节流写回，
+  //    这样进全屏（VideoPlayer 读同一 resumeKey）与返回详情（小窗读同一 resumeKey）进度完全衔接。
+  //  - 复用 HTML5 <video> + 现有 HLS 能力（不打包原生内核，APK 不增大）。
+  const resumeKey = `${item.sourceId}:${item.id}:${index}`;
   useEffect(() => {
     const v = miniVideoRef.current;
     if (!v) return;
     let alive = true;
+    let timeUpdateHandler: (() => void) | null = null;
+    let lastSave = 0;
     setMiniPlaying(false);
     (async () => {
       try {
@@ -65,14 +69,47 @@ export function DetailTV({
           onError: () => { if (alive) setMiniPlaying(false); },
         });
         if (!alive) return;
-        v.muted = true;
+        v.muted = true; // 先静音确保自动播放成功
         v.loop = true;
         v.playsInline = true;
-        try { await v.play(); if (alive) setMiniPlaying(true); } catch { /* 自动播放被拦则停在封面 */ }
+        // V4.4.2 #17：从上次进度续播（全屏/小窗共用 resumeKey）
+        try {
+          const saved = library.lib.watchProgress[resumeKey] ?? 0;
+          const applySeek = () => {
+            if (!alive || saved <= 1 || !isFinite(v.duration) || v.duration <= 0) return;
+            if (saved >= v.duration - 3) return; // 接近片尾不跳
+            try { v.currentTime = saved; } catch { /* ignore */ }
+          };
+          if (v.readyState >= 1) applySeek();
+          else v.addEventListener('loadedmetadata', applySeek, { once: true });
+        } catch { /* ignore */ }
+        try {
+          await v.play();
+          if (alive) setMiniPlaying(true);
+          // V4.4.2 #12：起播成功后取消静音，小窗带声音
+          try { v.muted = false; } catch { /* ignore */ }
+        } catch { /* 自动播放被拦则停在封面 */ }
+        // V4.4.2 #17：播放中节流写回进度（5 秒一次），供进全屏/返回时无缝衔接
+        timeUpdateHandler = () => {
+          const now = Date.now();
+          if (!alive || now - lastSave < 5000) return;
+          const t = v.currentTime;
+          if (!(t > 0) || !isFinite(t)) return;
+          lastSave = now;
+          library.setProgressBoth(resumeKey, t, `${item.sourceId}:${item.id}`, index);
+        };
+        v.addEventListener('timeupdate', timeUpdateHandler);
       } catch { /* 解析失败：保持封面底图，不影响进详情/点播放 */ }
     })();
     return () => {
       alive = false;
+      if (timeUpdateHandler) { try { v.removeEventListener('timeupdate', timeUpdateHandler); } catch { /* ignore */ } }
+      // 离开小窗前补写一次当前进度（进全屏时进度不丢）
+      try {
+        if (v.currentTime > 0 && isFinite(v.currentTime)) {
+          library.setProgressBoth(resumeKey, v.currentTime, `${item.sourceId}:${item.id}`, index);
+        }
+      } catch { /* ignore */ }
       try { detachHls(v); v.pause(); } catch { /* ignore */ }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

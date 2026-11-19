@@ -20,15 +20,19 @@ const CHIPS: { key: string; label: string; field?: keyof HotData['categories'] }
 export function SearchTV({
   onSearch,
   onRemote,
+  library,
 }: {
-  onSearch: (q: string) => void;
+  onSearch: (q: string, from?: 'home-card' | 'search') => void;
   onRemote: () => void;
+  library: ReturnType<typeof useLibrary>;
 }) {
   const [hot, setHot] = useState<HotData | null>(null);
   const [text, setText] = useState('');
   const [chip, setChip] = useState('all');
   const [suggestVersion, setSuggestVersion] = useState(0);
-  const library = useLibrary('video');
+  // V4.4.2 #7：改用 TVShell 传入的同一份 library 实例。旧版这里自己 useLibrary('video')，
+  // 与外壳那份是两份独立 state、都写同一个 localStorage key，搜索历史写入后可能被另一份的 effect 覆盖，
+  // 导致从结果页返回后历史丢失。统一成一份 state 后写入即持久、返回可读。
 
   useEffect(() => {
     let alive = true;

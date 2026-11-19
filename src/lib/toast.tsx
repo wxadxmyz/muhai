@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { isTV } from './deviceMode';
 
 interface Toast {
   id: number;
@@ -23,7 +24,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{ push }}>
       {children}
-      <div className="toast-wrap">
+      {/* V4.4.2 #5：TV 下给 wrap 加标记，CSS 用 .toast-wrap.tv-toast .toast 强制高对比白字深底，
+          不依赖 .tv ~ .toast-wrap 兄弟选择器（DOM 层级常常不满足）。 */}
+      <div className={'toast-wrap' + (isTV() ? ' tv-toast' : '')}>
         {toasts.map((t) => (
           <div key={t.id} className={`toast toast-${t.type}`} onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))}>
             {t.text}

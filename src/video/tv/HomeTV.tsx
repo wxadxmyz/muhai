@@ -13,7 +13,7 @@ const CATS: { key: string; label: string; field?: keyof HotData['categories'] }[
   { key: 'anime', label: '动漫', field: 'anime' },
 ];
 
-export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
+export function HomeTV({ onSearch }: { onSearch: (q: string, from?: 'home-card' | 'search') => void }) {
   const [hot, setHot] = useState<HotData | null>(null);
   const [cat, setCat] = useState('all');
 
@@ -70,7 +70,7 @@ export function HomeTV({ onSearch }: { onSearch: (q: string) => void }) {
                 navUp={isTopOfPage ? '.tv-cat.active' : undefined}
                 // 整页最底行↓→自身（封底，不再往下跳）
                 navDown={isBottomOfPage ? `#${domId}` : undefined}
-                onClick={() => onSearch(it.name)}
+                onClick={() => onSearch(it.name, 'home-card')}
               />
             );
           })}

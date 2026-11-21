@@ -16,10 +16,14 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   const tv = isTV();
 
   // 电视上默认把焦点放到「一键同意」按钮，用户按一次遥控器确认键即可进入。
+  // V4.4.4：老 WebView 首次渲染后焦点尚未就位，60ms 一次可能太早/被系统回收，
+  // 这里多点重试（60/200/500ms）把焦点「钉」在按钮上，配合 focusNav 的 OK 兜底双保险。
   useEffect(() => {
     if (!tv || settings.disclaimerAccepted) return;
-    const t = window.setTimeout(() => focusElement(tvBtnRef.current), 60);
-    return () => window.clearTimeout(t);
+    const timers = [60, 200, 500].map((ms) =>
+      window.setTimeout(() => focusElement(tvBtnRef.current), ms)
+    );
+    return () => timers.forEach((t) => window.clearTimeout(t));
   }, [tv, settings.disclaimerAccepted]);
 
   // V4.3.1：独立 OK/Enter 监听，不依赖焦点系统。
@@ -71,7 +75,7 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
 
   if (tv) {
     return (
-      <div className="disclaimer-mask disclaimer-tv" data-focus-root>
+      <div className="disclaimer-mask disclaimer-tv" data-focus-root data-ok-once-root>
         <div className="disclaimer-card">
           <div className="disclaimer-tv-logo">幕海 MuHai</div>
           <h2>免责声明</h2>
@@ -81,6 +85,7 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
             ref={tvBtnRef}
             className="disclaimer-tv-btn"
             data-focusable=""
+            data-autofocus=""
             onClick={accept}
             onKeyDown={(e) => {
               const c = (e as any).keyCode || 0;

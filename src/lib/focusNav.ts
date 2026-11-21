@@ -185,6 +185,26 @@ function onKeyDown(e: KeyboardEvent) {
       if (a.hasAttribute('data-ok-handled')) return;
       e.preventDefault();
       a.click();
+      return;
+    }
+    // V4.4.4：免责声明「首次按 OK 无效」真机兜底。
+    // 现象：首次进软件按 OK 没反应，必须先按↓把焦点移到按钮，再按 OK 才进。
+    // 根因：真机首次 OK 时 activeElement 还停在 body，上面的 a.click() 不触发；
+    // 而 Disclaimer 自己的 window 捕获监听在部分老 WebView 上抢不到首次按键。
+    // 兜底：若当前存在「一键确认」弹层（data-ok-once-root），首次 OK 直接聚焦并点击它的
+    // data-autofocus 按钮。用一次性标记避免与后续正常 click 重复触发，且只作用于该专属弹层，
+    // 不影响其它页面/弹层的确认逻辑。
+    const okRoot = document.querySelector<HTMLElement>('[data-ok-once-root]');
+    if (okRoot && !okRoot.hasAttribute('data-ok-once-done')) {
+      const target = okRoot.querySelector<HTMLElement>('[data-autofocus]') ||
+        okRoot.querySelector<HTMLElement>('[data-focusable]');
+      if (target) {
+        okRoot.setAttribute('data-ok-once-done', '1');
+        e.preventDefault();
+        e.stopPropagation();
+        focusEl(target);
+        target.click();
+      }
     }
     return;
   }

@@ -30,17 +30,22 @@
   box-sizing: border-box;
 }
 .tv-topnav .brand {
-  display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
-  /* V4.4.3：品牌块与 tab 框等高、垂直中心对齐（上下对称） */
+  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  /* V4.4.4：品牌块与 tab 框等高、垂直中心对齐（上下对称），1:1 对齐 UI .brand */
   height: 44px; box-sizing: border-box;
 }
 /* V4.3.1：品牌图标 = 安卓同款 circle.apng 动态圆圈 */
 .tv-topnav .brand .brand-logo {
-  /* V4.4.1 I1：logo 44 → 34 适配 68px 顶栏 */
-  width: 34px; height: 34px; border-radius: 50%; object-fit: cover; display: block;
-  flex: 0 0 34px;
+  /* V4.4.4：logo 34 → 38px，1:1 对齐 UI .brand .ring{width:38px;height:38px} */
+  width: 38px; height: 38px; border-radius: 50%; object-fit: cover; display: block;
+  flex: 0 0 38px;
 }
-.tv-topnav .brand .brand-txt { font-size: 20px; font-weight: 800; }
+/* V4.4.4：品牌名 20 → 23px + 主题色渐变字，1:1 对齐 UI .brand .nm */
+.tv-topnav .brand .brand-txt {
+  font-size: 23px; font-weight: 900; letter-spacing: 1px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
 .tv-tabs {
   flex: 1 1 auto; display: flex; justify-content: center; gap: 16px;
 }
@@ -109,7 +114,11 @@
    · 不用白色 outline：白底皮肤下白框看不清（用户 #13）；accent 在深/浅皮肤都是高对比色。
    · 不恢复 V4.4.0 的 box-shadow 外发光 / filter 过渡：那正是「整屏闪放大紫框」的根因。
    · 只有顶栏 tab 是直角（设计稿 .fm.sq），其余卡片/胶囊/按钮全部圆角跟随。 */
-.tv :where([data-focusable]) { position: relative; }
+/* V4.4.4：焦点环定位基准——原 :where([data-focusable]) 在老电视 WebView 不被支持，
+   整条规则被丢弃后，可聚焦元素失去 position:relative，::after 的 inset:0 贴到祖先容器，
+   导致焦点框画成「推荐+卡片外圈」甚至「整个屏幕边缘」。改用直接属性选择器（老 WebView 全支持），
+   与 UI 原型 .fm{position:relative} 写法一致，焦点环严格贴着元素自身。 */
+.tv [data-focusable] { position: relative; }
 .tv [data-focusable]:focus {
   outline: none;
   z-index: 3;
@@ -164,16 +173,24 @@
 /* ---------- 首页 TV ---------- */
 /* V4.3.3：分类标签栏从滚动区拎出，做成固定顶栏（与右上角时钟同层）；
    卡片只在下方 .tv-home-body 内滚动，不会钻到顶栏底下。 */
-.tv-home { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.tv-home-head {
-  flex: 0 0 auto;
-  /* V4.4.3 #14：分类标签与下方标题间距 18px → 8px（设计稿更紧凑） */
-  padding-right: 0;
-  margin-bottom: 8px;
+/* V4.4.4：首页布局 1:1 对齐 UI 原型——
+   UI 结构：顶栏(.topbar 68px) → 分类栏(.cats 独立 64px 横条, panel2 底 + 下边框, 紧贴顶栏) → 卡片区(homebody padding 10px 40px)。
+   源码原本把分类标签塞在 .tv-main(padding 34px) 里，导致顶栏与推荐栏之间多出 34px 空隙（UI 里没有）。
+   用负 margin 抵消 .tv-main 的 padding，让首页自带 40px 内边距（与顶栏 40px 左对齐），分类栏紧贴顶栏。 */
+.tv-home {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  margin: calc(-1 * var(--tv-safe));
 }
-.tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.tv-home-head {
+  flex: 0 0 64px; height: 64px;
+  padding: 0 40px; box-sizing: border-box;
+  display: flex; align-items: center;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+}
+.tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 40px 0; }
 .tv-home-cats {
-  display: flex; gap: 12px; flex-wrap: wrap;
+  display: flex; gap: 12px; flex-wrap: nowrap;
 }
 .tv-cat {
   padding: 10px 20px; border-radius: 10px; background: var(--panel2); color: var(--text);
@@ -188,10 +205,10 @@
   scroll-snap-type: x proximity;
 }
 .tv-corridor .tv-poster { width: 168px; scroll-snap-align: start; }
-/* V4.4.2 #4：卡片行高 400px → 320px（对齐影视仓更矮的 2:3 竖版观感，一屏多露一行）。 */
+/* V4.4.4：首页卡片行高 320px → 420px，1:1 对齐 UI 原型 .smallcard{height:420px}/.grid5{grid-auto-rows:420px}。 */
 .tv-corridor.tv-grid {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-  grid-auto-rows: 320px; gap: 16px 22px; overflow: visible; padding-bottom: 6px; scroll-snap-type: none;
+  grid-auto-rows: 420px; gap: 12px 18px; overflow: visible; padding-bottom: 6px; scroll-snap-type: none;
 }
 .tv-corridor.tv-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; scroll-snap-align: unset; border-radius: 14px; }
 /* V4.3.3：选中不再放大，避免相邻卡片被挤出；选中态清晰度靠焦点环保证（见上） */

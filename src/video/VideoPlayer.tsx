@@ -174,6 +174,9 @@ export function VideoPlayer({
   // 控件显隐：单击切换、播放态 3s 自动隐藏、锁屏强制常显（竖屏/横屏通用）
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideTimer = useRef<number | undefined>(undefined);
+  // V4.4.3 #7：TV 专属暂停态——OK 暂停后画面定住、控制栏/时间全部收起，只在中央显示一个大暂停图标。
+  // 与手机端点暂停不同（手机要常显控制栏），TV 暂停是「纯暂停海报」观感。再按 OK 恢复播放即退出该态。
+  const [tvPauseOverlay, setTvPauseOverlay] = useState(false);
   const [asc, setAsc] = useState(true); // 默认正序，对齐原型选集浮层默认状态
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
@@ -1257,18 +1260,36 @@ export function VideoPlayer({
         return;
       }
       if (isDown) {
-        // ↓ 调出功能键控制层（不抢音量；音量交给播放器内 +/- 或设置）
+        // V4.4.3 #8：↓ 调出功能键控制层 + 3 秒无操作后自动全部隐藏。
+        // 若正处于 OK 暂停态，先退出暂停态再展开控制层（避免暂停海报与控制层叠加）。
         e.preventDefault();
         e.stopPropagation();
+        setTvPauseOverlay(false);
         setControlsVisible(true);
+        if (hideTimer.current) window.clearTimeout(hideTimer.current);
+        // 用独立 3 秒定时器：TV 暂停态下 state.isPlaying=false 会让通用 scheduleHide 直接 return，
+        // 这里不依赖它，确保「按一下下键调出、无操作 3 秒全隐藏」。
+        hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
         return;
       }
       if (isOk) {
-        // OK 暂停 / 播放
+        // V4.4.3 #7：OK = 暂停/播放切换。
+        // 暂停 → 进入 TV 暂停海报态（控制栏/时间收起，只留中央暂停图标，不会自动消失）；
+        // 播放 → 退出暂停态、显示控制栏并起 3 秒隐藏。
         e.preventDefault();
         e.stopPropagation();
+        const wasPlaying = player.getState().isPlaying;
         player.toggle();
-        setControlsVisible(true);
+        if (wasPlaying) {
+          setTvPauseOverlay(true);
+          setControlsVisible(false);
+          if (hideTimer.current) window.clearTimeout(hideTimer.current);
+        } else {
+          setTvPauseOverlay(false);
+          setControlsVisible(true);
+          if (hideTimer.current) window.clearTimeout(hideTimer.current);
+          hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
+        }
         return;
       }
     };
@@ -1395,7 +1416,7 @@ export function VideoPlayer({
   }
 
   return (
-    <div className={'player-root' + (landscape ? ' landscape' : '') + (pipMode ? ' pip' : '')}>
+    <div className={'player-root' + (landscape ? ' landscape' : '') + (pipMode ? ' pip' : '') + (tvPauseOverlay ? ' tv-paused' : '')}>
       {/* ===== 播放器卡片（竖屏）/ 横屏舞台 ===== */}
       <div
         className={'player-card' + (landscape ? ' land' : '')}
@@ -1679,6 +1700,13 @@ export function VideoPlayer({
               </button>
               <button className="ctrl" onClick={() => detail.episodes && episodeIndex < detail.episodes.length - 1 && onSelectEpisode(episodeIndex + 1)} title="下一集"><Icon name="next" size={28} /></button>
                 </>
+              )}
+              {/* V4.4.3 #7：TV 暂停海报态——中央一个大暂停图标，控制栏/时间已由 CSS 隐藏。
+                  再按 OK 恢复播放；点它也可恢复（onClick 触发 OK 同款逻辑）。 */}
+              {tvPauseOverlay && (
+                <button className="tv-pause-big" onClick={() => { player.toggle(); setTvPauseOverlay(false); }} title="继续播放">
+                  <Icon name="pause" size={72} />
+                </button>
               )}
             </div>
 

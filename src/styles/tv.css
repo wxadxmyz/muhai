@@ -14,7 +14,8 @@
   overflow: hidden;
   /* §3.10 过扫描：电视约 5% 过扫描，env(safe-area-inset-*) 在电视上常为 0，
      固定 48px 安全边距，保证内容不被屏幕切边裁掉。 */
-  --tv-safe: 48px;
+  /* V4.4.3 #10：过扫描安全边距 48px → 34px（用户反馈离屏幕边缘留白偏大），仍保留防切边余量 */
+  --tv-safe: 34px;
 }
 
 /* ---------- 顶部导航（首页/搜索/直播/历史/设置）居中 ---------- */
@@ -100,20 +101,27 @@
 .tv .tv-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* ---------- 焦点环（替代 hover，电视无鼠标） ---------- */
-/* V4.4.2 #3：改回 V4.3.9 的「内部 outline」方案。
-   V4.4.0 曾用 ::after + box-shadow 外发光；皮肤把 accent 染成紫色时，焦点切到大容器
-   会在整屏闪一个放大的紫框。改回 outline 画在元素内部、颜色固定高对比白 + 深色内衬，
-   深浅皮肤都清晰，且光环不会外扩到整个界面。 */
+/* V4.4.3 #13：严格对齐 V4.4.1UI 设计稿的焦点环方案——
+   ::after 纯边框 + border-radius:inherit（圆角跟随元素自身），颜色取主题色 var(--accent)。
+   · 不用白色 outline：白底皮肤下白框看不清（用户 #13）；accent 在深/浅皮肤都是高对比色。
+   · 不恢复 V4.4.0 的 box-shadow 外发光 / filter 过渡：那正是「整屏闪放大紫框」的根因。
+   · 只有顶栏 tab 是直角（设计稿 .fm.sq），其余卡片/胶囊/按钮全部圆角跟随。 */
 .tv :where([data-focusable]) { position: relative; }
 .tv [data-focusable]:focus {
-  outline: 4px solid #fff;
-  outline-offset: -5px;
+  outline: none;
   z-index: 3;
-  box-shadow: inset 0 0 0 9px rgba(0, 0, 0, .34);
-  filter: brightness(1.05);
-  transition: filter .12s var(--ease);
 }
-.tv .tv-tabs .tab:focus { outline-color: #fff; }
+.tv [data-focusable]:focus::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 4px solid var(--accent);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 9;
+}
+/* 顶栏 tab（以及显式方角元素）保持直角焦点环，对齐设计稿 .fm.sq */
+.tv .tv-tabs .tab:focus::after { border-radius: 0; }
 /* 影视仓金色评分 / 青色年份角标变量兜底（深浅皮肤共用） */
 .tv { --gold: #ffcf4a; --cyan: #19c2d6; }
 
@@ -156,9 +164,9 @@
 .tv-home { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tv-home-head {
   flex: 0 0 auto;
-  /* V4.3.4：时钟已移至顶部栏，不再需要为绝对定位时钟预留右侧空间 */
+  /* V4.4.3 #14：分类标签与下方标题间距 18px → 8px（设计稿更紧凑） */
   padding-right: 0;
-  margin-bottom: 18px;
+  margin-bottom: 8px;
 }
 .tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .tv-home-cats {
@@ -170,7 +178,8 @@
 }
 .tv-cat.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-color: transparent; }
 
-.tv-row-title { font-size: 20px; font-weight: 700; margin: 4px 0 14px; }
+/* V4.4.3 #14：标题与卡片间距 14px → 8px（设计稿 .sec h3{margin-bottom:12px} 观感，更紧凑） */
+.tv-row-title { font-size: 20px; font-weight: 700; margin: 2px 0 8px; }
 .tv-corridor {
   display: flex; gap: 28px; overflow-x: auto; overflow-y: hidden; padding-bottom: 14px;
   scroll-snap-type: x proximity;
@@ -185,17 +194,17 @@
 /* V4.3.3：选中不再放大，避免相邻卡片被挤出；选中态清晰度靠焦点环保证（见上） */
 .tv-corridor .tv-poster:focus { transform: none; }
 
-/* ---------- 搜索 TV（V4.4.0 #1/#2/#15：历史上移入左栏、整体上移、功能键落屏） ---------- */
-.tv-search { display: flex; gap: 26px; height: 100%; min-height: 0; padding: 0; }
-.tv-keyboard-wrap { width: 440px; flex: 0 0 440px; display: flex; flex-direction: column; gap: 12px; }
-/* #2：搜索历史框移到左侧键盘栏顶部（输入框上方） */
-.tv-histbox {
-  flex: 0 0 auto; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
+/* ---------- 搜索 TV（V4.4.3 #11：三列布局——历史列 / 键盘列 / 联想墙，对齐设计稿） ---------- */
+.tv-search { display: flex; gap: 22px; height: 100%; min-height: 0; padding: 0; }
+/* 最左列：搜索历史（独立成列，不再压在键盘上方） */
+.tv-histcol {
+  width: 300px; flex: 0 0 300px; display: flex; flex-direction: column; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px;
 }
-.tv-histbox-head { display: flex; align-items: center; justify-content: space-between; font-size: 14px; color: var(--muted); margin-bottom: 9px; }
-.tv-histbox-clear { color: var(--danger); cursor: pointer; padding: 2px 4px; }
-.tv-histbox-tags { display: flex; gap: 8px; flex-wrap: wrap; max-height: 76px; overflow: hidden; }
-.tv-histbox-empty { font-size: 13px; color: var(--muted); }
+.tv-histbox-head { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--text); }
+.tv-histbox-clear { color: var(--danger); cursor: pointer; padding: 4px 8px; }
+.tv-histwrap { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
+.tv-keyboard-wrap { width: 460px; flex: 0 0 460px; display: flex; flex-direction: column; gap: 12px; }
 .tv-histag {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
   background: var(--panel2); border: 1px solid var(--border); font-size: 14px; cursor: pointer; white-space: nowrap;
@@ -248,11 +257,14 @@
 .tv-result-src.active { border-color: var(--accent); color: var(--accent); font-weight: 800; background: var(--panel3); }
 .tv-result-src .cnt { color: var(--muted); font-size: 13px; }
 .tv-result-src.active .cnt { color: var(--accent); }
-/* V4.4.2 #4/#10：卡片行高 400→320px；grid 铺满整行、列宽均分，消除左右两侧空白。 */
+/* V4.4.3 #9/#10：结果卡片行高 320→280px（用户仍觉得偏高）；源栏 210→180px，gap 20→14px，
+   grid 铺满整行、列宽均分，配合 --tv-safe 34px 消除左右两侧留白。 */
+.tv-result { gap: 14px; }
+.tv-result-srcs { width: 180px; flex: 0 0 180px; }
 .tv-result-grid {
   flex: 1; min-width: 0; width: 100%; overflow-y: auto; overflow-x: hidden; display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: 24px; grid-auto-rows: 320px;
-  gap: 14px; align-content: start; align-items: start; justify-content: stretch;
+  grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: 24px; grid-auto-rows: 280px;
+  gap: 12px; align-content: start; align-items: start; justify-content: stretch;
 }
 .tv-result-summary { grid-column: 1 / -1; color: var(--muted); font-size: 15px; }
 /* 3:4 竖版：填满行高，圆角跟随 */
@@ -261,12 +273,14 @@
 
 /* ---------- 详情 TV（V4.4.1：上排播放小窗+信息/胶囊，下排线路+选集） ---------- */
 .tv-detail { display: flex; flex-direction: column; gap: 20px; height: 100%; min-height: 0; overflow-y: auto; padding-right: 8px; }
-.dt-top { display: flex; gap: 28px; flex: 0 0 auto; align-items: flex-start; }
+/* V4.4.3 #2：小窗与右侧详细信息间距 28px → 48px（设计稿留白更舒展） */
+.dt-top { display: flex; gap: 48px; flex: 0 0 auto; align-items: flex-start; }
 .dt-bottom { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; border-top: 1px solid var(--border); padding-top: 16px; }
-/* V4.4.2 #11：写死宽高 400×250（16:10），不再依赖 aspect-ratio —— 老电视 WebView 不支持该属性，
-   高度会塌缩、被 3:4 竖版封面从内部撑成竖窗。写死 height 后任何 WebView 都稳定横版。 */
+/* V4.4.3 #1：小窗放大 400×250 → 520×325（仍锁 16:10）。
+   继续写死宽高、不用 aspect-ratio —— 老电视 WebView 不支持该属性，高度会塌缩、被竖版封面撑成竖窗。
+   写死 height 后任何 WebView 都稳定横版；同时满足用户「窗口稍大一点」的诉求。 */
 .tv-detail-player {
-  width: 400px; height: 250px; flex: 0 0 400px; align-self: flex-start;
+  width: 520px; height: 325px; flex: 0 0 520px; align-self: flex-start;
   border-radius: 16px; overflow: hidden; position: relative; background: #0b1220; cursor: pointer;
   border: 1px solid var(--border);
 }
@@ -394,7 +408,10 @@
 .tv-sheet p { font-size: 17px; line-height: 1.8; color: var(--muted); }
 .tv-sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 22px 28px; border-bottom: 1px solid var(--border); }
 .tv-sheet-head h3 { margin: 0; font-size: 24px; }
-.tv-sheet-body { padding: 24px 28px; overflow-y: auto; }
+.tv-sheet-body { padding: 24px 28px; overflow-y: auto; max-height: 52vh; }
+/* V4.4.3 #3：简介正文聚焦时给出清晰焦点环，且确保长文可滚动不被裁 */
+.tv-sheet-body:focus { outline: none; }
+.tv-sheet-body .tv-detail-desc { display: block !important; -webkit-line-clamp: unset !important; max-height: none !important; }
 /* TV 确认弹窗按钮行：统一胶囊质感（复用 .tv-action-btn 并强化） */
 .tv .tv-sheet .tv-action-btn { border-radius: 12px; font-weight: 700; }
 /* V4.4.2 #5：TV toast 强制高对比——白字 + 深底 + 绿勾。
@@ -451,3 +468,58 @@
 .tv .player-root.landscape .land-top .ttl, .tv .player-root.landscape .land-top .name { font-size: 22px !important; }
 .tv .player-root.landscape .land-bottom button,
 .tv .player-root.landscape .land-bottom .tool-btn { min-width: 56px; min-height: 56px; font-size: 15px; }
+
+/* ===== V4.4.3 #5：加载态彻底纯黑——大播放三角/占位图全部隐藏，只留转圈 ===== */
+.tv .player-root .poster,
+.tv .player-root .info-poster,
+.tv .player-root .vp-bigplay,
+.tv .player-root .tv-detail-player .dplay { display: none !important; }
+.tv .player-root .screen,
+.tv .player-root .player-card,
+.tv .player-root,
+.tv .player-root .vp-center-load { background: #000 !important; }
+/* 加载态主按钮：去圆形渐变背景/描边/播放图标，只留白色转圈 */
+.tv .player-root .vp-center-load .ctrl.main,
+.tv .player-root .vp-center-load .big-btn,
+.tv .player-root .vp-center-load button {
+  background: transparent !important; box-shadow: none !important;
+  border: 0 !important; backdrop-filter: none !important;
+}
+.tv .player-root .vp-center-load svg { display: none !important; }
+.tv .player-root .vp-center-load .vp-spinner {
+  width: 64px !important; height: 64px !important; border-width: 6px !important;
+  border-color: rgba(255,255,255,.25) !important; border-top-color: var(--accent) !important;
+}
+
+/* ===== V4.4.3 #7：TV 暂停海报态——控制栏/时间/进度条全收起，只留中央大暂停图标 ===== */
+.tv .player-root.tv-paused .land-top,
+.tv .player-root.tv-paused .land-side-left,
+.tv .player-root.tv-paused .land-side-right,
+.tv .player-root.tv-paused .land-bottom,
+.tv .player-root.tv-paused .land-center > .ctrl { display: none !important; }
+.tv .player-root.tv-paused .overlay .p-top,
+.tv .player-root.tv-paused .overlay .p-clock,
+.tv .player-root.tv-paused .overlay .p-ctrl { display: none !important; }
+.tv .player-root .tv-pause-big {
+  width: 132px; height: 132px; border-radius: 50%;
+  background: rgba(0,0,0,.42); border: 3px solid rgba(255,255,255,.55);
+  color: #fff; display: grid; place-items: center; cursor: pointer;
+  box-shadow: 0 12px 48px rgba(0,0,0,.6); backdrop-filter: blur(6px);
+}
+.tv .player-root .tv-pause-big svg { width: 72px !important; height: 72px !important; }
+
+/* ===== V4.4.3 #6：电视版控制栏皮肤——胶囊文字按钮 + 粗进度条（对齐设计稿 .pbtn 观感） ===== */
+.tv .player-root.landscape .land-tools .bb {
+  border-radius: 14px !important; background: rgba(28,40,66,.72) !important;
+  border: 1px solid rgba(255,255,255,.16) !important; padding: 10px 8px !important;
+  min-width: 78px !important; min-height: 64px !important; font-size: 16px !important;
+  backdrop-filter: blur(6px);
+}
+.tv .player-root.landscape .land-tools .bb svg { width: 26px !important; height: 26px !important; }
+.tv .player-root.landscape .land-center > .ctrl {
+  border-radius: 18px !important; background: rgba(28,40,66,.72) !important;
+  border: 1px solid rgba(255,255,255,.16) !important; backdrop-filter: blur(6px);
+}
+.tv .player-root.landscape .land-center > .ctrl.main {
+  background: linear-gradient(135deg, var(--accent), var(--accent2)) !important; border-color: transparent !important;
+}

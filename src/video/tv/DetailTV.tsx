@@ -32,6 +32,8 @@ export function DetailTV({
   const [index, setIndex] = useState(0);
   const [showDesc, setShowDesc] = useState(false);
   const playRef = useRef<HTMLButtonElement | null>(null);
+  const descBtnRef = useRef<HTMLButtonElement | null>(null); // V4.4.3 #4：关闭简介后光标归位到「内容简介」按钮
+  const descBodyRef = useRef<HTMLDivElement | null>(null); // V4.4.3 #3：简介正文滚动容器
   const miniVideoRef = useRef<HTMLVideoElement | null>(null);
   const [miniPlaying, setMiniPlaying] = useState(false);
 
@@ -115,11 +117,32 @@ export function DetailTV({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, item.sourceId, index, line]);
 
+  // V4.4.3 #4：关闭简介时把光标还给「内容简介」按钮（不再丢失焦点）
+  const closeDesc = () => {
+    setShowDesc(false);
+    window.setTimeout(() => focusElement(descBtnRef.current), 40);
+  };
+
   // 简介浮层：焦点陷阱 + 返回键关闭
   useEffect(() => {
     if (!showDesc) return;
-    return pushBackHandler(() => { setShowDesc(false); return true; });
+    return pushBackHandler(() => { closeDesc(); return true; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showDesc]);
+
+  // V4.4.3 #3：简介正文支持遥控器 ↑↓ / PageUp/PageDown 上下滚动（长简介可看全）。
+  // 焦点落在正文容器上（data-focusable + tabIndex），方向键由本处理器接管滚动，阻止冒泡到焦点导航。
+  const onDescKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const box = descBodyRef.current;
+    if (!box) return;
+    const k = e.key;
+    const code = (e as any).keyCode || 0;
+    const step = 80;
+    if (k === 'ArrowDown' || k === 'Down' || code === 20) { e.stopPropagation(); e.preventDefault(); box.scrollTop += step; }
+    else if (k === 'ArrowUp' || k === 'Up' || code === 19) { e.stopPropagation(); e.preventDefault(); box.scrollTop -= step; }
+    else if (k === 'PageDown' || code === 93) { e.stopPropagation(); e.preventDefault(); box.scrollTop += box.clientHeight; }
+    else if (k === 'PageUp' || code === 92) { e.stopPropagation(); e.preventDefault(); box.scrollTop -= box.clientHeight; }
+  };
 
   const meta = [
     item.year ? <b key="y">{item.year}</b> : null,
@@ -171,7 +194,7 @@ export function DetailTV({
             <button className={'tv-pill c3' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
               <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '收藏'}
             </button>
-            <button className="tv-pill c4" data-focusable="" onClick={() => setShowDesc(true)}>
+            <button ref={descBtnRef} className="tv-pill c4" data-focusable="" onClick={() => setShowDesc(true)}>
               <Icon name="file-text" size={20} /> 内容简介
             </button>
           </div>
@@ -223,14 +246,22 @@ export function DetailTV({
           <div className="tv-sheet" style={{ width: 'min(680px, 90vw)' }}>
             <div className="tv-sheet-head">
               <h3>{name} · 简介</h3>
-              <button className="tv-action-btn" data-focusable="" onClick={() => setShowDesc(false)}>
+              <button className="tv-action-btn" data-focusable="" onClick={closeDesc}>
                 关闭
               </button>
             </div>
-            <div className="tv-sheet-body">
-              <p className="tv-detail-desc" style={{ margin: 0 }}>
+            {/* V4.4.3 #3：正文可聚焦 + ↑↓ 上下滚动，长简介也能看全；提示文字告诉用户可按上下键 */}
+            <div
+              ref={descBodyRef}
+              className="tv-sheet-body"
+              data-focusable=""
+              tabIndex={0}
+              onKeyDown={onDescKey}
+            >
+              <p className="tv-detail-desc" style={{ margin: 0, display: 'block', WebkitLineClamp: 'unset' }}>
                 {item.desc || '暂无简介信息。'}
               </p>
+              <div style={{ marginTop: 16, fontSize: 15, color: 'var(--muted)' }}>按遥控器 ↑ / ↓ 键上下滚动查看完整简介</div>
             </div>
           </div>
         </div>

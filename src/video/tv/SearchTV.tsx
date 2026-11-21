@@ -66,7 +66,12 @@ export function SearchTV({
     if (!hot) return [];
     if (text.trim()) {
       const idx = indexes[chip] ?? indexes['all'] ?? [];
-      return matchPinyin(text, idx).slice(0, 60);
+      const hits = matchPinyin(text, idx);
+      // V4.4.3 #12：有输入但一个都没匹配到时，回退显示热榜词，保证右侧联想墙始终有小标签
+      if (hits.length) return hits.slice(0, 60);
+      const f0 = CHIPS.find((c) => c.key === chip)?.field;
+      const fallback = f0 ? hot.categories[f0].map((x) => x.name) : [];
+      return (fallback.length ? fallback : [...hot.categories.tv, ...hot.categories.movie].map((x) => x.name)).slice(0, 30);
     }
     const f = CHIPS.find((c) => c.key === chip)?.field;
     const ns = f ? hot.categories[f].map((x) => x.name) : [];
@@ -93,26 +98,25 @@ export function SearchTV({
 
   return (
     <div className="tv-search">
-      {/* V4.4.0 #1/#2/#15：左侧键盘栏整体布局——搜索历史框 → 输入框 → 键盘 → 2×2 功能键，
-          历史从右栏移到左栏输入框上方；整体上移、功能键完整落屏不再被裁。 */}
-      <div className="tv-keyboard-wrap">
-        {/* V4.4.1：搜索历史框仅在「进过结果页产生历史」后显示；清空后为空自动隐藏，
-            回到纯键盘（26字母+10数字）+ 4 功能键 + 右侧联想墙。历史词不带小 ×。 */}
-        {searchHistory.length > 0 && (
-          <div className="tv-histbox">
-            <div className="tv-histbox-head">
-              <span>搜索历史</span>
-              <span className="tv-histbox-clear" data-focusable="" onClick={() => library.clearSearch()} role="button">清空</span>
-            </div>
-            <div className="tv-histbox-tags">
-              {searchHistory.slice(0, 10).map((h) => (
-                <div key={h} className="tv-histag" data-focusable="" onClick={() => pickTag(h)} role="button">
-                  <span>{h}</span>
-                </div>
-              ))}
-            </div>
+      {/* V4.4.3 #11：搜索历史独立成最左列（设计稿三列：历史列 / 键盘列 / 联想墙），
+          不再压在键盘上方。仅在「进过结果页产生历史」后显示；清空后为空自动隐藏。 */}
+      {searchHistory.length > 0 && (
+        <div className="tv-histcol">
+          <div className="tv-histbox-head">
+            <span>搜索历史</span>
+            <span className="tv-histbox-clear" data-focusable="" onClick={() => library.clearSearch()} role="button">清空</span>
           </div>
-        )}
+          <div className="tv-histwrap">
+            {searchHistory.slice(0, 10).map((h) => (
+              <div key={h} className="tv-histag" data-focusable="" onClick={() => pickTag(h)} role="button">
+                <span>{h}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* 中间键盘列：输入框 → 键盘 → 2×2 功能键 */}
+      <div className="tv-keyboard-wrap">
         <div className="tv-kb-text">
           {text}
           <span className="caret" />

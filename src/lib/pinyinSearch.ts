@@ -33,16 +33,29 @@ export function buildPinyinIndex(names: string[]): PinyinEntry[] {
   return out;
 }
 
-/** 按输入串匹配候选剧名：优先拼音首字母前缀，其次剧名子串包含。 */
+/** 输入字母串是否按顺序作为子序列出现在拼音串里（如 "fcwq" 命中 "fengchuangweiqi"）。 */
+function isSubseq(q: string, s: string): boolean {
+  let i = 0;
+  for (let j = 0; j < s.length && i < q.length; j++) {
+    if (s[j] === q[i]) i++;
+  }
+  return i === q.length;
+}
+
+/** 按输入串匹配候选剧名：① 拼音首字母前缀 → ② 剧名子串 → ③ 拼音子序列模糊（V4.4.3 #12）。
+ *  ③ 是关键兜底：用户常只记得大概首字母（如 FCWQ），词库里未必有严格前缀命中的词，
+ *  子序列匹配能把「拼音里依次含这些字母」的词都列出来，右侧联想墙不再空白。 */
 export function matchPinyin(query: string, index: PinyinEntry[]): string[] {
   const q = (query || '').trim().toLowerCase();
   if (!q) return index.map((e) => e.name);
   const byPy: string[] = [];
   const byName: string[] = [];
+  const bySubseq: string[] = [];
   for (const e of index) {
     if (e.py.startsWith(q)) byPy.push(e.name);
     else if (e.name.toLowerCase().includes(q)) byName.push(e.name);
+    else if (q.length >= 2 && isSubseq(q, e.py)) bySubseq.push(e.name);
   }
-  const merged = byPy.concat(byName);
+  const merged = byPy.concat(byName, bySubseq);
   return Array.from(new Set(merged));
 }

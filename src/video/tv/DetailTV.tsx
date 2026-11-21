@@ -76,7 +76,12 @@ export function DetailTV({
         v.playsInline = true;
         // V4.4.2 #17：从上次进度续播（全屏/小窗共用 resumeKey）
         try {
-          const saved = library.lib.watchProgress[resumeKey] ?? 0;
+          // V4.4.3 跨源同片续播：本源无进度时按片名回退（上次在别的源看过同一部片）
+          let saved = library.lib.watchProgress[resumeKey] ?? 0;
+          if (saved <= 0) {
+            const tp = library.getTitleProgress(item.title);
+            if (tp && tp.sec > 0 && tp.sourceId !== item.sourceId) saved = tp.sec;
+          }
           const applySeek = () => {
             if (!alive || saved <= 1 || !isFinite(v.duration) || v.duration <= 0) return;
             if (saved >= v.duration - 3) return; // 接近片尾不跳
@@ -98,7 +103,7 @@ export function DetailTV({
           const t = v.currentTime;
           if (!(t > 0) || !isFinite(t)) return;
           lastSave = now;
-          library.setProgressBoth(resumeKey, t, `${item.sourceId}:${item.id}`, index);
+          library.setProgressBoth(resumeKey, t, `${item.sourceId}:${item.id}`, index, item.title, item.sourceId);
         };
         v.addEventListener('timeupdate', timeUpdateHandler);
       } catch { /* 解析失败：保持封面底图，不影响进详情/点播放 */ }
@@ -109,7 +114,7 @@ export function DetailTV({
       // 离开小窗前补写一次当前进度（进全屏时进度不丢）
       try {
         if (v.currentTime > 0 && isFinite(v.currentTime)) {
-          library.setProgressBoth(resumeKey, v.currentTime, `${item.sourceId}:${item.id}`, index);
+          library.setProgressBoth(resumeKey, v.currentTime, `${item.sourceId}:${item.id}`, index, item.title, item.sourceId);
         }
       } catch { /* ignore */ }
       try { detachHls(v); v.pause(); } catch { /* ignore */ }

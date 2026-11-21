@@ -256,11 +256,32 @@ export function TVShell({
       raw: { ...it.raw, episode: ep?.name, line: ln },
     };
     const key = `${it.sourceId}:${it.id}:${index}`;
-    const resumeAt = resume ? library.lib.watchProgress[key] || 0 : 0;
+    let resumeAt = resume ? library.lib.watchProgress[key] || 0 : 0;
+    let targetIndex = index;
+    // V4.4.3 跨子站同片续播：本源该集没进度时，按片名查全局进度。
+    // 若上次在别的源看过同一部片（片名规范化后相同），按上次的集数 + 秒数接着播。
+    if (resume && resumeAt <= 0) {
+      const tp = library.getTitleProgress(it.title);
+      if (tp && tp.sec > 0 && tp.sourceId !== it.sourceId) {
+        const episodes = ((it.raw?.lineGroups as any[] | undefined) ?? [it.episodes ?? []])[ln] ?? (it.episodes ?? []);
+        if (tp.ep < episodes.length) {
+          targetIndex = tp.ep;
+          resumeAt = tp.sec;
+          const crossKey = `${it.sourceId}:${it.id}:${tp.ep}`;
+          // 把跨源进度落到本源键，后续播放/退出补写就走本源，不再依赖片名索引
+          library.setWatchProgress(crossKey, tp.sec);
+        }
+      }
+    }
+    if (targetIndex !== index) {
+      const crossEp = (((it.raw?.lineGroups as any[] | undefined) ?? [it.episodes ?? []])[ln] ?? [])[targetIndex];
+      playingItem.playUrl = crossEp?.url ?? playingItem.playUrl;
+      playingItem.raw = { ...playingItem.raw, episode: crossEp?.name };
+    }
     library.addHistory(it);
     player.playItem(playingItem);
     setDetail(it);
-    setEpisodeIndex(index);
+    setEpisodeIndex(targetIndex);
     setLineState(ln);
     setStartAt(resumeAt);
     setPlaying(true);

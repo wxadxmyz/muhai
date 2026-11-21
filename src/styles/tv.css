@@ -31,6 +31,8 @@
 }
 .tv-topnav .brand {
   display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
+  /* V4.4.3：品牌块与 tab 框等高、垂直中心对齐（上下对称） */
+  height: 44px; box-sizing: border-box;
 }
 /* V4.3.1：品牌图标 = 安卓同款 circle.apng 动态圆圈 */
 .tv-topnav .brand .brand-logo {
@@ -43,9 +45,10 @@
   flex: 1 1 auto; display: flex; justify-content: center; gap: 16px;
 }
 .tv-tabs .tab {
-  display: flex; align-items: center; gap: 8px;
-  /* V4.4.1 I1：tab padding 12px 28px → 8px 24px，适配 68px 顶栏 */
-  padding: 8px 24px; border-radius: 4px; color: var(--text2);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  /* V4.4.3：tab 固定高度 44px，与左侧品牌块等高（上下对称）；padding 只控左右 */
+  height: 44px; box-sizing: border-box;
+  padding: 0 24px; border-radius: 4px; color: var(--text2);
   background: transparent; border: 2px solid transparent; cursor: pointer;
   font-size: 19px; font-weight: 700; transition: .15s var(--ease);
 }
@@ -263,7 +266,7 @@
 .tv-result-srcs { width: 180px; flex: 0 0 180px; }
 .tv-result-grid {
   flex: 1; min-width: 0; width: 100%; overflow-y: auto; overflow-x: hidden; display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: 24px; grid-auto-rows: 280px;
+  grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: 24px; grid-auto-rows: 360px;
   gap: 12px; align-content: start; align-items: start; justify-content: stretch;
 }
 .tv-result-summary { grid-column: 1 / -1; color: var(--muted); font-size: 15px; }
@@ -363,13 +366,13 @@
 .tv-hist-clear.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
 .tv-hist-clear.primary { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; }
 .tv-action-btn.danger { color: var(--danger); }
-/* 历史/收藏：统一小竖版卡片，一行 5 个（沿用通用 .tv-poster），删除模式红框提示 */
+/* 历史/收藏：统一小竖版卡片，一行 5 个（沿用通用 .tv-poster） */
 /* V4.4.2 #4：历史/收藏卡片行高 400→320px，与首页/结果页统一。 */
 .tv-history-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 320px; gap: 16px 20px; align-content: start; }
 .tv-hist-cell { position: relative; min-width: 0; height: 100%; }
 .tv-history-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; }
-.tv-history-grid.deleting .tv-poster { border: 4px solid var(--danger); box-shadow: 0 0 0 3px rgba(226,59,78,.28); }
-.tv-history-grid.deleting .tv-poster[data-focusable]:focus::after { border-color: #fff; box-shadow: 0 0 0 5px rgba(255,255,255,.35); }
+/* V4.4.3：删除模式卡片外圈不再加红框/红晕（用户要求），仅靠顶部提示 + 焦点白框标识可删对象 */
+.tv-history-grid.deleting .tv-poster { border-color: transparent; box-shadow: none; }
 
 /* ---------- 直播 TV ---------- */
 .tv-live-list { display: flex; flex-direction: column; gap: 10px; }

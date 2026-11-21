@@ -286,7 +286,8 @@ export function VideoPlayer({
     // force=true 用于暂停 / 切集 / 退出这类"最后一次机会"的补写（N5），不受节流限制。
     if (!force && now - lastSaveRef.current < 5000) return;
     lastSaveRef.current = now;
-    library.setProgressBoth(key || resumeKey, t, progressKey, episodeIndex); // 记录进度 + 看到第几集，一次写入
+    // V4.4.3：同时写片名级进度（跨子站同片续播）——带上片名与来源，切源后按片名回退读取
+    library.setProgressBoth(key || resumeKey, t, progressKey, episodeIndex, detail.title, detail.sourceId);
   };
   const saveProgress = useCallback((force = false, key?: string) => saveProgressRef.current(force, key), []);
   // N5：切集 / 切剧 / 关闭播放页时补写一次。

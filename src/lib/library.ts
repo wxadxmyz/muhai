@@ -3,6 +3,24 @@ import { MediaItem } from '../engine/types';
 
 const PREFIX = 'mps_lib_';
 
+/** 片名级进度条目（跨子站续播用） */
+export interface TitleProgressEntry {
+  sec: number; // 秒数
+  ep: number; // 集序号
+  sourceId: string; // 上次播放的来源
+  itemId: string; // 上次播放的条目 id
+  ts: number; // 更新时间戳
+}
+
+/** 片名规范化：去空白/括号备注/常见标点，用于跨源同片匹配 */
+export function normalizeTitle(name: string): string {
+  return (name || '')
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/[（(].*?[)）]/g, '')
+    .replace(/[：:·・\-—_~～!！?？,，.。]/g, '')
+    .toLowerCase();
+}
+
 export interface Playlist {
   id: string;
   name: string;
@@ -16,6 +34,7 @@ export interface LibraryState {
   searchHistory: string[]; // 搜索历史
   watchProgress: Record<string, number>; // 影视观看进度（秒）
   resumeEp: Record<string, number>; // 每部剧最近观看的集序号（续播定位）
+  titleProgress: Record<string, TitleProgressEntry>; // 片名级进度（跨子站同片续播）
   localMusic: MediaItem[]; // 本地导入
 }
 
@@ -28,13 +47,14 @@ function keyOf(it: MediaItem) {
 }
 
 function load(appKey: string): LibraryState {
+  const empty: LibraryState = { history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, titleProgress: {}, localMusic: [] };
   try {
     const raw = localStorage.getItem(PREFIX + appKey);
-    if (raw) return { history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, localMusic: [], ...JSON.parse(raw) };
+    if (raw) return { ...empty, ...JSON.parse(raw) };
   } catch {
     /* ignore */
   }
-  return { history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, localMusic: [] };
+  return empty;
 }
 
 export function useLibrary(appKey: string) {
@@ -118,17 +138,38 @@ export function useLibrary(appKey: string) {
   // V3.3.4 #12：一次 setLib 同时写观看秒数与集数。播放中的进度保存原来连调两个 setter
   // → 两次全量 JSON.stringify(lib) 同步写盘（history 条目含整段 vod_play_url 大字段），
   // Android WebView 主线程上是可感知的卡顿源。合并后减半，配合节流 1s→5s（VideoPlayer 侧）。
-  const setProgressBoth = useCallback((id: string, seconds: number, showKey: string, ep: number) => {
-    setLib((l) => ({
-      ...l,
-      watchProgress: { ...l.watchProgress, [id]: Math.floor(seconds) },
-      resumeEp: { ...l.resumeEp, [showKey]: ep },
-    }));
+  const setProgressBoth = useCallback((id: string, seconds: number, showKey: string, ep: number, title?: string, sourceId?: string) => {
+    setLib((l) => {
+      const t = Math.floor(seconds);
+      const titleKey = title ? normalizeTitle(title) : '';
+      return {
+        ...l,
+        watchProgress: { ...l.watchProgress, [id]: t },
+        resumeEp: { ...l.resumeEp, [showKey]: ep },
+        // 片名级进度：仅当同一片名的新记录时间戳更晚才覆盖，避免旧源回写盖掉新源
+        titleProgress: titleKey
+          ? (() => {
+              const prev = l.titleProgress[titleKey];
+              if (prev && prev.ts > Date.now()) return l.titleProgress;
+              return { ...l.titleProgress, [titleKey]: { sec: t, ep, sourceId: sourceId || '', itemId: id, ts: Date.now() } };
+            })()
+          : l.titleProgress,
+      };
+    });
   }, []);
+
+  // 按片名读取跨源续播进度
+  const getTitleProgress = useCallback(
+    (title: string): TitleProgressEntry | undefined => {
+      const k = normalizeTitle(title);
+      return k ? lib.titleProgress[k] : undefined;
+    },
+    [lib.titleProgress]
+  );
 
   // 重置 APP：清空全部观看记录/收藏/进度（内存 + 持久化）
   const clearAll = useCallback(() => {
-    setLib({ history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, localMusic: [] });
+    setLib({ history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, titleProgress: {}, localMusic: [] });
   }, []);
 
   const clearHistory = useCallback(() => setLib((l) => ({ ...l, history: [] })), []);
@@ -156,6 +197,7 @@ export function useLibrary(appKey: string) {
     setWatchProgress,
     setResumeEp,
     setProgressBoth,
+    getTitleProgress,
     clearAll,
     clearHistory,
     removeFromHistory,

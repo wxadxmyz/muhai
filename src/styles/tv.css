@@ -207,7 +207,7 @@
 .tv-histbox-head { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--text); }
 .tv-histbox-clear { color: var(--danger); cursor: pointer; padding: 4px 8px; }
 .tv-histwrap { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
-.tv-keyboard-wrap { width: 460px; flex: 0 0 460px; height: 100%; display: flex; flex-direction: column; gap: 12px; }
+.tv-keyboard-wrap { width: 460px; flex: 0 0 460px; display: flex; flex-direction: column; gap: 12px; }
 .tv-histag {
   display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
   background: var(--panel2); border: 1px solid var(--border); font-size: 14px; cursor: pointer; white-space: nowrap;
@@ -219,15 +219,14 @@
 }
 .tv-kb-text .caret { display: inline-block; width: 2px; height: 24px; background: var(--accent); vertical-align: middle; animation: tvblink 1s steps(2) infinite; }
 @keyframes tvblink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
-/* V4.4.3：键盘区纵向铺满——flex:1 吃掉剩余高度，按键用 grid 自动行高拉伸，不再固定 50px 堆在上半 */
-.tv-kb-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: 1fr; gap: 10px; }
+.tv-kb-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .tv-key {
-  height: 100%; min-height: 50px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
-  color: var(--text); font-size: 24px; font-weight: 700; cursor: pointer; display: grid; place-items: center;
+  height: 50px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); font-size: 21px; font-weight: 700; cursor: pointer; display: grid; place-items: center;
 }
 /* #15：4 个功能键 2×2 大按钮，键盘下方独立成组（影视仓式，完整落屏不被裁） */
-.tv-kb-actions { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; gap: 10px; height: 168px; }
-.tv-key.fn { font-size: 21px; height: 100%; background: var(--panel); white-space: nowrap; }
+.tv-kb-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.tv-key.fn { font-size: 19px; height: 54px; background: var(--panel); white-space: nowrap; }
 .tv-key.danger { color: var(--danger); }
 .tv-key.primary { color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; }
 
@@ -238,11 +237,11 @@
 /* 影视仓式标签墙——自适应换行铺满，每个词一个圆角胶囊，密度高 */
 .tv-tagwall {
   flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-wrap: wrap;
-  align-content: flex-start; gap: 16px; padding-right: 6px;
+  align-content: flex-start; gap: 12px; padding-right: 6px;
 }
 .tv-wall-tag {
-  padding: 16px 24px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--border);
-  font-size: 21px; cursor: pointer; white-space: nowrap;
+  padding: 11px 18px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--border);
+  font-size: 17px; cursor: pointer; white-space: nowrap;
 }
 
 /* ---------- 搜索结果 TV ---------- */
@@ -279,8 +278,7 @@
 .tv-detail { display: flex; flex-direction: column; gap: 20px; height: 100%; min-height: 0; overflow-y: auto; padding-right: 8px; }
 /* V4.4.3 #2：小窗与右侧详细信息间距 28px → 48px（设计稿留白更舒展） */
 .dt-top { display: flex; gap: 48px; flex: 0 0 auto; align-items: flex-start; }
-/* V4.4.3：下半区 flex:1 吃掉剩余高度，线路+选集纵向铺满整屏，不再堆在上半部留大片空白 */
-.dt-bottom { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; border-top: 1px solid var(--border); padding-top: 16px; }
+.dt-bottom { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; border-top: 1px solid var(--border); padding-top: 16px; }
 /* V4.4.3 #1：小窗放大 400×250 → 520×325（仍锁 16:10）。
    继续写死宽高、不用 aspect-ratio —— 老电视 WebView 不支持该属性，高度会塌缩、被竖版封面撑成竖窗。
    写死 height 后任何 WebView 都稳定横版；同时满足用户「窗口稍大一点」的诉求。 */
@@ -329,11 +327,10 @@
 .tv-line-pill { padding: 9px 18px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); font-size: 14px; cursor: pointer; }
 .tv-line-pill.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
 
-/* V4.4.3：选集区 flex:1 随下半区铺满，行高拉伸填满纵向空间 */
-.tv-ep-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); grid-auto-rows: minmax(58px, 1fr); gap: 12px; margin-top: 8px; align-content: stretch; }
+.tv-ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 12px; margin-top: 8px; }
 .tv-ep {
   padding: 16px 0; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
-  text-align: center; font-size: 18px; cursor: pointer; display: grid; place-items: center;
+  text-align: center; font-size: 16px; cursor: pointer;
 }
 .tv-ep.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
 

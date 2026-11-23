@@ -6,6 +6,7 @@ import { aggregateSearch, expandSources, MediaItem, SourceConfig } from '../../e
 import { TVPoster, tvItemPoster } from './common';
 import { useLibrary } from '../../lib/library';
 import { focusElement } from '../../lib/focusNav';
+import { addNamesToSuggestIndex } from '../../lib/suggestIndex';
 
 const ALL_KEY = '__all__';
 
@@ -53,6 +54,8 @@ export function SearchResultTV({
         setItems(r.items);
         setErrors(r.errors);
         setLoading(false);
+        // V4.4.5：搜到的片名增量并入联想索引（搜过一次以后输首字母即可联想，覆盖冷门片）
+        addNamesToSuggestIndex(r.items.map((it) => it.title));
       } catch {
         if (my === seq.current) setLoading(false);
       }

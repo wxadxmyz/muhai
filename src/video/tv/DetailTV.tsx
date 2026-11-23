@@ -129,6 +129,8 @@ export function DetailTV({
   };
 
   // 简介浮层：焦点陷阱 + 返回键关闭
+  // V4.4.5 #9：打开即聚焦「关闭」由按钮上的 data-autofocus + focusNav 的 MutationObserver 完成；
+  // 正文已去掉 data-focusable，弹层内唯一可聚焦元素就是关闭，方向键不会把焦点移到正文。
   useEffect(() => {
     if (!showDesc) return;
     return pushBackHandler(() => { closeDesc(); return true; });
@@ -181,7 +183,7 @@ export function DetailTV({
           />
           <div className="dshade" />
           <div className="dplay"><Icon name="play" size={38} /></div>
-          <div className="dlabel">{name} · 立即播放</div>
+          {/* V4.4.5 #8：去掉「XX·立即播放」文字标签，让播放画面本身成为焦点高亮（文字会抢视觉焦点） */}
         </div>
 
         <div className="tv-detail-body">
@@ -248,21 +250,17 @@ export function DetailTV({
 
       {showDesc && (
         <div className="tv-overlay" data-focus-root>
-          <div className="tv-sheet" style={{ width: 'min(680px, 90vw)' }}>
+          {/* V4.4.5 #9：↑↓ 滚动监听放在 sheet 上（焦点锁在关闭按钮，方向键冒泡到这里被拦截，
+              不再让 focusNav 把焦点从「关闭」移到正文）。 */}
+          <div className="tv-sheet" style={{ width: 'min(680px, 90vw)' }} onKeyDown={onDescKey}>
             <div className="tv-sheet-head">
               <h3>{name} · 简介</h3>
-              <button className="tv-action-btn" data-focusable="" onClick={closeDesc}>
+              <button className="tv-action-btn" data-focusable="" data-autofocus="" onClick={closeDesc}>
                 关闭
               </button>
             </div>
-            {/* V4.4.3 #3：正文可聚焦 + ↑↓ 上下滚动，长简介也能看全；提示文字告诉用户可按上下键 */}
-            <div
-              ref={descBodyRef}
-              className="tv-sheet-body"
-              data-focusable=""
-              tabIndex={0}
-              onKeyDown={onDescKey}
-            >
+            {/* V4.4.5 #9：正文不再可聚焦，只是滚动内容；光标始终在「关闭」上 */}
+            <div ref={descBodyRef} className="tv-sheet-body">
               <p className="tv-detail-desc" style={{ margin: 0, display: 'block', WebkitLineClamp: 'unset' }}>
                 {item.desc || '暂无简介信息。'}
               </p>

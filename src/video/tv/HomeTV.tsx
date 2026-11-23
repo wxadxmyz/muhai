@@ -102,14 +102,21 @@ export function HomeTV({ onSearch }: { onSearch: (q: string, from?: 'home-card' 
       </div>
 
       <div className="tv-home-body" data-scroll>
-        {/* V4.4.4：1:1 对齐 UI——一个分类只渲染一个 5×2 网格（10 部），
-            不再让「推荐」堆 4 个分区。推荐=热门电视剧，其余按分类取对应类别。 */}
-        {(() => {
-          const cur = CATS.find((c) => c.key === cat)!;
-          const field = cur.field ?? 'tv';
-          const title = cat === 'all' || cat === 'tv' ? '热门电视剧' : '热门' + cur.label;
-          return row(title, hot.categories[field] ?? [], 0, 1);
-        })()}
+        {/* V4.4.5：恢复「推荐」堆 4 个分区（热门电视剧/电影/综艺/动漫，各 10 部），
+            一屏放不下就滚动（容器 overflow-y:auto）。其余分类仍只渲染对应单一分区。 */}
+        {cat === 'all' ? (
+          <>
+            {row('热门电视剧', hot.categories.tv, 0, 4)}
+            {row('热门电影', hot.categories.movie, 1, 4)}
+            {row('热门综艺', hot.categories.variety, 2, 4)}
+            {row('热门动漫', hot.categories.anime, 3, 4)}
+          </>
+        ) : (
+          (() => {
+            const cur = CATS.find((c) => c.key === cat)!;
+            return row('热门' + cur.label, hot.categories[cur.field!] ?? [], 0, 1);
+          })()
+        )}
       </div>
     </div>
   );

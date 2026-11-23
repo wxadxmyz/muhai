@@ -1,17 +1,21 @@
-// V4.3.8：TV 搜索联想「源片名预热索引」。
+// V4.4.5 A 方案：TV 搜索联想「全站片名索引」。
 //
-// 背景：旧版 TV 搜索联想只认「热榜 + 搜索历史」，不覆盖用户添加源里的片名。
-// 遥控器输拼音首字母（如 dsj）时，源站搜索接口只认中文关键词、拼音发过去基本为空，
-// 且逐字查源会卡死。故改为：软件启动时后台把各源首页片名拉下来，构建成本地拼音索引，
-// 之后输首字母即可秒出源里的片名——离线、不卡、覆盖常见片。
-//
-// 冷门片联想不到属预期，按「搜索」键仍会走 aggregateSearch 全站查源兜底。
+// 旧版只认「热榜 + 搜索历史 + 各源首页片名」，冷门片（如「非诚勿扰」）不在热榜就永远联想不到。
+// 现在改为启动预热时：
+//   ① 拉各源首页片名（老逻辑，limit 60 → 120）；
+//   ② 用热榜 4 类各 10 部当关键词，跑「一轮全站搜索」，把返回片名并入索引；
+//   ③ 合并去重 → 拼音首字母索引 → 缓存本地。
+// 另外：用户在结果页每搜一次（aggregateSearch 返回），结果片名也增量并入索引（搜过即能联想）。
+// 全部后台异步、本地缓存，不阻塞 UI；输首字母仍秒出。逐键查源会卡死，故不做实时查源。
+// 注：搜索历史由 SearchTV 自己并入 indexes，这里不再重复读取。
 
-import { aggregateHomeCached, type SourceConfig } from '../engine';
+import { aggregateHomeCached, aggregateSearch, type SourceConfig } from '../engine';
+import { fetchHot } from './hot';
 import { buildPinyinIndex, type PinyinEntry } from './pinyinSearch';
 
 const CACHE_KEY = 'muhai_tv_suggest_v1';
 let cache: PinyinEntry[] | null = null;
+let cacheNames: string[] | null = null;
 const listeners = new Set<() => void>();
 
 /** 读取本地索引（内存 → localStorage）。同步返回，供渲染直接用。 */
@@ -21,7 +25,11 @@ export function loadSuggestIndex(): PinyinEntry[] {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
       const obj = JSON.parse(raw);
-      if (obj && Array.isArray(obj.names)) cache = buildPinyinIndex(obj.names.filter((x: any) => typeof x === 'string'));
+      if (obj && Array.isArray(obj.names)) {
+        const names: string[] = obj.names.filter((x: any) => typeof x === 'string');
+        cacheNames = names;
+        cache = buildPinyinIndex(names);
+      }
     }
   } catch {
     /* ignore */
@@ -35,20 +43,71 @@ export function subscribeSuggest(fn: () => void): () => void {
   return () => { listeners.delete(fn); };
 }
 
-/** 软件启动时后台预热：拉取各源首页片名 → 建拼音索引 → 缓存并通知。 */
+function commitNames(names: string[]): number {
+  const uniq = Array.from(new Set(names.map((n) => (n || '').trim()).filter(Boolean)));
+  if (!uniq.length) return 0;
+  cacheNames = uniq;
+  cache = buildPinyinIndex(uniq);
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), names: uniq })); } catch { /* ignore */ }
+  listeners.forEach((f) => { try { f(); } catch { /* ignore */ } });
+  return uniq.length;
+}
+
+/** V4.4.5：结果页搜到的片名增量并入索引（搜过一次以后输首字母即可联想）。 */
+export function addNamesToSuggestIndex(names: (string | undefined)[]): number {
+  const clean = (names || []).map((n) => (n || '').trim()).filter(Boolean) as string[];
+  if (!clean.length) return 0;
+  if (!cacheNames) loadSuggestIndex();
+  return commitNames([...(cacheNames ?? []), ...clean]);
+}
+
+/**
+ * 软件启动时后台预热（V4.4.5 A 方案）：
+ *   ① 各源首页片名；
+ *   ② 热榜 4 类各 10 部当关键词，跑一轮全站搜索收片名；
+ *   ③ 合并去重 → 拼音索引 → 缓存并通知。
+ * 并发上限 6，单个源慢/挂不拖垮整体；全部后台异步。
+ */
 export async function prewarmSuggestIndex(sources: SourceConfig[]): Promise<number> {
   const active = (sources || []).filter((s) => s.enabled);
   if (!active.length) return 0;
+  const names: string[] = [];
   try {
-    const r = await aggregateHomeCached(active, { timeout: 12000, limit: 60 });
-    const names = Array.from(new Set(r.items.map((i) => (i.title || '').trim()).filter(Boolean)));
-    if (names.length) {
-      cache = buildPinyinIndex(names);
-      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), names })); } catch { /* ignore */ }
-      listeners.forEach((f) => { try { f(); } catch { /* ignore */ } });
+    // ① 各源首页片名（limit 60 → 120，覆盖面更广）
+    const r = await aggregateHomeCached(active, { timeout: 12000, limit: 120 });
+    r.items.forEach((i) => { const t = (i.title || '').trim(); if (t) names.push(t); });
+  } catch { /* 首页拉取失败不影响第二步 */ }
+
+  // ② 热榜 4 类各 10 部当关键词，跑一轮全站搜索收片名
+  let keywords: string[] = [];
+  try {
+    const hot = await fetchHot(false);
+    if (hot) {
+      keywords = [
+        ...(hot.categories?.tv ?? []),
+        ...(hot.categories?.movie ?? []),
+        ...(hot.categories?.variety ?? []),
+        ...(hot.categories?.anime ?? []),
+      ].map((x) => x.name).filter(Boolean);
     }
-    return names.length;
-  } catch {
-    return 0;
+  } catch { /* ignore */ }
+  keywords = Array.from(new Set(keywords.map((k) => k.trim()).filter(Boolean))).slice(0, 40);
+
+  // 关键词并发跑全站搜索（限并发 6）
+  if (keywords.length) {
+    const CONC = 6;
+    for (let i = 0; i < keywords.length; i += CONC) {
+      const batch = keywords.slice(i, i + CONC);
+      await Promise.all(batch.map(async (kw) => {
+        try {
+          const res = await aggregateSearch(active, kw, { timeout: 9000 });
+          res.items.forEach((it) => { const t = (it.title || '').trim(); if (t) names.push(t); });
+        } catch { /* 单个关键词失败忽略 */ }
+      }));
+    }
   }
+
+  // ③ 合并已有本地索引 + 本轮新收片名 → 去重入库
+  if (!cacheNames) loadSuggestIndex();
+  return commitNames([...(cacheNames ?? []), ...names]);
 }

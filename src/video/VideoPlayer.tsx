@@ -12,6 +12,7 @@ import { attachHlsWithBackend, detachHls, getLevels, getCurrentLevel, setLevel, 
 import { isTauri, saveBlob } from '../lib/tauriBridge';
 import { requestOrientation as requestOrientationShared, requestImmersive, pipBridgeReady } from '../lib/orientation';
 import { getDeviceMode } from '../lib/deviceMode';
+import { focusElement } from '../lib/focusNav';
 import { Icon } from '../components/Icon';
 import { ProxiedImg } from '../components/ProxiedImg';
 import { MediaProbeOverlay } from '../components/MediaProbe';
@@ -181,6 +182,8 @@ export function VideoPlayer({
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
   const seekBubbleTimer = useRef<number | undefined>(undefined);
+  // V4.4.6：TV 专属播放页——底部按钮条首个按钮（按 ↓ 焦点落到它）
+  const tvpFirstBtnRef = useRef<HTMLButtonElement | null>(null);
   // 真实分辨率药丸（设计文件 [1920x804]）+ 亮度/音量手势状态
   const [resText, setResText] = useState('');
   const [brightness, setBrightness] = useState<number>(() => {
@@ -1242,9 +1245,18 @@ export function VideoPlayer({
 
       const isLeft = k === 'ArrowLeft' || k === 'Left' || code === 21;
       const isRight = k === 'ArrowRight' || k === 'Right' || code === 22;
+      const isUp = k === 'ArrowUp' || k === 'Up' || code === 19;
       const isDown = k === 'ArrowDown' || k === 'Down' || code === 20;
       const isOk = k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || code === 13 || code === 23 || code === 66;
 
+      // V4.4.6：↑ 收起控制层（对齐 UI 原型 onRemoteKey 的 isUp）。
+      if (isUp) {
+        e.preventDefault();
+        e.stopPropagation();
+        setControlsVisible(false);
+        if (hideTimer.current) window.clearTimeout(hideTimer.current);
+        return;
+      }
       if (isLeft || isRight) {
         e.preventDefault();
         e.stopPropagation();
@@ -1271,9 +1283,19 @@ export function VideoPlayer({
         // 用独立 3 秒定时器：TV 暂停态下 state.isPlaying=false 会让通用 scheduleHide 直接 return，
         // 这里不依赖它，确保「按一下下键调出、无操作 3 秒全隐藏」。
         hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
+        // V4.4.6：按 ↓ 调出控制层后，焦点落到 TV 播放页第一个功能按钮（对齐 UI）。
+        window.setTimeout(() => focusElement(tvpFirstBtnRef.current), 30);
         return;
       }
       if (isOk) {
+        // V4.4.6：焦点落在 TV 播放页功能按钮上时，OK 触发该按钮，不做暂停切换。
+        const ae = document.activeElement as HTMLElement | null;
+        if (ae && ae.hasAttribute && ae.hasAttribute('data-tvp-btn')) {
+          e.preventDefault();
+          e.stopPropagation();
+          ae.click();
+          return;
+        }
         // V4.4.3 #7：OK = 暂停/播放切换。
         // 暂停 → 进入 TV 暂停海报态（控制栏/时间收起，只留中央暂停图标，不会自动消失）；
         // 播放 → 退出暂停态、显示控制栏并起 3 秒隐藏。
@@ -1428,8 +1450,9 @@ export function VideoPlayer({
         onTouchMove={onStageTouchMove}
         onTouchEnd={onStageTouchEnd}
       >
-        <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
-          <div className="poster" />
+        <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
+          {/* V4.4.6：TV 大窗不渲染 poster 图片占位（对齐 UI 加载纯黑屏，只留转圈+加载中…） */}
+          {!tvMode && <div className="poster" />}
           <video
             key={`${detail?.id}-${episodeIndex}`}
             ref={videoRef}
@@ -1661,8 +1684,8 @@ export function VideoPlayer({
 
         </div>
 
-        {/* ============ 横屏（对齐原型 .land：顶栏 返回/标题/锁/投屏 + 中央 上一个/播放/下一个 + 底部 5 个图标钮） ============ */}
-        {landscape && (
+        {/* ============ 横屏（手机端：对齐原型 .land；TV 端改走下方 tvp-stage 专属播放页） ============ */}
+        {landscape && !tvMode && (
           <div className={'overlay land-h' + (controlsVisible && !seekHideControls ? '' : ' hide') + (locked ? ' locked' : '') + (resolving && !err ? ' ov-loading' : '')} onTouchStartCapture={clearTapTimer} onClickCapture={guardTapWhenHidden}>
             {/* .l-top：返回 + `片名 第N集 画质小字` + 锁 + 投屏（38px 圆钮 rgba(255,255,255,.14)，图标 grid 居中） */}
             <div className="land-top">
@@ -1747,6 +1770,72 @@ export function VideoPlayer({
                 <button className="bb" onClick={() => setSettingsOpen(true)} title="播放器设置"><Icon name="settings" size={22} /><span>设置</span></button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ============ V4.4.6：TV 专属播放页（1:1 对齐 V4.4.3UI.html 的 .player） ============
+            左上片名/副标题 + 右上时钟(TVClock 置顶) + 底部文字按钮条(pbtn) + 进度条(pbar)
+            + 遥控提示(play-help) + 快进提示(seek-hint) + OK 暂停(pause-overlay)。
+            控制层默认常显（对齐 UI 原型），↑ 收起 / ↓ 调出并聚焦首钮 / OK 暂停。 */}
+        {landscape && tvMode && (
+          <div className={'tvp-stage' + (tvPauseOverlay ? ' paused' : '') + (controlsVisible && !seekHideControls ? ' controls' : '')}>
+            {/* .p-top：左上片名 + 副标题 */}
+            <div className="tvp-top">
+              <div className="tvp-t1">{detail.title}</div>
+              <div className="tvp-t2">第{epName}集　[ {resText || qualityLabel || '1920 × 800'} ]</div>
+            </div>
+
+            {/* .p-ctrl：底部控制层（按钮条 + 进度条） */}
+            <div className="tvp-ctrl">
+              <div className="tvp-btns">
+                <button ref={tvpFirstBtnRef} className={'tvp-btn act' + (episodeIndex >= (detail.episodes?.length || 1) - 1 ? ' disabled' : '')} data-tvp-btn="" data-focusable="" onClick={() => episodeIndex < (detail.episodes?.length || 1) - 1 && onSelectEpisode(episodeIndex + 1)}>下集</button>
+                <button className={'tvp-btn' + (episodeIndex <= 0 ? ' disabled' : '')} data-tvp-btn="" data-focusable="" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)}>上集</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={retry}>刷新</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}>重播</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => setEpOpen(true)}>选集</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={cycleSpeed}>x{speedLabel(speed)}</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={toggleDecode}>{decodeLabel()}</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => setDecode('ijk-hard')}>ijkpro</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { setScaleMode('默认'); localStorage.setItem('rf_scale', '默认'); }}>S渲染</button>
+                <button className={'tvp-btn' + (danmaku ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={toggleDanmaku}>弹幕{danmaku ? '开' : '关'}</button>
+                <button className={'tvp-btn' + (introSec > 0 ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={() => setSkipOneTap('intro')}>片头{fmtTime(introSec)}</button>
+                <button className={'tvp-btn' + (outroSec > 0 ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={() => setSkipOneTap('outro')}>片尾{fmtTime(outroSec)}</button>
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { setScaleMode('默认'); localStorage.setItem('rf_scale', '默认'); setSpeed(1); setDecode('exo'); }}>默认</button>
+              </div>
+              {/* .pbar：当前时间 + 轨道(fill+dot) + 总时间 */}
+              <div className="tvp-pbar">
+                <span>{fmtTime(liveCur)}</span>
+                <div className="tvp-track" onClick={(e) => {
+                  const v = videoRef.current; if (!v || !liveDur) return;
+                  const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                  v.currentTime = ratio * liveDur; setLiveCur(v.currentTime); player.seek(v.currentTime);
+                }} onPointerDown={onBarPointerDown} onPointerMove={onBarPointerMove} onPointerUp={onBarPointerUp}>
+                  <div className="tvp-fill" style={{ width: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                  <div className="tvp-dot" style={{ left: `${liveDur ? (liveCur / liveDur) * 100 : 0}%` }} />
+                </div>
+                <span>{fmtTime(liveDur)}</span>
+              </div>
+            </div>
+
+            {/* .play-help：遥控提示 */}
+            <div className="tvp-help">遥控器：按「下」显示控制条 · 「左/右」快退/快进 · 「OK」暂停 · 跨子站同片自动续播</div>
+
+            {/* .seek-hint：快进/快退提示 */}
+            {seekBubble && (
+              <div className="tvp-seek">
+                <div className="tvp-seek-big"><span className="tvp-seek-arrow">{seekBubble.dir > 0 ? '▶▶' : '◀◀'}</span><span>{seekBubble.dir > 0 ? '+' : '-'}{seekBubble.delta}秒</span></div>
+                <div className="tvp-seek-sub">{seekBubble.dir > 0 ? '快进' : '快退'} {seekBubble.delta} 秒</div>
+              </div>
+            )}
+
+            {/* .pause-overlay：OK 暂停态——画面定住，只留中央大暂停图标 + 提示 */}
+            {tvPauseOverlay && (
+              <div className="tvp-pause">
+                <div className="tvp-pause-ring"><Icon name="pause" size={72} /></div>
+                <div className="tvp-pause-tip">已暂停 · 按 OK 继续播放</div>
+              </div>
+            )}
           </div>
         )}
       </div>

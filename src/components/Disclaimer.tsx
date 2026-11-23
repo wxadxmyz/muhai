@@ -14,6 +14,10 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   const [checked, setChecked] = useState(false);
   const tvBtnRef = useRef<HTMLButtonElement | null>(null);
   const tv = isTV();
+  // V4.4.6：电视端免责说明 5 秒自动倒计时，归零自动同意并进入——
+  // 用户不必再「先按下键、再按确定」。倒计时仅为提示，任意键/点击仍可立即进入。
+  const [countdown, setCountdown] = useState(5);
+  const acceptedRef = useRef(false);
 
   // 电视上默认把焦点放到「一键同意」按钮，用户按一次遥控器确认键即可进入。
   // V4.4.4：老 WebView 首次渲染后焦点尚未就位，60ms 一次可能太早/被系统回收，
@@ -24,6 +28,23 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
       window.setTimeout(() => focusElement(tvBtnRef.current), ms)
     );
     return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [tv, settings.disclaimerAccepted]);
+
+  // V4.4.6：电视端 5 秒自动倒计时，归零自动同意并进入（无需先按下键再按确定）。
+  // 只改本地倒计时显示，真正进入仍走 accept()（update + onAccept），保证与手动点击完全同一条路径。
+  useEffect(() => {
+    if (!tv || settings.disclaimerAccepted) return;
+    const start = Date.now();
+    const tick = window.setInterval(() => {
+      const left = Math.max(0, 5 - Math.floor((Date.now() - start) / 1000));
+      setCountdown(left);
+      if (left <= 0) {
+        window.clearInterval(tick);
+        accept();
+      }
+    }, 200);
+    return () => window.clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tv, settings.disclaimerAccepted]);
 
   // V4.3.1：独立 OK/Enter 监听，不依赖焦点系统。
@@ -53,6 +74,8 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   if (settings.disclaimerAccepted) return null;
 
   const accept = () => {
+    if (acceptedRef.current) return; // V4.4.6：倒计时归零与手动点击可能并发，幂等只进一次
+    acceptedRef.current = true;
     update({ disclaimerAccepted: true });
     onAccept();
   };
@@ -80,7 +103,7 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
           <div className="disclaimer-tv-logo">幕海 MuHai</div>
           <h2>免责声明</h2>
           <div className="disclaimer-body">{body}</div>
-          <p className="disclaimer-tv-hint">点击下方按钮即表示您已阅读、理解并同意上述声明。</p>
+          <p className="disclaimer-tv-hint">{countdown > 0 ? `${countdown} 秒后自动进入，或点击下方按钮立即进入。` : '正在进入…'}</p>
           <button
             ref={tvBtnRef}
             className="disclaimer-tv-btn"
@@ -95,7 +118,7 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
               }
             }}
           >
-            一键同意并进入（按遥控器 OK 键）
+            一键同意并进入（{countdown > 0 ? `${countdown}s` : '进入中'}）
           </button>
         </div>
       </div>

@@ -190,61 +190,64 @@ export function DetailTV({
           <h1 className="tv-detail-title">{name}</h1>
           <div className="tv-detail-meta">{meta}</div>
           <p className={'tv-detail-desc' + (item.desc ? '' : ' empty')}>{item.desc || '暂无剧情简介。'}</p>
-          {/* 胶囊按钮：播放 → 离线缓存 → 收藏 → 内容简介（真实软件四色胶囊） */}
+          {/* 胶囊按钮：严格按 V4.4.3 UI 三色胶囊 —— 播放 / 加入收藏 / 内容简介 */}
           <div className="tv-pillrow">
-            <button ref={playRef} className="tv-pill c1" data-focusable="" onClick={() => onPlay(index, line)}>
-              <Icon name="play" size={20} /> 立即播放
+            <button ref={playRef} className="tv-pill p-play" data-focusable="" onClick={() => onPlay(index, line)}>
+              <Icon name="play" size={20} /> 播放
             </button>
-            <button className="tv-pill c2" data-focusable="" onClick={() => onOffline(item)}>
-              <Icon name="download" size={20} /> 离线缓存
+            <button className={'tv-pill p-fav' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
+              <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '加入收藏'}
             </button>
-            <button className={'tv-pill c3' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
-              <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '收藏'}
-            </button>
-            <button ref={descBtnRef} className="tv-pill c4" data-focusable="" onClick={() => setShowDesc(true)}>
+            <button ref={descBtnRef} className="tv-pill p-desc" data-focusable="" onClick={() => setShowDesc(true)}>
               <Icon name="file-text" size={20} /> 内容简介
             </button>
           </div>
         </div>
       </div>
 
-      {/* 下排：线路 + 选集，位于播放窗与简介下方 */}
+      {/* 下排：线路 + 选集，严格按 V4.4.3 UI 的 line-row / ep-row 左标签结构 */}
       <div className="dt-bottom">
         {groups.length > 1 && (
-          <div className="tv-line-row">
-            <span className="lbl">线路</span>
-            {groups.map((g, i) => (
-              <span
-                key={i}
-                className={'tv-line-pill' + (line === i ? ' active' : '')}
-                data-focusable=""
-                onClick={() => { setLine(i); setIndex(0); }}
-                role="button"
-              >
-                线路{i + 1}
-                {g.length ? `（${g.length}）` : ''}
-              </span>
-            ))}
+          <div className="tv-line-row dt-row">
+            <span className="rowlabel">线路</span>
+            <div className="line-tabs">
+              {groups.map((g, i) => (
+                <span
+                  key={i}
+                  className={'tv-line-pill' + (line === i ? ' active' : '')}
+                  data-focusable=""
+                  onClick={() => { setLine(i); setIndex(0); }}
+                  role="button"
+                >
+                  线路{i + 1}
+                  {g.length ? `（${g.length}）` : ''}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
-        <div className="tv-row-title">选集</div>
-        <div className="tv-ep-grid">
-          {eps.length === 0 ? (
-            <div className="tv-empty">暂无选集</div>
-          ) : (
-            eps.map((ep, i) => (
-              <div
-                key={i}
-                className={'tv-ep' + (index === i ? ' active' : '')}
-                data-focusable=""
-                onClick={() => { setIndex(i); onPlay(i, line); }}
-                role="button"
-              >
-                {ep.name || `第${i + 1}集`}
-              </div>
-            ))
-          )}
+        <div className="tv-ep-row dt-row">
+          <span className="rowlabel">选集</span>
+          <div className="ep-main">
+            <div className="tv-ep-grid">
+              {eps.length === 0 ? (
+                <div className="tv-empty">暂无选集</div>
+              ) : (
+                eps.map((ep, i) => (
+                  <div
+                    key={i}
+                    className={'tv-ep' + (index === i ? ' active' : '')}
+                    data-focusable=""
+                    onClick={() => { setIndex(i); onPlay(i, line); }}
+                    role="button"
+                  >
+                    {ep.name || `第${i + 1}集`}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -306,14 +306,14 @@
   border-radius: 0; overflow: hidden; position: relative; background: #0b1220; cursor: pointer; /* V4.4.5 #5：直角 */
   border: 1px solid var(--border);
 }
-.tv-detail-player > img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: .82; }
+.tv-detail-player > img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 1; } /* V4.5.0 #12：去灰蒙，封面/画面清晰 */
 /* V4.4.1 D1：小窗内嵌真实播放的 <video>，默认透明，起播成功后盖住封面图 */
 .tv-detail-player > .tv-detail-mini-video {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
   display: block; opacity: 0; transition: opacity .3s var(--ease); pointer-events: none;
 }
 .tv-detail-player > .tv-detail-mini-video.on { opacity: 1; }
-.tv-detail-player .dshade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.55)); }
+.tv-detail-player .dshade { position: absolute; inset: 0; background: none; } /* V4.5.0 #12：去掉灰蒙遮罩 */
 /* V4.4.2 #12：小窗去掉中央播放按钮（用户要求：小窗直接预览、不要播放图标） */
 .tv-detail-player .dplay { display: none !important; }
 /* V4.4.5 #8：dlabel「XX·立即播放」文字已移除，播放画面本身高亮 */
@@ -350,6 +350,25 @@
   text-align: center; font-size: 16px; cursor: pointer;
 }
 .tv-ep.active { background: var(--panel3); border-color: var(--accent); color: var(--accent); font-weight: 800; }
+
+/* ===== V4.5.0 详情页影视仓化 ===== */
+/* 影视仓详情信息：来源/演员/导演/播放地址/简介 */
+.vinfo { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 14px; max-width: 900px; }
+.vinfo-line { display: flex; align-items: baseline; font-size: 15px; line-height: 1.55; color: var(--text); min-width: 0; }
+.vinfo-line .vk { flex: 0 0 auto; color: var(--muted); }
+.vinfo-line .vv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vinfo-line .vv-ellipsis { display: block; flex: 1; } /* 播放地址过长省略号 */
+.vinfo-line .vv-clamp {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
+}
+/* 选集分段区间 1-40 / 41-80 */
+.tv-ep-segs { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.tv-ep-seg { padding: 7px 18px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--border); font-size: 15px; cursor: pointer; color: var(--muted); }
+.tv-ep-seg.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; font-weight: 800; }
+/* V4.5.0 #2/#13：去行首文字标签后，线路/选集框内文字垂直居中；每行 6 个（长的 4 个） */
+.tv-line-pill, .tv-ep { display: flex; align-items: center; justify-content: center; line-height: 1.2; }
+.tv-ep-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } /* 默认每行 6 个 */
+.tv-ep-grid.long { grid-template-columns: repeat(4, minmax(0, 1fr)); } /* 名称长的每行 4 个 */
 
 /* ---------- 设置 TV ---------- */
 .tv-settings { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -637,3 +656,25 @@
 }
 .tvp-pause-ring svg { width: 72px !important; height: 72px !important; color: #fff !important; }
 .tvp-pause-tip { color: rgba(255,255,255,.85); font-size: 16px; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+
+/* V4.5.0 #20：首页双击返回退出提示（屏幕中间偏下） */
+.tv-exit-hint {
+  position: fixed; left: 50%; bottom: 22%; transform: translateX(-50%);
+  z-index: 9999; padding: 16px 40px; border-radius: 999px;
+  background: rgba(0,0,0,.82); color: #fff; font-size: 24px; font-weight: 700;
+  box-shadow: 0 8px 32px rgba(0,0,0,.5); pointer-events: none;
+}
+
+/* ===== V4.5.0 #3/#7：TV 加载态彻底纯黑——隐藏首帧透出 + 任何播放三角图标 ===== */
+/* 加载中(resolving / buffering / seekLoading)期间：视频元素透明，避免浅色首帧透出 */
+.tv .player-root .screen.tv-screen.is-loading video { opacity: 0 !important; }
+/* 更强的兜底：TV 模式任何播放三角主按钮在加载态一律隐藏 */
+.tv .player-root .screen.tv-screen.is-loading .big-btn,
+.tv .player-root .screen.tv-screen.is-loading .ctrl.main,
+.tv .player-root .screen.tv-screen.is-loading .land-center button,
+.tv .player-root .screen.tv-screen.is-loading .dplay,
+.tv .player-root .screen.tv-screen.is-loading svg[data-icon="play"] { display: none !important; }
+
+/* ===== V4.5.0 #77：搜索结果页卡片按首页大小，间距小、仍一行 5 个 ===== */
+.tv-result-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 320px; gap: 12px; align-items: stretch; }
+.tv-result-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 14px; }

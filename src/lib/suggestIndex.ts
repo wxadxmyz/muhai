@@ -14,6 +14,11 @@ import { fetchHot } from './hot';
 import { buildPinyinIndex, type PinyinEntry } from './pinyinSearch';
 
 const CACHE_KEY = 'muhai_tv_suggest_v1';
+// V4.5.0 云端词库：复用已绑定的 hot.json 路由 + ?suggest=1（Worker 每日 cron 自动更新）。
+// 内置经典片名 + 豆瓣各榜，新片无需升级 APK 即可联想。
+const CLOUD_SUGGEST_URL = 'https://wu2000.top/hot.json?suggest=1';
+const CLOUD_CACHE_KEY = 'muhai_tv_suggest_cloud_v1';
+const CLOUD_TTL = 12 * 60 * 60 * 1000;
 let cache: PinyinEntry[] | null = null;
 let cacheNames: string[] | null = null;
 const listeners = new Set<() => void>();
@@ -62,6 +67,42 @@ export function addNamesToSuggestIndex(names: (string | undefined)[]): number {
 }
 
 /**
+ * V4.5.0：拉取云端联想词库（Worker 每日 cron 更新），带 12h 本地缓存 + 超时兜底。
+ * 返回词名数组，失败返回空数组（不影响本地预热）。
+ */
+async function fetchCloudSuggestNames(): Promise<string[]> {
+  try {
+    try {
+      const raw = localStorage.getItem(CLOUD_CACHE_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj?.names && Array.isArray(obj.names) && Date.now() - (obj.ts || 0) < CLOUD_TTL) {
+          return obj.names.filter((x: any) => typeof x === 'string');
+        }
+      }
+    } catch { /* ignore */ }
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 5000);
+    let names: string[] = [];
+    try {
+      const res = await fetch(CLOUD_SUGGEST_URL, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+      if (res.ok) {
+        const data: any = await res.json();
+        if (data && Array.isArray(data.names)) {
+          names = data.names.filter((x: any) => typeof x === 'string' && x.trim());
+          try { localStorage.setItem(CLOUD_CACHE_KEY, JSON.stringify({ ts: Date.now(), names })); } catch { /* ignore */ }
+        }
+      }
+    } finally {
+      window.clearTimeout(timer);
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * 软件启动时后台预热（V4.4.5 A 方案）：
  *   ① 各源首页片名；
  *   ② 热榜 4 类各 10 部当关键词，跑一轮全站搜索收片名；
@@ -70,8 +111,13 @@ export function addNamesToSuggestIndex(names: (string | undefined)[]): number {
  */
 export async function prewarmSuggestIndex(sources: SourceConfig[]): Promise<number> {
   const active = (sources || []).filter((s) => s.enabled);
-  if (!active.length) return 0;
   const names: string[] = [];
+  // V4.5.0：云端词库优先并入（经典片 + 每日更新的新片），FCWR→非诚勿扰 靠它命中。
+  // 即使无源也要拉云端词库，保证搜索联想可用。
+  let cloud: string[] = [];
+  try { cloud = await fetchCloudSuggestNames(); } catch { /* ignore */ }
+  if (cloud.length) names.push(...cloud);
+  if (!active.length) return commitNames(names);
   try {
     // ① 各源首页片名（limit 60 → 120，覆盖面更广）
     const r = await aggregateHomeCached(active, { timeout: 12000, limit: 120 });

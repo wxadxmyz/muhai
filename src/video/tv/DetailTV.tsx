@@ -11,37 +11,73 @@ import { tvItemPoster } from './common';
 import { resolvePlay } from '../../player';
 import { attachHlsWithBackend, detachHls } from '../../lib/hlsPlayer';
 
+// V4.5.0：从 raw（CMS 原始字段）宽松提取影视仓详情页信息
+function rawText(...vals: any[]): string {
+  for (const v of vals) {
+    if (v == null) continue;
+    let s = String(v);
+    try { s = s.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' '); } catch { /* ignore */ }
+    s = s.replace(/\s+/g, ' ').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
 export function DetailTV({
   item,
   onPlay,
   onOffline,
   library,
   sources,
+  initialIndex = 0,
+  initialLine = 0,
+  onIndexChange,
 }: {
   item: MediaItem;
   onPlay: (index: number, line: number) => void;
   onOffline: (it: MediaItem) => void;
   library: ReturnType<typeof useLibrary>;
   sources: SourceConfig[];
+  initialIndex?: number;
+  initialLine?: number;
+  onIndexChange?: (index: number, line: number) => void;
 }) {
   const groups = useMemo(
     () => ((item.raw?.lineGroups as any[] | undefined) ?? [item.episodes ?? []]) as Episode[][],
     [item]
   );
-  const [line, setLine] = useState(0);
-  const [index, setIndex] = useState(0);
+  // V4.5.0 #8/#9：用大屏返回的集数/线路初始化，返回详情时接着选中的集，不回到第 1 集。
+  const [line, setLine] = useState(initialLine);
+  const [index, setIndex] = useState(initialIndex);
   const [showDesc, setShowDesc] = useState(false);
+  const [reverse, setReverse] = useState(false); // V4.5.0 #10：选集倒序
+  // V4.5.0 #13：分段区间（影视仓 1-40 / 41-…，每段 40 集）
+  const SEG = 40;
+  const [seg, setSeg] = useState(() => Math.floor(initialIndex / SEG));
   const playRef = useRef<HTMLButtonElement | null>(null);
   const descBtnRef = useRef<HTMLButtonElement | null>(null); // V4.4.3 #4：关闭简介后光标归位到「内容简介」按钮
   const descBodyRef = useRef<HTMLDivElement | null>(null); // V4.4.3 #3：简介正文滚动容器
   const miniVideoRef = useRef<HTMLVideoElement | null>(null);
   const [miniPlaying, setMiniPlaying] = useState(false);
+  const activeEpRef = useRef<HTMLDivElement | null>(null); // V4.5.0 #9：进入详情焦点落选中集
 
   const eps = groups[line] ?? groups[0] ?? [];
   const fav = library.isFavorite(item);
 
-  // 进入详情：焦点默认落在「立即播放」（清单 §3.6）
-  useEffect(() => { focusElement(playRef.current); }, [item]);
+  // V4.5.0 #8/#9：进入详情——焦点落在选中的那一集（而非播放钮）；初始 index 来自大屏返回值。
+  // 用较长延时确保网格已渲染、且 data-autofocus 弹层不抢焦点。
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      focusElement(activeEpRef.current || playRef.current);
+    }, 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, initialIndex, initialLine]);
+
+  // V4.5.0 #8：集数/线路变化时通知外壳记录，切集返回可直接续播+焦点还原。
+  useEffect(() => { onIndexChange?.(index, line); }, [index, line]);
+  // 切换影片时重置倒序/分段（沿用初始集所在分段）
+  useEffect(() => { setReverse(false); setSeg(Math.floor(initialIndex / SEG)); }, [item.id]);
 
   // V4.4.2 #12/#17：左上角小窗「真实播放」+ 无缝续播。
   //  - 带声音：先静音保证自动播放成功，play() 成功后立即取消静音（TV WebView 通常允许有声播放）。
@@ -151,13 +187,17 @@ export function DetailTV({
     else if (k === 'PageUp' || code === 92) { e.stopPropagation(); e.preventDefault(); box.scrollTop -= box.clientHeight; }
   };
 
-  const meta = [
-    item.year ? <b key="y">{item.year}</b> : null,
-    (item.raw as any)?.area ? <span key="a">{(item.raw as any).area}</span> : null,
-    (item.raw as any)?.type ? <span key="t">{(item.raw as any).type}</span> : null,
-    item.score ? <b key="r">★ {item.score}</b> : null,
-    eps.length ? <span key="e">{eps.length} 集</span> : null,
-  ].filter(Boolean);
+  // V4.5.0 #14：影视仓详情信息——来源 / 演员 / 导演 / 播放地址 / 简介（过长省略号）
+  const r = (item.raw ?? {}) as any;
+  const infoSource = rawText(item.sourceName, r.vod_from, r.source, r.source_name);
+  const infoYear = rawText(item.year, r.vod_year, r.year);
+  const infoArea = rawText(r.vod_area, r.area, (item.raw as any)?.area);
+  const infoType = rawText(r.type_name, r.vod_class, item.genre, r.type, (item.raw as any)?.type);
+  const infoRes = rawText(r.vod_resolution, r.resolution);
+  const infoActor = rawText(r.vod_actor, r.actor, r.actors, item.artist);
+  const infoDirector = rawText(r.vod_director, r.director, r.daoyan);
+  const infoPlayUrl = rawText(eps[index]?.url, item.playUrl, r.vod_play_url);
+  const infoDesc = rawText(item.desc, r.vod_content, r.vod_blurb, r.content);
 
   const { cover, name } = tvItemPoster(item);
 
@@ -188,12 +228,18 @@ export function DetailTV({
 
         <div className="tv-detail-body">
           <h1 className="tv-detail-title">{name}</h1>
-          <div className="tv-detail-meta">{meta}</div>
-          <p className={'tv-detail-desc' + (item.desc ? '' : ' empty')}>{item.desc || '暂无剧情简介。'}</p>
-          {/* 胶囊按钮：严格按 V4.4.3 UI 三色胶囊 —— 播放 / 加入收藏 / 内容简介 */}
+          {/* V4.5.0 #14：影视仓详情信息 —— 来源 / 年份 / 地区 / 类型 / 演员 / 导演 / 播放地址 / 简介 */}
+          <div className="vinfo">
+            <div className="vinfo-line"><span className="vk">来源：</span><span className="vv">{infoSource || '未知'}{infoRes ? ` | ${infoRes}` : ''}{infoYear ? `　年份：${infoYear}` : ''}{infoArea ? `　地区：${infoArea}` : ''}{infoType ? `　类型：${infoType}` : ''}</span></div>
+            {infoActor && <div className="vinfo-line"><span className="vk">演员：</span><span className="vv">{infoActor}</span></div>}
+            {infoDirector && <div className="vinfo-line"><span className="vk">导演：</span><span className="vv">{infoDirector}</span></div>}
+            {infoPlayUrl && <div className="vinfo-line"><span className="vk">播放地址：</span><span className="vv vv-ellipsis">{infoPlayUrl}</span></div>}
+            {infoDesc && <div className="vinfo-line"><span className="vk">内容简介：</span><span className="vv vv-clamp">{infoDesc}</span></div>}
+          </div>
+          {/* V4.5.0 #10：胶囊按影视仓 —— 快速搜索(改为倒序) / 加入收藏 / 内容简介（不要播放按钮） */}
           <div className="tv-pillrow">
-            <button ref={playRef} className="tv-pill p-play" data-focusable="" onClick={() => onPlay(index, line)}>
-              <Icon name="play" size={20} /> 播放
+            <button ref={playRef} className="tv-pill p-play" data-focusable="" onClick={() => setReverse((v) => !v)}>
+              <Icon name="list" size={20} /> {reverse ? '顺序' : '倒序'}
             </button>
             <button className={'tv-pill p-fav' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
               <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '加入收藏'}
@@ -205,18 +251,17 @@ export function DetailTV({
         </div>
       </div>
 
-      {/* 下排：线路 + 选集，严格按 V4.4.3 UI 的 line-row / ep-row 左标签结构 */}
+      {/* 下排：线路 + 选集。V4.5.0 #2/#13：去掉行首文字标签、框内文字垂直居中、分段区间、每行 6/4 个 */}
       <div className="dt-bottom">
         {groups.length > 1 && (
           <div className="tv-line-row dt-row">
-            <span className="rowlabel">线路</span>
             <div className="line-tabs">
               {groups.map((g, i) => (
                 <span
                   key={i}
                   className={'tv-line-pill' + (line === i ? ' active' : '')}
                   data-focusable=""
-                  onClick={() => { setLine(i); setIndex(0); }}
+                  onClick={() => { setLine(i); setIndex(0); setSeg(0); }}
                   role="button"
                 >
                   线路{i + 1}
@@ -228,24 +273,46 @@ export function DetailTV({
         )}
 
         <div className="tv-ep-row dt-row">
-          <span className="rowlabel">选集</span>
           <div className="ep-main">
-            <div className="tv-ep-grid">
-              {eps.length === 0 ? (
-                <div className="tv-empty">暂无选集</div>
-              ) : (
-                eps.map((ep, i) => (
-                  <div
-                    key={i}
-                    className={'tv-ep' + (index === i ? ' active' : '')}
+            {/* V4.5.0 #13：分段区间标签 1-40 / 41-80 …（影视仓） */}
+            {eps.length > SEG && (
+              <div className="tv-ep-segs">
+                {Array.from({ length: Math.ceil(eps.length / SEG) }, (_, s) => (
+                  <span
+                    key={s}
+                    className={'tv-ep-seg' + (seg === s ? ' active' : '')}
                     data-focusable=""
-                    onClick={() => { setIndex(i); onPlay(i, line); }}
+                    onClick={() => setSeg(s)}
                     role="button"
                   >
-                    {ep.name || `第${i + 1}集`}
+                    {s * SEG + 1}-{Math.min((s + 1) * SEG, eps.length)}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className={'tv-ep-grid' + (eps.some((e) => (e?.name || '').replace(/\D/g, '').length >= 6) ? ' long' : '')}>
+              {eps.length === 0 ? (
+                <div className="tv-empty">暂无选集</div>
+              ) : (() => {
+                // 当前分段内的全局索引列表；倒序时反转显示但保留真实 index
+                const start = seg * SEG;
+                const end = Math.min(start + SEG, eps.length);
+                const ids: number[] = [];
+                for (let i = start; i < end; i++) ids.push(i);
+                if (reverse) ids.reverse();
+                return ids.map((i) => (
+                  <div
+                    key={i}
+                    ref={index === i ? activeEpRef : undefined}
+                    className={'tv-ep' + (index === i ? ' active' : '')}
+                    data-focusable=""
+                    onClick={() => { setIndex(i); onIndexChange?.(i, line); onPlay(i, line); }}
+                    role="button"
+                  >
+                    {eps[i]?.name || `第${i + 1}集`}
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
           </div>
         </div>

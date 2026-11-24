@@ -184,6 +184,26 @@ export function VideoPlayer({
   const seekBubbleTimer = useRef<number | undefined>(undefined);
   // V4.4.6：TV 专属播放页——底部按钮条首个按钮（按 ↓ 焦点落到它）
   const tvpFirstBtnRef = useRef<HTMLButtonElement | null>(null);
+  // V4.5.0 #4/#5/#15：keydown 闭包读取最新控制层状态；功能键显示时左右键走焦点导航而非快进。
+  const controlsVisibleRef = useRef(controlsVisible);
+  const tvPauseOverlayRef = useRef(tvPauseOverlay);
+  useEffect(() => { controlsVisibleRef.current = controlsVisible; }, [controlsVisible]);
+  useEffect(() => { tvPauseOverlayRef.current = tvPauseOverlay; }, [tvPauseOverlay]);
+
+  // 移动 TV 播放页功能键焦点（循环：走到最后一个再按右键回到第一个）。
+  // 返回 true 表示本次已消费方向键（不应再快进）。
+  const moveTvButtonFocus = (dir: 1 | -1): boolean => {
+    const btns = Array.from(document.querySelectorAll<HTMLElement>('[data-tvp-btn]'))
+      .filter((b) => !b.hasAttribute('disabled') && b.offsetParent !== null);
+    if (!btns.length) return false;
+    const cur = document.activeElement as HTMLElement | null;
+    const idx = cur ? btns.indexOf(cur) : -1;
+    let next: number;
+    if (idx < 0) next = dir > 0 ? 0 : btns.length - 1;
+    else next = (idx + dir + btns.length) % btns.length;
+    focusElement(btns[next]);
+    return true;
+  };
   // 真实分辨率药丸（设计文件 [1920x804]）+ 亮度/音量手势状态
   const [resText, setResText] = useState('');
   const [brightness, setBrightness] = useState<number>(() => {
@@ -402,6 +422,15 @@ export function VideoPlayer({
   useEffect(
     () =>
       pushBackHandler(() => {
+        // V4.5.0 #15：TV 播放页——功能键显示时，返回键=隐藏功能键（不退出播放）；
+        // 功能键已隐藏时返回 false 交外层（TVShell）关闭播放器。
+        if (tvMode && controlsVisibleRef.current && !tvPauseOverlayRef.current) {
+          setControlsVisible(false);
+          if (hideTimer.current) window.clearTimeout(hideTimer.current);
+          const ae = document.activeElement as HTMLElement | null;
+          if (ae && ae.hasAttribute && ae.hasAttribute('data-tvp-btn')) { try { ae.blur(); } catch { /* ignore */ } }
+          return true;
+        }
         if (epSheetOpen) { setEpSheetOpen(false); return true; }
         if (settingsOpen) { setSettingsOpen(false); return true; }
         if (epOpen) { setEpOpen(false); return true; }
@@ -410,7 +439,7 @@ export function VideoPlayer({
         if (showSubtitleStyle) { setShowSubtitleStyle(false); return true; }
         return false;
       }),
-    [settingsOpen, epOpen, showCast, showSubStyle, showSubtitleStyle, epSheetOpen]
+    [settingsOpen, epOpen, showCast, showSubStyle, showSubtitleStyle, epSheetOpen, tvMode]
   );
 
   // 逐级返回：点播页优先退「横屏 → 竖屏」这一级，否则交还外层（VideoApp 的 closeVideo）
@@ -1249,17 +1278,34 @@ export function VideoPlayer({
       const isDown = k === 'ArrowDown' || k === 'Down' || code === 20;
       const isOk = k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || code === 13 || code === 23 || code === 66;
 
-      // V4.4.6：↑ 收起控制层（对齐 UI 原型 onRemoteKey 的 isUp）。
+      // V4.5.0：功能键显示态 = 控制层可见且非暂停海报态。
+      const shown = controlsVisibleRef.current && !tvPauseOverlayRef.current;
+      const armHide = () => {
+        if (hideTimer.current) window.clearTimeout(hideTimer.current);
+        hideTimer.current = window.setTimeout(() => {
+          setControlsVisible(false);
+          // 关键（第4问）：控制层隐藏时清除残留焦点，避免之后按 OK 误触发隐藏的按钮（如"下集"）
+          const ae = document.activeElement as HTMLElement | null;
+          if (ae && ae.hasAttribute && ae.hasAttribute('data-tvp-btn')) { try { (ae as HTMLElement).blur(); } catch { /* ignore */ } }
+        }, 3000);
+      };
+
+      // ↑ 收起控制层（第15问：返回/上键隐藏功能键）
       if (isUp) {
         e.preventDefault();
         e.stopPropagation();
         setControlsVisible(false);
         if (hideTimer.current) window.clearTimeout(hideTimer.current);
+        const ae = document.activeElement as HTMLElement | null;
+        if (ae && ae.hasAttribute && ae.hasAttribute('data-tvp-btn')) { try { ae.blur(); } catch { /* ignore */ } }
         return;
       }
       if (isLeft || isRight) {
         e.preventDefault();
         e.stopPropagation();
+        // 第5问/第15问：功能键显示时，左右键 = 移动光标（循环），不是快进。
+        if (shown && moveTvButtonFocus(isRight ? 1 : -1)) { armHide(); return; }
+        // 功能键隐藏时，左右键 = 快进/快退（保留顶部 seek-bubble 时间提示，去掉中央大黑块）。
         if (player.getState().current) {
           const target = isLeft
             ? Math.max(0, cur - STEP)
@@ -1273,45 +1319,42 @@ export function VideoPlayer({
         return;
       }
       if (isDown) {
-        // V4.4.3 #8：↓ 调出功能键控制层 + 3 秒无操作后自动全部隐藏。
-        // 若正处于 OK 暂停态，先退出暂停态再展开控制层（避免暂停海报与控制层叠加）。
+        // 第15问：↓（含暂停态）调出全部功能键 + 左上标题 + 右上时钟(TVClock 自动显)，焦点落首钮。
         e.preventDefault();
         e.stopPropagation();
         setTvPauseOverlay(false);
         setControlsVisible(true);
-        if (hideTimer.current) window.clearTimeout(hideTimer.current);
-        // 用独立 3 秒定时器：TV 暂停态下 state.isPlaying=false 会让通用 scheduleHide 直接 return，
-        // 这里不依赖它，确保「按一下下键调出、无操作 3 秒全隐藏」。
-        hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
-        // V4.4.6：按 ↓ 调出控制层后，焦点落到 TV 播放页第一个功能按钮（对齐 UI）。
+        armHide();
         window.setTimeout(() => focusElement(tvpFirstBtnRef.current), 30);
         return;
       }
       if (isOk) {
-        // V4.4.6：焦点落在 TV 播放页功能按钮上时，OK 触发该按钮，不做暂停切换。
+        // 第4问/第15问：仅当功能键显示『且』焦点确实在按钮上时，OK 触发该按钮；
+        // 否则（含控制层隐藏、暂停态）OK 恒为暂停/播放，杜绝隐藏后误跳下一集。
         const ae = document.activeElement as HTMLElement | null;
-        if (ae && ae.hasAttribute && ae.hasAttribute('data-tvp-btn')) {
+        if (shown && ae && ae.hasAttribute && ae.hasAttribute('data-tvp-btn')) {
           e.preventDefault();
           e.stopPropagation();
           ae.click();
+          armHide(); // 触发按钮后重新开始 3 秒隐藏计时
           return;
         }
-        // V4.4.3 #7：OK = 暂停/播放切换。
-        // 暂停 → 进入 TV 暂停海报态（控制栏/时间收起，只留中央暂停图标，不会自动消失）；
-        // 播放 → 退出暂停态、显示控制栏并起 3 秒隐藏。
         e.preventDefault();
         e.stopPropagation();
         const wasPlaying = player.getState().isPlaying;
         player.toggle();
         if (wasPlaying) {
+          // 暂停：进入暂停海报态，控制层/标题/时钟收起，清焦点防误触
           setTvPauseOverlay(true);
           setControlsVisible(false);
           if (hideTimer.current) window.clearTimeout(hideTimer.current);
+          const a2 = document.activeElement as HTMLElement | null;
+          if (a2 && a2.hasAttribute && a2.hasAttribute('data-tvp-btn')) { try { a2.blur(); } catch { /* ignore */ } }
         } else {
+          // 播放：退出暂停态，显示控制层并起 3 秒隐藏
           setTvPauseOverlay(false);
           setControlsVisible(true);
-          if (hideTimer.current) window.clearTimeout(hideTimer.current);
-          hideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
+          armHide();
         }
         return;
       }
@@ -1450,7 +1493,7 @@ export function VideoPlayer({
         onTouchMove={onStageTouchMove}
         onTouchEnd={onStageTouchEnd}
       >
-        <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
+        <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && resolving ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
           {/* V4.4.6：TV 大窗不渲染 poster 图片占位（对齐 UI 加载纯黑屏，只留转圈+加载中…） */}
           {!tvMode && <div className="poster" />}
           <video
@@ -1818,16 +1861,7 @@ export function VideoPlayer({
               </div>
             </div>
 
-            {/* .play-help：遥控提示 */}
-            <div className="tvp-help">遥控器：按「下」显示控制条 · 「左/右」快退/快进 · 「OK」暂停 · 跨子站同片自动续播</div>
-
-            {/* .seek-hint：快进/快退提示 */}
-            {seekBubble && (
-              <div className="tvp-seek">
-                <div className="tvp-seek-big"><span className="tvp-seek-arrow">{seekBubble.dir > 0 ? '▶▶' : '◀◀'}</span><span>{seekBubble.dir > 0 ? '+' : '-'}{seekBubble.delta}秒</span></div>
-                <div className="tvp-seek-sub">{seekBubble.dir > 0 ? '快进' : '快退'} {seekBubble.delta} 秒</div>
-              </div>
-            )}
+            {/* V4.5.0 #6/#15：去掉底部遥控器提示文字 + 中央黑色快进大图标（顶部 seek-bubble 已有时间提示） */}
 
             {/* .pause-overlay：OK 暂停态——画面定住，只留中央大暂停图标 + 提示 */}
             {tvPauseOverlay && (

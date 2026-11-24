@@ -15,6 +15,7 @@ import { requestOrientation } from '../../lib/orientation';
 import { isTV } from '../../lib/deviceMode';
 import { downloadStore } from '../../lib/downloads';
 import { toast } from '../../lib/toast';
+import { exitApp } from '../../lib/tauriBridge';
 import { prewarmSuggestIndex } from '../../lib/suggestIndex';
 import { getDeviceMode } from '../../lib/deviceMode';
 import { HomeTV } from './HomeTV';
@@ -176,8 +177,12 @@ export function TVShell({
   // 现在免责一接受（值变 true）立即补聚焦首页 tab。
   useEffect(() => {
     if (!(settings as any)?.disclaimerAccepted) return;
-    const t = window.setTimeout(() => focusElement(homeTabRef.current), 140);
-    return () => window.clearTimeout(t);
+    // V4.5.1 #3：老 WebView 首次渲染焦点未就位/被回收，单次 140ms 常常落空——
+    // 多次重试把「焦点光标」钉在首页 tab 上（与免责按钮同源的成熟做法）。
+    const timers = [140, 300, 600, 1000].map((ms) =>
+      window.setTimeout(() => focusElement(homeTabRef.current), ms)
+    );
+    return () => timers.forEach((t) => window.clearTimeout(t));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [(settings as any)?.disclaimerAccepted]);
 
@@ -235,7 +240,10 @@ export function TVShell({
       if (s.remotePush) { setRemotePush(null); return false; }
       if (s.searchQuery) { leaveSearch(); return false; }
       if (s.navTab !== 'home') { returnHome(); return false; }
-      return homeBack(); // V4.5.0 #20：首页双击退出
+      // V4.5.1：首页双击退出统一走 exitApp（原生 finishAffinity / 桌面窗口 close）。
+      const shouldExit = homeBack();
+      if (shouldExit) exitApp();
+      return false; // 已消费：退出由 exitApp 完成，不再交原生 super 避免双退
     };
     return () => { delete (window as any).__onAndroidBack; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,10 +276,9 @@ export function TVShell({
         if (s.remotePush) { setRemotePush(null); return true; }
         if (s.searchQuery) { leaveSearch(); return true; }
         if (s.navTab !== 'home') { returnHome(); return true; }
-        // V4.5.0 #20：首页双击退出（键盘返回路径）。首次弹提示并消费；第二次关闭窗口退出。
-        if (homeBack()) {
-          import('@tauri-apps/api/window').then((m) => m.getCurrentWindow().close().catch(() => {})).catch(() => {});
-        }
+        // V4.5.1：首页双击退出（键盘/返回栈路径）。首次弹提示并消费；第二次调 exitApp 真正退出。
+        // exitApp 内部走原生桥 finishAffinity（Android）/ 窗口 close（桌面），替代无效的 window.close()。
+        if (homeBack()) exitApp();
         return true;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -424,18 +431,21 @@ export function TVShell({
       )}
 
       <div className="tv-main">
-        {!playing && detail && (
-          // V4.4.2 #17：从小窗进全屏时传 resume=true，播放页从 watchProgress 读同一进度续播，与小窗无缝衔接。
-          <DetailTV
-            item={detail}
-            onPlay={(i, l) => playEpisode(detail, i, l, true)}
-            onOffline={handleOffline}
-            library={library}
-            sources={sources}
-            initialIndex={detailIndex}
-            initialLine={detailLine}
-            onIndexChange={(i, l) => { setDetailIndex(i); setDetailLine(l); }}
-          />
+        {/* V4.5.1 方案 C：详情页在进大屏时保持挂载（仅隐藏），小窗 <video> 被 VideoPlayer 搬去全屏复用，
+            返回时搬回——全程同一节点、播放不中断。若卸载则 video 销毁，大屏只能重新加载。 */}
+        {detail && (
+          <div style={{ height: '100%', display: playing ? 'none' : 'block' }}>
+            <DetailTV
+              item={detail}
+              onPlay={(i, l) => playEpisode(detail, i, l, true)}
+              onOffline={handleOffline}
+              library={library}
+              sources={sources}
+              initialIndex={detailIndex}
+              initialLine={detailLine}
+              onIndexChange={(i, l) => { setDetailIndex(i); setDetailLine(l); }}
+            />
+          </div>
         )}
 
         {!playing && !detail && navTab === 'home' && <HomeTV onSearch={goSearch} />}

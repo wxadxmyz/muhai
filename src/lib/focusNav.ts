@@ -93,9 +93,14 @@ function focusEl(el: HTMLElement) {
   } catch {
     /* 某些环境 focus 抛错，忽略 */
   }
-  // 电视无滚轮：方向键移动焦点时自动把焦点项滚入可视区（block/inline 就近即可）。
+  // V4.5.1 #11：光标反应慢优化——先判断是否已在可视区，在视口内就不触发 scrollIntoView，
+  // 避免每次方向键都强制同步布局（老电视 WebView 上这是主要卡顿源）。
   try {
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const r = el.getBoundingClientRect();
+    const inView = r.top >= 0 && r.left >= 0 &&
+      r.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+      r.right <= (window.innerWidth || document.documentElement.clientWidth);
+    if (!inView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   } catch {
     /* ignore */
   }
@@ -152,10 +157,11 @@ function scrollScope(dir: Dir, scope: HTMLElement) {
     null;
   if (!scroller) return;
   const step = Math.max(120, scroller.clientHeight * 0.8);
-  if (dir === 'down') scroller.scrollBy({ top: step, behavior: 'smooth' });
-  else if (dir === 'up') scroller.scrollBy({ top: -step, behavior: 'smooth' });
-  else if (dir === 'right') scroller.scrollBy({ left: step, behavior: 'smooth' });
-  else if (dir === 'left') scroller.scrollBy({ left: -step, behavior: 'smooth' });
+  // V4.5.1 #11：smooth 滚动在老电视 WebView 上拖慢光标反馈，改瞬时。
+  if (dir === 'down') scroller.scrollBy({ top: step, behavior: 'auto' });
+  else if (dir === 'up') scroller.scrollBy({ top: -step, behavior: 'auto' });
+  else if (dir === 'right') scroller.scrollBy({ left: step, behavior: 'auto' });
+  else if (dir === 'left') scroller.scrollBy({ left: -step, behavior: 'auto' });
 }
 
 function activeFocusable(): HTMLElement | null {

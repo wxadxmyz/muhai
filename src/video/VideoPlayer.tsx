@@ -21,6 +21,7 @@ import { useSources } from '../store';
 import { crossSourceCover, cachedCrossCover, tryCoverFallback } from '../lib/crossCover';
 import { pushBackHandler } from '../lib/backStack';
 import { useBuffering } from './hooks/useBuffering';
+import { getMiniVideo } from './tv/miniVideoBus';
 
 // V3.3.6 八·二：子站无 logo 时的六边形兜底图案（白色描边六边形 + 源名 hash 固定配色，同源同色）
 const SUBSITE_PALETTE: [string, string][] = [
@@ -150,8 +151,11 @@ export function VideoPlayer({
   const updateSettings = updateSettingsGlobal;
   const state = usePlayer();
   const { ensureResolved } = useMediaResolver(sources);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  // V4.5.1 方案 C：TV 大屏复用详情小窗的同一个 <video> DOM 节点
+  const screenRef = useRef<HTMLDivElement>(null);
+  const borrowedMiniRef = useRef<{ video: HTMLVideoElement; slot: HTMLElement } | null>(null);
   const [speed, setSpeed] = useState(settings.playbackRate || 1);
   const [collapsed, setCollapsed] = useState(false);
   const [showCast, setShowCast] = useState(false);
@@ -224,6 +228,8 @@ export function VideoPlayer({
   // V4.3.9：电视端进入播放即强制横屏全屏（landscape=true），不走手机版竖屏 UI。
   // 手机/平板保持原逻辑（初始竖屏，需手动点横屏）。
   const tvMode = getDeviceMode() === 'tv';
+  // V4.5.1 方案 C：当前集 key，用于确认详情小窗的 video 是否为同一集可复用
+  const tvEpKey = `${detail.sourceId}:${detail.id}:${episodeIndex}`;
   const [landscape, setLandscape] = useState(() => getDeviceMode() === 'tv');
   const [clock, setClock] = useState('');
   // 进度条真实镜像：直接读 <video>.currentTime/duration，不依赖 store 阈值（避免 HLS 下"假进度条"）
@@ -485,12 +491,53 @@ export function VideoPlayer({
       const sv = (window as any).MuHaiAndroid?.getVolume?.();
       if (typeof sv === 'number' && !isNaN(sv)) { player.setVolume(sv); }
     } catch { /* ignore */ }
-    return () => { detachHls(videoRef.current); player.attachVideo(null); };
+    return () => {
+      // V4.5.1 方案 C：借用小窗 video 时不 detach（流归小窗所有，返回后要继续播），
+      // 也不 attachVideo(null)——归还由加载 effect 的 cleanup 统一处理。
+      if (borrowedMiniRef.current) return;
+      detachHls(videoRef.current);
+      player.attachVideo(null);
+    };
   }, []);
 
   // 切换剧集/线路：解析并加载
   useEffect(() => {
     if (!state.current) return;
+
+    // ===== V4.5.1 方案 C：TV 大屏直接复用详情小窗已播放的 <video>（同一 DOM 节点，零重新加载）=====
+    const shared = tvMode ? getMiniVideo() : null;
+    if (shared && shared.key === tvEpKey && shared.video.isConnected) {
+      const v = shared.video;
+      const screen = screenRef.current;
+      if (screen) {
+        // 搬进大屏舞台：原生 appendChild，不经过 React，播放/缓冲/HLS 实例全部保留
+        borrowedMiniRef.current = { video: v, slot: shared.slot };
+        screen.appendChild(v);
+        v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1;z-index:1;background:#000;';
+        v.muted = false;
+        v.volume = 1;
+        videoRef.current = v;
+        player.attachVideo(v);
+        try { void v.play(); } catch { /* ignore */ }
+        setResolving(false);
+        setErr(null);
+        // 同步已播进度到 player store，进度条立即到位
+        try {
+          player.setProgress(v.currentTime || 0);
+          if (v.duration > 0) player.setDuration(v.duration);
+        } catch { /* ignore */ }
+      }
+      return () => {
+        // 返回详情：把同一个 video 搬回小窗原容器，继续播（不 detachHls、不 pause）
+        const b = borrowedMiniRef.current;
+        if (b) {
+          try { b.video.style.cssText = ''; b.slot.appendChild(b.video); } catch { /* ignore */ }
+          borrowedMiniRef.current = null;
+        }
+        player.attachVideo(null);
+      };
+    }
+
     let alive = true;
     // V3.3.0 #5：无播放地址（点击搜索结果立即进页、详情后台补齐中）→ 保持「解析中」转圈。
     // V3.3.1 Q3：死锁修复——旧代码在这里「转圈 → 直接 return」，而负责把地址解析出来的
@@ -597,7 +644,13 @@ export function VideoPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.isPlaying]);
 
-  useEffect(() => { if (videoRef.current) videoRef.current.volume = state.muted ? 0 : state.volume; }, [state.volume, state.muted]);
+  // V4.5.1 #4：TV 端音量统一交给系统媒体音量键，video.volume 恒为 1（与详情小窗一致）；
+  // 非 TV 端（手机/桌面）继续用播放器内的音量倍率。避免「小窗声大、进大屏声小」。
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (tvMode) { videoRef.current.volume = 1; videoRef.current.muted = false; }
+    else videoRef.current.volume = state.muted ? 0 : state.volume;
+  }, [state.volume, state.muted, tvMode]);
   useEffect(() => { if (videoRef.current) videoRef.current.playbackRate = speed; }, [speed]);
   useEffect(() => { updateSettings({ playbackRate: speed }); }, [speed]);
   useEffect(() => { setLocalCues([]); }, [detail.id, episodeIndex]);
@@ -1493,13 +1546,14 @@ export function VideoPlayer({
         onTouchMove={onStageTouchMove}
         onTouchEnd={onStageTouchEnd}
       >
-        <div className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && resolving ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
+        <div ref={screenRef} className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && resolving ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
           {/* V4.4.6：TV 大窗不渲染 poster 图片占位（对齐 UI 加载纯黑屏，只留转圈+加载中…） */}
           {!tvMode && <div className="poster" />}
           <video
             key={`${detail?.id}-${episodeIndex}`}
-            ref={videoRef}
-            style={videoStyle}
+            // V4.5.1 方案 C：TV 模式若已借用小窗 video，不让 React 把 ref 覆盖回这个占位元素
+            ref={(el) => { if (!tvMode || !borrowedMiniRef.current) videoRef.current = el; }}
+            style={tvMode && borrowedMiniRef.current ? { display: 'none' } : videoStyle}
             controls={false}
             onClick={onStageClick}
             // N5：暂停时立刻补写一次进度（不然要等满 5 秒才落盘）

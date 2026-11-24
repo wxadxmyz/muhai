@@ -1214,13 +1214,20 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .disclaimer-tv .disclaimer-body { font-size: 21px; line-height: 1.9; color: var(--text); }
 .disclaimer-tv .disclaimer-body p { margin: 0 0 16px; }
 .disclaimer-tv-hint { font-size: 18px; color: var(--muted); margin: 26px 0 20px; }
+/* V4.5.1 #1：退出 / 同意 双按钮并排（焦点默认落「同意」） */
+.disclaimer-tv-actions { display: flex; gap: 20px; }
 .disclaimer-tv-btn {
-  display: block; width: 100%; box-sizing: border-box;
+  display: block; flex: 1 1 0; box-sizing: border-box;
   padding: 22px 28px; font-family: inherit; font-size: 26px; font-weight: 700;
   color: #fff; cursor: pointer;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   border: 3px solid transparent; border-radius: 18px;
   transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+/* 退出按钮：中性深灰描边，与主题色「同意」区分，避免误按 */
+.disclaimer-tv-btn.exit {
+  background: linear-gradient(135deg, #3a4152, #262b38);
+  border-color: rgba(255, 255, 255, .28);
 }
 .disclaimer-tv-btn:focus,
 .disclaimer-tv-btn[data-focusable]:focus {

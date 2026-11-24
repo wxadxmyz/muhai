@@ -16,6 +16,27 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+/**
+ * V4.5.1：真正退出应用（免责「退出」按钮 / 首页双击返回统一入口）。
+ * Android WebView 里 window.close() / Tauri 的 getCurrentWindow().close() 都不一定真正杀进程，
+ * 唯一的可靠通道是原生桥 finishAffinity()（见 android.yml 注入的 MuHaiAndroid.exit）。
+ * 桌面 Tauri 走窗口 close()；纯网页原型兜底 window.close()。
+ */
+export function exitApp(): void {
+  try {
+    const bridge = (window as any).MuHaiAndroid;
+    if (bridge && typeof bridge.exit === 'function') {
+      bridge.exit();
+      return;
+    }
+  } catch { /* ignore */ }
+  if (isTauri()) {
+    try { void getCurrentWindow().close(); } catch { /* ignore */ }
+    return;
+  }
+  try { window.close(); } catch { /* ignore */ }
+}
+
 export type DownloadResult = { ok: boolean; path?: string; error?: string };
 
 /**

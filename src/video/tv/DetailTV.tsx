@@ -10,6 +10,8 @@ import { pushBackHandler } from '../../lib/backStack';
 import { tvItemPoster } from './common';
 import { resolvePlay } from '../../player';
 import { attachHlsWithBackend, detachHls } from '../../lib/hlsPlayer';
+import { player } from '../../lib/playerStore';
+import { registerMiniVideo, clearMiniVideo, getMiniVideo } from './miniVideoBus';
 
 // V4.5.0：从 raw（CMS 原始字段）宽松提取影视仓详情页信息
 function rawText(...vals: any[]): string {
@@ -51,18 +53,24 @@ export function DetailTV({
   const [index, setIndex] = useState(initialIndex);
   const [showDesc, setShowDesc] = useState(false);
   const [reverse, setReverse] = useState(false); // V4.5.0 #10：选集倒序
-  // V4.5.0 #13：分段区间（影视仓 1-40 / 41-…，每段 40 集）
-  const SEG = 40;
-  const [seg, setSeg] = useState(() => Math.floor(initialIndex / SEG));
   const playRef = useRef<HTMLButtonElement | null>(null);
   const descBtnRef = useRef<HTMLButtonElement | null>(null); // V4.4.3 #4：关闭简介后光标归位到「内容简介」按钮
   const descBodyRef = useRef<HTMLDivElement | null>(null); // V4.4.3 #3：简介正文滚动容器
   const miniVideoRef = useRef<HTMLVideoElement | null>(null);
+  const miniSlotRef = useRef<HTMLDivElement | null>(null); // V4.5.1 方案 C：小窗 video 的原始容器（大屏归还用）
   const [miniPlaying, setMiniPlaying] = useState(false);
+  // V4.5.1 #7：小窗加载期间纯黑 +「正在加载中」，不再先显示封面、再突然出画/出声。
+  const [miniLoading, setMiniLoading] = useState(true);
   const activeEpRef = useRef<HTMLDivElement | null>(null); // V4.5.0 #9：进入详情焦点落选中集
 
   const eps = groups[line] ?? groups[0] ?? [];
   const fav = library.isFavorite(item);
+
+  // V4.5.1 #6：分段容量随列数联动——选集短名一行 6 个则每段 42，长名一行 4 个则每段 40，
+  // 保证每段正好铺满整数行。long 判定与下方网格 class 用同一结果。
+  const epLong = eps.some((e) => (e?.name || '').replace(/\D/g, '').length >= 6);
+  const SEG = epLong ? 40 : 42;
+  const [seg, setSeg] = useState(() => Math.floor(initialIndex / (epLong ? 40 : 42)));
 
   // V4.5.0 #8/#9：进入详情——焦点落在选中的那一集（而非播放钮）；初始 index 来自大屏返回值。
   // 用较长延时确保网格已渲染、且 data-autofocus 弹层不抢焦点。
@@ -88,10 +96,13 @@ export function DetailTV({
   useEffect(() => {
     const v = miniVideoRef.current;
     if (!v) return;
+    // V4.5.1 方案 C：把小窗 video  expose 给大屏播放器复用（同一 DOM 节点，零重新加载）
+    if (miniSlotRef.current) registerMiniVideo({ video: v, slot: miniSlotRef.current, key: resumeKey });
     let alive = true;
     let timeUpdateHandler: (() => void) | null = null;
     let lastSave = 0;
     setMiniPlaying(false);
+    setMiniLoading(true); // V4.5.1 #7：切集/进详情先回到黑屏加载态
     (async () => {
       try {
         const ep = eps[index];
@@ -128,12 +139,17 @@ export function DetailTV({
         } catch { /* ignore */ }
         try {
           await v.play();
-          if (alive) setMiniPlaying(true);
-          // V4.4.2 #12：起播成功后取消静音，小窗带声音
-          try { v.muted = false; } catch { /* ignore */ }
-        } catch { /* 自动播放被拦则停在封面 */ }
+          if (alive) { setMiniPlaying(true); setMiniLoading(false); }
+          // V4.5.1 #4：小窗与大屏音量统一交给系统媒体音量——两端 video 固定 volume=1、只切静音。
+          try { v.volume = 1; v.muted = false; } catch { /* ignore */ }
+        } catch { /* 自动播放被拦则停在黑屏加载态 */ }
         // V4.4.2 #17：播放中节流写回进度（5 秒一次），供进全屏/返回时无缝衔接
         timeUpdateHandler = () => {
+          // V4.5.1 方案 C：共用 video 时，大屏进度条/时钟依赖 player store，实时同步（不受 5 秒节流限制）
+          try {
+            player.setProgress(v.currentTime);
+            if (v.duration > 0) player.setDuration(v.duration);
+          } catch { /* ignore */ }
           const now = Date.now();
           if (!alive || now - lastSave < 5000) return;
           const t = v.currentTime;
@@ -207,6 +223,7 @@ export function DetailTV({
       <div className="dt-top">
         {/* 播放小窗口（封面做底 + 中央播放按钮，点整窗即播） */}
         <div
+          ref={miniSlotRef}
           className="tv-detail-player"
           data-focusable=""
           onClick={() => onPlay(index, line)}
@@ -221,6 +238,13 @@ export function DetailTV({
             className={'tv-detail-mini-video' + (miniPlaying ? ' on' : '')}
             muted playsInline loop preload="metadata"
           />
+          {/* V4.5.1 #7：加载期间纯黑遮罩盖住封面 + 转圈 +「正在加载中」，起播成功后淡出 */}
+          {miniLoading && (
+            <div className="mini-loading">
+              <span className="vp-spinner" />
+              <span>正在加载中…</span>
+            </div>
+          )}
           <div className="dshade" />
           <div className="dplay"><Icon name="play" size={38} /></div>
           {/* V4.4.5 #8：去掉「XX·立即播放」文字标签，让播放画面本身成为焦点高亮（文字会抢视觉焦点） */}
@@ -290,7 +314,7 @@ export function DetailTV({
                 ))}
               </div>
             )}
-            <div className={'tv-ep-grid' + (eps.some((e) => (e?.name || '').replace(/\D/g, '').length >= 6) ? ' long' : '')}>
+            <div className={'tv-ep-grid' + (epLong ? ' long' : '')}>
               {eps.length === 0 ? (
                 <div className="tv-empty">暂无选集</div>
               ) : (() => {

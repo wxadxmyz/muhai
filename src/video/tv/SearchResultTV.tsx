@@ -106,7 +106,7 @@ export function SearchResultTV({
           onFocus={() => setActiveSource(ALL_KEY)}
           onClick={() => setActiveSource(ALL_KEY)} role="button"
         >
-          <span>全部</span>
+          <span className="nm" title="全部">全部</span>
           <span className="cnt">{items.length}</span>
         </div>
         {expanded
@@ -123,7 +123,7 @@ export function SearchResultTV({
                 onClick={() => setActiveSource(s.id)}
                 role="button"
               >
-                <span>{s.name}</span>
+                <span className="nm" title={s.name}>{s.name}</span>
                 <span className="cnt">{st.kind === 'ok' ? st.count : 0}</span>
               </div>
             );

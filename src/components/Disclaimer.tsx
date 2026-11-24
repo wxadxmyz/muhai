@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSettings } from '../lib/settings';
 import { isTV } from '../lib/deviceMode';
-import { focusElement } from '../lib/focusNav';
+import { focusElement, isTvConfirmKey } from '../lib/focusNav';
+import { exitApp } from '../lib/tauriBridge';
 
 // 首次启动免责声明。文案为自行撰写，不照搬任何第三方应用。
 //
@@ -12,7 +13,8 @@ import { focusElement } from '../lib/focusNav';
 export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   const { settings, update } = useSettings();
   const [checked, setChecked] = useState(false);
-  const tvBtnRef = useRef<HTMLButtonElement | null>(null);
+  const exitRef = useRef<HTMLButtonElement | null>(null);
+  const agreeRef = useRef<HTMLButtonElement | null>(null);
   const tv = isTV();
   // V4.4.6：电视端免责说明 5 秒自动倒计时，归零自动同意并进入——
   // 用户不必再「先按下键、再按确定」。倒计时仅为提示，任意键/点击仍可立即进入。
@@ -25,7 +27,7 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   useEffect(() => {
     if (!tv || settings.disclaimerAccepted) return;
     const timers = [60, 200, 500].map((ms) =>
-      window.setTimeout(() => focusElement(tvBtnRef.current), ms)
+      window.setTimeout(() => focusElement(agreeRef.current), ms)
     );
     return () => timers.forEach((t) => window.clearTimeout(t));
   }, [tv, settings.disclaimerAccepted]);
@@ -47,24 +49,29 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tv, settings.disclaimerAccepted]);
 
-  // V4.3.1：独立 OK/Enter 监听，不依赖焦点系统。
-  // 部分电视盒子 WebView 的自动聚焦不可靠（焦点框不出现、按钮未成为 activeElement），
-  // 导致 focusNav 的「按钮必须是 activeElement 才点击」判定失效、遥控器 OK 失灵、卡在免责声明进不去。
-  // 这里直接在免责声明显示期间捕获 Enter/OK/Select，绕过焦点，保证一定能进入。
-  // 用 window 捕获阶段 + stopPropagation，确保先于此处的 focusNav(document 捕获) 处理，避免重复触发。
+  // V4.5.1 #1：免责改为「退出 / 同意」双按钮后，不再「任意键即进入」。
+  // 方向键交给 focusNav 在两个按钮间移动焦点；OK/Enter 只触发当前聚焦的按钮。
+  // 仅需一个 window 捕获阶段兜底：部分老 WebView 首次 OK 时 activeElement 还停在 body，
+  // focusNav 的 activeElement 判定失效——此时把焦点补到默认「同意」按钮并点击。
+  // 用 isTvConfirmKey 统一识别 OK（含 keyCode 13/23/66，覆盖盒子误报），返回键不在此列。
   useEffect(() => {
     if (settings.disclaimerAccepted) return;
     const onKey = (e: KeyboardEvent) => {
-      const k = e.key;
-      // V4.4.2 #1：进一步放宽 —— 部分电视盒子把遥控器 OK 键上报成带方向语义的键值
-      // （key==='Down'/keyCode 方向值），旧逻辑把方向键排除，导致第一次按 OK 被当成方向键忽略、
-      // 必须先按↓再按 OK 才能进入。免责页只有一个按钮，方向键毫无意义，
-      // 因此这里只放行明确的「返回键」，其余任意键（含被误报成方向键的 OK）一律 accept()。
-      const isBack = k === 'Backspace' || k === 'Escape' || k === 'GoBack' || k === 'BrowserBack' || k === 'Back' || k === 'Go back' || (e as any).keyCode === 4 || (e as any).keyCode === 27;
-      if (isBack) return;
+      const isBack = e.key === 'Backspace' || e.key === 'Escape' || e.key === 'GoBack' ||
+        e.key === 'BrowserBack' || e.key === 'Back' || e.key === 'Go back' ||
+        (e as any).keyCode === 4 || (e as any).keyCode === 27;
+      if (isBack) return; // 返回键不处理，交给系统/其他层
+      if (!isTvConfirmKey(e as any)) return; // 方向键等交给 focusNav 移动焦点
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && ae.hasAttribute && ae.hasAttribute('data-disclaimer-btn')) {
+        // 焦点已在某个按钮上：交给 focusNav 正常 click，这里不重复处理
+        return;
+      }
+      // 焦点未就位：补到默认「同意」按钮并点击
       e.preventDefault();
       e.stopPropagation();
-      accept();
+      const target = agreeRef.current || exitRef.current;
+      if (target) { focusElement(target); target.click(); }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
@@ -96,30 +103,37 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     </>
   );
 
+  // V4.5.1 #1：双按钮后去掉 data-ok-once-root——focusNav 的「首次 OK 强制点 autofocus」兜底
+  // 会在焦点已落在「退出」上时误点「同意」。OK 统一由本组件 window 捕获监听 + focusNav 正常 click 处理。
   if (tv) {
     return (
-      <div className="disclaimer-mask disclaimer-tv" data-focus-root data-ok-once-root>
+      <div className="disclaimer-mask disclaimer-tv" data-focus-root>
         <div className="disclaimer-card">
           <div className="disclaimer-tv-logo">幕海 MuHai</div>
           <h2>免责声明</h2>
           <div className="disclaimer-body">{body}</div>
-          <p className="disclaimer-tv-hint">{countdown > 0 ? `${countdown} 秒后自动进入，或点击下方按钮立即进入。` : '正在进入…'}</p>
-          <button
-            ref={tvBtnRef}
-            className="disclaimer-tv-btn"
-            data-focusable=""
-            data-autofocus=""
-            onClick={accept}
-            onKeyDown={(e) => {
-              const c = (e as any).keyCode || 0;
-              if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23) {
-                e.preventDefault();
-                accept();
-              }
-            }}
-          >
-            一键同意并进入（{countdown > 0 ? `${countdown}s` : '进入中'}）
-          </button>
+          <p className="disclaimer-tv-hint">{countdown > 0 ? `${countdown} 秒后自动同意并进入，或按「同意」立即进入。` : '正在进入…'}</p>
+          <div className="disclaimer-tv-actions">
+            <button
+              ref={exitRef}
+              className="disclaimer-tv-btn exit"
+              data-focusable=""
+              data-disclaimer-btn=""
+              onClick={exitApp}
+            >
+              退出
+            </button>
+            <button
+              ref={agreeRef}
+              className="disclaimer-tv-btn agree"
+              data-focusable=""
+              data-autofocus=""
+              data-disclaimer-btn=""
+              onClick={accept}
+            >
+              同意并进入（{countdown > 0 ? `${countdown}s` : '进入中'}）
+            </button>
+          </div>
         </div>
       </div>
     );

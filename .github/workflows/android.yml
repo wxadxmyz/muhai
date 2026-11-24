@@ -316,6 +316,15 @@ jobs:
               val MuHaiAndroid = object {
                   @android.webkit.JavascriptInterface
                   fun isBound(): Boolean = _muhaiBound && _muhaiBoundView?.get() != null
+                  // V4.5.1：真正退出应用（免责「退出」按钮 / 首页双击返回）。
+                  // window.close() 与 Tauri 的 getCurrentWindow().close() 在 Android WebView 上都不杀进程，
+                  // finishAffinity() 结束整个 task，是遥控器「退出」唯一可靠通道。
+                  @android.webkit.JavascriptInterface
+                  fun exit() {
+                      runOnUiThread {
+                          try { finishAffinity() } catch (e: Exception) { try { finish() } catch (e2: Exception) {} }
+                      }
+                  }
                   @android.webkit.JavascriptInterface
                   fun setOrientation(orientation: String) {
                       runOnUiThread {

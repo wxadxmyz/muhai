@@ -98,8 +98,12 @@ export function SearchResultTV({
 
   return (
     <div className="tv-result">
+      {/* V4.5.2 #2：统计条提到结果页顶层、左对齐与源栏同起点（原来在 grid 内偏右） */}
+      <div className="tv-result-summary">
+        {loading ? '跨源搜索中…' : `共 ${visibleItems.length} 部`}
+        {activeSource === ALL_KEY && !loading ? ` · 来自 ${okSourceCount} 个源` : ''}
+      </div>
       <div className="tv-result-srcs">
-        <div className="src-title">影视源</div>
         <div
           ref={allRef}
           className="tv-result-src active" data-focusable="" data-autofocus=""
@@ -107,13 +111,11 @@ export function SearchResultTV({
           onClick={() => setActiveSource(ALL_KEY)} role="button"
         >
           <span className="nm" title="全部">全部</span>
-          <span className="cnt">{items.length}</span>
         </div>
         {expanded
           .filter((s) => !loading || sourceState.get(s.id)?.kind === 'ok')
           .filter((s) => sourceState.get(s.id)?.kind === 'ok')
           .map((s) => {
-            const st = sourceState.get(s.id)!;
             return (
               <div
                 key={s.id}
@@ -124,17 +126,12 @@ export function SearchResultTV({
                 role="button"
               >
                 <span className="nm" title={s.name}>{s.name}</span>
-                <span className="cnt">{st.kind === 'ok' ? st.count : 0}</span>
               </div>
             );
           })}
       </div>
 
       <div className="tv-result-grid">
-        <div className="tv-result-summary">
-          {loading ? '跨源搜索中…' : `共 ${visibleItems.length} 部`}
-          {activeSource === ALL_KEY && !loading ? ` · 来自 ${okSourceCount} 个源` : ''}
-        </div>
         {visibleItems.length === 0 && !loading ? (
           <div className="tv-empty">没有找到结果，换个关键词或检查影视源。</div>
         ) : (

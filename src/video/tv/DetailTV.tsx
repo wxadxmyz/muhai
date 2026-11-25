@@ -62,6 +62,7 @@ export function DetailTV({
   // V4.5.1 #7：小窗加载期间纯黑 +「正在加载中」，不再先显示封面、再突然出画/出声。
   const [miniLoading, setMiniLoading] = useState(true);
   const activeEpRef = useRef<HTMLDivElement | null>(null); // V4.5.0 #9：进入详情焦点落选中集
+  const epScrollRef = useRef<HTMLDivElement | null>(null); // V4.5.2 #10：选集独立滚动容器
 
   const eps = groups[line] ?? groups[0] ?? [];
   const fav = library.isFavorite(item);
@@ -72,11 +73,18 @@ export function DetailTV({
   const SEG = epLong ? 40 : 42;
   const [seg, setSeg] = useState(() => Math.floor(initialIndex / (epLong ? 40 : 42)));
 
-  // V4.5.0 #8/#9：进入详情——焦点落在选中的那一集（而非播放钮）；初始 index 来自大屏返回值。
-  // 用较长延时确保网格已渲染、且 data-autofocus 弹层不抢焦点。
+  // V4.5.0 #8/#9 + V4.5.2 #10：进入详情——焦点落在选中那一集，并把它滚到选集滚动区靠上第二行
+  // （大屏切回小屏时当前集若在底部，也能显示在靠上位置）。用较长延时确保网格已渲染、弹层不抢焦点。
   useEffect(() => {
     const t = window.setTimeout(() => {
-      focusElement(activeEpRef.current || playRef.current);
+      const ep = activeEpRef.current;
+      focusElement(ep || playRef.current);
+      if (ep && epScrollRef.current) {
+        const box = epScrollRef.current;
+        // 让当前集处于视口靠上位置（顶部留一行，即「第二行」）
+        const top = ep.offsetTop - 58 - 9; // 58=行高, 9=gap；往上让一行
+        box.scrollTop = Math.max(0, top);
+      }
     }, 120);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,7 +226,7 @@ export function DetailTV({
   const { cover, name } = tvItemPoster(item);
 
   return (
-    <div className="tv-detail" data-scroll>
+    <div className="tv-detail">
       {/* V4.4.1：上排 = 播放小窗 + 片名/信息/胶囊；下排 = 线路 + 选集（按 UI 定稿移到播放窗与简介下方） */}
       <div className="dt-top">
         {/* 播放小窗口（封面做底 + 中央播放按钮，点整窗即播） */}
@@ -275,8 +283,8 @@ export function DetailTV({
         </div>
       </div>
 
-      {/* 下排：线路 + 选集。V4.5.0 #2/#13：去掉行首文字标签、框内文字垂直居中、分段区间、每行 6/4 个 */}
-      <div className="dt-bottom">
+      {/* V4.5.2 #10：上固定区（线路 + 分段）不滚动；下独立滚动区只放选集网格 */}
+      <div className="dt-fixed">
         {groups.length > 1 && (
           <div className="tv-line-row dt-row">
             <div className="line-tabs">
@@ -295,50 +303,48 @@ export function DetailTV({
             </div>
           </div>
         )}
-
-        <div className="tv-ep-row dt-row">
-          <div className="ep-main">
-            {/* V4.5.0 #13：分段区间标签 1-40 / 41-80 …（影视仓） */}
-            {eps.length > SEG && (
-              <div className="tv-ep-segs">
-                {Array.from({ length: Math.ceil(eps.length / SEG) }, (_, s) => (
-                  <span
-                    key={s}
-                    className={'tv-ep-seg' + (seg === s ? ' active' : '')}
-                    data-focusable=""
-                    onClick={() => setSeg(s)}
-                    role="button"
-                  >
-                    {s * SEG + 1}-{Math.min((s + 1) * SEG, eps.length)}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className={'tv-ep-grid' + (epLong ? ' long' : '')}>
-              {eps.length === 0 ? (
-                <div className="tv-empty">暂无选集</div>
-              ) : (() => {
-                // 当前分段内的全局索引列表；倒序时反转显示但保留真实 index
-                const start = seg * SEG;
-                const end = Math.min(start + SEG, eps.length);
-                const ids: number[] = [];
-                for (let i = start; i < end; i++) ids.push(i);
-                if (reverse) ids.reverse();
-                return ids.map((i) => (
-                  <div
-                    key={i}
-                    ref={index === i ? activeEpRef : undefined}
-                    className={'tv-ep' + (index === i ? ' active' : '')}
-                    data-focusable=""
-                    onClick={() => { setIndex(i); onIndexChange?.(i, line); onPlay(i, line); }}
-                    role="button"
-                  >
-                    {eps[i]?.name || `第${i + 1}集`}
-                  </div>
-                ));
-              })()}
-            </div>
+        {/* V4.5.0 #13：分段区间标签 1-40 / 41-80 …（影视仓） */}
+        {eps.length > SEG && (
+          <div className="tv-ep-segs">
+            {Array.from({ length: Math.ceil(eps.length / SEG) }, (_, s) => (
+              <span
+                key={s}
+                className={'tv-ep-seg' + (seg === s ? ' active' : '')}
+                data-focusable=""
+                onClick={() => setSeg(s)}
+                role="button"
+              >
+                {s * SEG + 1}-{Math.min((s + 1) * SEG, eps.length)}
+              </span>
+            ))}
           </div>
+        )}
+      </div>
+
+      <div className="dt-ep-scroll" ref={epScrollRef} data-scroll>
+        <div className={'tv-ep-grid' + (epLong ? ' long' : '')}>
+          {eps.length === 0 ? (
+            <div className="tv-empty">暂无选集</div>
+          ) : (() => {
+            // 当前分段内的全局索引列表；倒序时反转显示但保留真实 index
+            const start = seg * SEG;
+            const end = Math.min(start + SEG, eps.length);
+            const ids: number[] = [];
+            for (let i = start; i < end; i++) ids.push(i);
+            if (reverse) ids.reverse();
+            return ids.map((i) => (
+              <div
+                key={i}
+                ref={index === i ? activeEpRef : undefined}
+                className={'tv-ep' + (index === i ? ' active' : '')}
+                data-focusable=""
+                onClick={() => { setIndex(i); onIndexChange?.(i, line); onPlay(i, line); }}
+                role="button"
+              >
+                {eps[i]?.name || `第${i + 1}集`}
+              </div>
+            ));
+          })()}
         </div>
       </div>
 

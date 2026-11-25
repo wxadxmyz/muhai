@@ -119,11 +119,13 @@
    导致焦点框画成「推荐+卡片外圈」甚至「整个屏幕边缘」。改用直接属性选择器（老 WebView 全支持），
    与 UI 原型 .fm{position:relative} 写法一致，焦点环严格贴着元素自身。 */
 .tv [data-focusable] { position: relative; }
-.tv [data-focusable]:focus {
+.tv [data-focusable]:focus,
+.tv [data-focusable].tv-focus {
   outline: none;
   z-index: 3;
 }
-.tv [data-focusable]:focus::after {
+.tv [data-focusable]:focus::after,
+.tv [data-focusable].tv-focus::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -133,11 +135,18 @@
   z-index: 9;
 }
 /* 顶栏 tab（以及显式方角元素）保持直角焦点环，对齐设计稿 .fm.sq */
-.tv .tv-tabs .tab:focus::after { border-radius: 0; }
+.tv .tv-tabs .tab:focus::after,
+.tv .tv-tabs .tab.tv-focus::after { border-radius: 0; }
 /* 影视仓金色评分 / 青色年份角标变量兜底（深浅皮肤共用） */
 .tv { --gold: #ffcf4a; --cyan: #19c2d6; }
 
 /* ---------- 通用 TV 卡片 / 海报 ---------- */
+/* V4.5.2 #5：三页卡片统一竖版（高宽比≈1.3:1），按屏幕占比用相对单位，自动适配 4K/1080 的 CSS 视口。
+   65寸电视实测：卡片宽≈屏宽16.3%、高≈屏高37.7%（物理 23.5×30.5cm）。 */
+.tv {
+  --card-w: 16.3vw;
+  --card-h: 37.7vh;
+}
 .tv-poster {
   position: relative; border-radius: 12px; overflow: hidden; background: var(--panel2);
   aspect-ratio: 3 / 4; cursor: pointer; flex: 0 0 auto;
@@ -206,11 +215,12 @@
 }
 .tv-corridor .tv-poster { width: 168px; scroll-snap-align: start; }
 /* V4.4.5：首页卡片行高 420px → 320px，与历史页 .tv-history-grid 统一（用户要求三处卡片一致）。 */
+/* V4.5.2 #5：三页卡片统一竖版 1.3:1，固定列宽/行高，一行 5 个 */
 .tv-corridor.tv-grid {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-  grid-auto-rows: 320px; gap: 12px 18px; overflow: visible; padding-bottom: 6px; scroll-snap-type: none;
+  display: grid; grid-template-columns: repeat(5, var(--card-w));
+  grid-auto-rows: var(--card-h); gap: 12px 18px; overflow: visible; padding-bottom: 6px; scroll-snap-type: none;
 }
-.tv-corridor.tv-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; scroll-snap-align: unset; border-radius: 14px; }
+.tv-corridor.tv-grid .tv-poster { width: var(--card-w); height: var(--card-h); aspect-ratio: auto; scroll-snap-align: unset; border-radius: 14px; }
 /* V4.3.3：选中不再放大，避免相邻卡片被挤出；选中态清晰度靠焦点环保证（见上） */
 .tv-corridor .tv-poster:focus { transform: none; }
 
@@ -265,18 +275,24 @@
 /* V4.4.0 #10/#11：影视仓式——左侧源栏「左竖条+文字高亮」选中态（去掉整块渐变底）；
    右侧固定 5 列 + 3:4 圆角竖版海报。行高固定（不用 aspect-ratio，避免与 grid 固定高度冲突压盖），
    统计文字单独占一行（grid-template-rows:24px），海报行 408px（≈列宽 ×4/3）。 */
-/* V4.5.1 #2：负 margin 抵消 .tv-main 的 34px 内边距、只留 8px 边距撑满全屏，
-   源栏 180→96px、源栏间隙→8px，让卡片宽度回到首页同款 353px。 */
+/* V4.5.2 #2/#3：改两行 grid（统计行 + 源栏/网格内容行）；负 margin 只左右抵消 .tv-main
+   内边距，上下不动——修掉原来四边负 margin 导致底部溢出被裁、「白条盖住源栏+最后源按不到」。 */
 .tv-result {
-  display: flex; gap: 8px; height: 100%; min-height: 0;
-  margin: calc(-1 * var(--tv-safe)); padding: 0 8px; box-sizing: border-box;
+  --src-w: 12.5vw; /* V4.5.2 #5：源栏加宽到屏宽12.5%（物理18cm），原来96px偏窄 */
+  display: grid;
+  grid-template-columns: var(--src-w) minmax(0, 1fr);
+  grid-template-rows: 30px minmax(0, 1fr);
+  column-gap: 8px; row-gap: 0;
+  height: 100%; min-height: 0;
+  margin-left: calc(-1 * var(--tv-safe)); margin-right: calc(-1 * var(--tv-safe));
+  padding: 0 8px; box-sizing: border-box;
 }
-.tv-result-srcs { width: 96px; flex: 0 0 96px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; }
+.tv-result-srcs { grid-column: 1; grid-row: 2; width: var(--src-w); min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 8px; }
 .tv-result-srcs .src-title { color: var(--muted); font-size: 13px; padding: 2px 4px 6px; text-align: center; }
-/* V4.5.1 #2：源栏缩窄后，名字独占一行、命中数移到下一行（方案 A），内边距 14→6px，
-   超长名字省略号、选中时 title 显示全名。 */
+/* V4.5.2 #1：源栏名字恢复单行居中、去掉命中数（用户反馈名字被拆成两排且数字多余） */
 .tv-result-src {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  display: flex; flex-direction: row; align-items: center; justify-content: center;
+  min-height: 73px; /* V4.5.2 #5：源栏单项高≈物理5.5cm */
   padding: 9px 6px; border-radius: 10px;
   background: var(--panel2); border: 1px solid var(--border);
   font-size: 14px; cursor: pointer; flex: 0 0 auto; color: var(--text);
@@ -287,23 +303,34 @@
 }
 /* V4.4.1：选中态改整块描边高亮，去掉左竖条（用户明确「紫竖条去掉」） */
 .tv-result-src.active { border-color: var(--accent); color: var(--accent); font-weight: 800; background: var(--panel3); }
-.tv-result-src .cnt { color: var(--muted); font-size: 12px; }
-.tv-result-src.active .cnt { color: var(--accent); }
+.tv-result-src .cnt { display: none; } /* V4.5.2 #1：不显示命中数 */
 /* V4.4.3 #9/#10：结果卡片行高 320→280px（用户仍觉得偏高）；源栏 210→180px，gap 20→14px，
    grid 铺满整行、列宽均分，配合 --tv-safe 34px 消除左右两侧留白。 */
 /* V4.5.1 #2：结果页间距压到最小（源栏↔卡片 8px 已在上方 .tv-result 设置） */
 .tv-result-grid {
-  flex: 1; min-width: 0; width: 100%; overflow-y: auto; overflow-x: hidden; display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: 24px; grid-auto-rows: 320px;
-  gap: 8px; align-content: start; align-items: start; justify-content: stretch;
+  grid-column: 2; grid-row: 2;
+  min-width: 0; width: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; display: grid;
+  grid-template-columns: repeat(5, var(--card-w)); grid-auto-rows: var(--card-h);
+  gap: 12px 18px; align-content: start; align-items: start; justify-content: start;
 }
-.tv-result-summary { grid-column: 1 / -1; color: var(--muted); font-size: 15px; }
+/* V4.5.2 #2：统计条跨两列、左对齐，与左侧源栏同一左起点 */
+.tv-result-summary { grid-column: 1 / -1; grid-row: 1; color: var(--muted); font-size: 15px; text-align: left; align-self: center; }
 /* 3:4 竖版：填满行高，圆角跟随 */
-.tv-result-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; flex: 0 0 auto; border-radius: 14px; }
+.tv-result-grid .tv-poster { width: var(--card-w); height: var(--card-h); aspect-ratio: auto; flex: 0 0 auto; border-radius: 14px; }
 .tv-empty { grid-column: 1 / -1; color: var(--muted); font-size: 18px; padding: 40px; text-align: center; }
 
 /* ---------- 详情 TV（V4.4.1：上排播放小窗+信息/胶囊，下排线路+选集） ---------- */
-.tv-detail { display: flex; flex-direction: column; gap: 20px; height: 100%; min-height: 0; overflow-y: auto; padding-right: 8px; }
+/* V4.5.2 #11/#10：详情页上下留白缩小（负 margin 抵消 tv-main 的 34px 上下内边距），
+   整页不再滚动（overflow:hidden），改由上固定区 + 下独立滚动的选集区组成。 */
+.tv-detail {
+  display: flex; flex-direction: column; gap: 14px; height: 100%; min-height: 0;
+  overflow: hidden; padding-right: 8px;
+  margin-top: calc(-1 * var(--tv-safe)); margin-bottom: calc(-1 * var(--tv-safe));
+}
+/* 上固定区：小窗 + 详情 + 线路 + 分段，不随选集滚动 */
+.dt-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 14px; }
+/* 下独立滚动区：只有选集网格滚动，上面全部固定 */
+.dt-ep-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 /* V4.4.5 #6：小窗与右侧详情间距改用 margin-right（老 WebView 对 flex gap 支持不稳，
    用 margin 写死更可靠）；#5 小窗由圆角改直角。 */
 .dt-top { display: flex; gap: 0; flex: 0 0 auto; align-items: flex-start; }
@@ -335,12 +362,13 @@
 /* V4.4.2 #12：小窗去掉中央播放按钮（用户要求：小窗直接预览、不要播放图标） */
 .tv-detail-player .dplay { display: none !important; }
 /* V4.4.5 #8：dlabel「XX·立即播放」文字已移除，播放画面本身高亮 */
-.tv-detail-body { flex: 1; min-width: 0; }
+/* V4.5.2 #9：右侧详情区改 flex 列，胶囊沉底与小窗底部齐平 */
+.tv-detail-body { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 325px; }
 .tv-detail-title { font-size: 36px; font-weight: 900; margin: 0 0 10px; }
 .tv-detail-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 16px; line-height: 1.9; margin-bottom: 12px; }
 .tv-detail-meta b { color: var(--text); font-weight: 600; }
 /* 彩色胶囊按钮：严格按 V4.4.3 UI 三色（播放青 / 收藏蓝紫 / 简介橙黄） */
-.tv-pillrow { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.tv-pillrow { display: flex; gap: 12px; flex-wrap: wrap; margin-top: auto; } /* V4.5.2 #9：沉底与小窗底部齐平 */
 .tv-pill {
   display: flex; align-items: center; gap: 8px; padding: 10px 22px; border-radius: 999px;
   color: #fff; font-size: 17px; font-weight: 800; cursor: pointer; border: 0;
@@ -372,8 +400,9 @@
 
 /* ===== V4.5.0 详情页影视仓化 ===== */
 /* 影视仓详情信息：来源/演员/导演/播放地址/简介 */
-.vinfo { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 14px; max-width: 900px; }
-.vinfo-line { display: flex; align-items: baseline; font-size: 15px; line-height: 1.55; color: var(--text); min-width: 0; }
+/* V4.5.2 #9：信息区 flex:1 撑开片名与胶囊之间的空间，字号放大更易读 */
+.vinfo { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; margin: 4px 0; max-width: 900px; }
+.vinfo-line { display: flex; align-items: baseline; font-size: 19px; line-height: 1.7; color: var(--text); min-width: 0; }
 .vinfo-line .vk { flex: 0 0 auto; color: var(--muted); }
 .vinfo-line .vv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vinfo-line .vv-ellipsis { display: block; flex: 1; } /* 播放地址过长省略号 */
@@ -424,9 +453,9 @@
 .tv-action-btn.danger { color: var(--danger); }
 /* 历史/收藏：统一小竖版卡片，一行 5 个（沿用通用 .tv-poster） */
 /* V4.4.2 #4：历史/收藏卡片行高 400→320px，与首页/结果页统一。 */
-.tv-history-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 320px; gap: 16px 20px; align-content: start; }
+.tv-history-grid { display: grid; grid-template-columns: repeat(5, var(--card-w)); grid-auto-rows: var(--card-h); gap: 16px 20px; align-content: start; }
 .tv-hist-cell { position: relative; min-width: 0; height: 100%; }
-.tv-history-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; }
+.tv-history-grid .tv-poster { width: var(--card-w); height: var(--card-h); aspect-ratio: auto; }
 /* V4.4.3：删除模式卡片外圈不再加红框/红晕（用户要求），仅靠顶部提示 + 焦点白框标识可删对象 */
 .tv-history-grid.deleting .tv-poster { border-color: transparent; box-shadow: none; }
 
@@ -621,18 +650,22 @@
 /* .p-ctrl：底部控制层 */
 .tvp-ctrl { position: absolute; left: 0; right: 0; bottom: 30px; z-index: 5; padding: 0 44px; transition: opacity .18s; }
 /* .p-btns：文字按钮条 */
-.tvp-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+/* V4.5.2 #13：功能键不换行、等宽均分铺满整行，左右端点与进度条对齐 */
+.tvp-btns { display: flex; gap: 10px; flex-wrap: nowrap; margin-bottom: 18px; }
 .tvp-btn {
-  padding: 10px 18px; border-radius: 10px; background: rgba(28,40,66,.72);
+  flex: 1 1 0; min-width: 0; padding: 10px 8px; border-radius: 10px; background: rgba(28,40,66,.72);
   border: 1px solid rgba(255,255,255,.14); color: #fff; font-size: 16px;
   cursor: pointer; backdrop-filter: blur(6px); font-family: inherit;
+  text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tvp-btn.act { background: linear-gradient(135deg,#2f9be0,#3d8bff); border-color: transparent; font-weight: 800; }
 .tvp-btn.on { border-color: rgba(15,185,166,.8); color: #7cffe6; }
 .tvp-btn.disabled { opacity: .4; pointer-events: none; }
 
 /* .pbar：进度条 */
-.tvp-pbar { display: flex; align-items: center; gap: 16px; color: #fff; font-size: 16px; font-variant-numeric: tabular-nums; }
+/* V4.5.2 #12：两端时间固定不缩、加大与轨道间距，避免左侧时间被进度条圆点阴影压住 */
+.tvp-pbar { display: flex; align-items: center; gap: 20px; color: #fff; font-size: 16px; font-variant-numeric: tabular-nums; }
+.tvp-pbar > span { flex: 0 0 auto; min-width: 52px; }
 .tvp-track { flex: 1; height: 7px; border-radius: 99px; background: rgba(255,255,255,.28); position: relative; cursor: pointer; }
 .tvp-track .tvp-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 5%; border-radius: 99px; background: linear-gradient(90deg,#3d8bff,#6c5cff); }
 .tvp-track .tvp-dot { position: absolute; left: 5%; top: 50%; transform: translate(-50%,-50%); width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(61,139,255,.5); }
@@ -696,6 +729,6 @@
 .tv .player-root .screen.tv-screen.is-loading .dplay,
 .tv .player-root .screen.tv-screen.is-loading svg[data-icon="play"] { display: none !important; }
 
-/* ===== V4.5.1 #2：搜索结果页卡片按首页大小，间距压到最小（8px），仍一行 5 个 ===== */
-.tv-result-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 320px; gap: 8px; align-items: stretch; }
-.tv-result-grid .tv-poster { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 14px; }
+/* ===== V4.5.2 #5：结果页卡片与首页/历史统一竖版 1.3:1（末尾覆盖，确保不被早前规则顶回） ===== */
+.tv-result-grid { grid-template-columns: repeat(5, var(--card-w)); grid-auto-rows: var(--card-h); gap: 12px 18px; align-items: start; justify-content: start; }
+.tv-result-grid .tv-poster { width: var(--card-w); height: var(--card-h); aspect-ratio: auto; border-radius: 14px; }

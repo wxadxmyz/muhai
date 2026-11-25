@@ -250,6 +250,12 @@ jobs:
               override fun onWebViewCreate(webView: android.webkit.WebView) {
                   super.onWebViewCreate(webView)
                   _muhaiBindTo(webView)
+                  // V4.5.2 #7：首帧兜底深色底——JS 起来后 setNavBarColor 会刷成皮肤主色。
+                  // 覆盖「React 挂载前」那一帧，消除启动白屏。
+                  try {
+                      window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#0d0f14")))
+                      webView.setBackgroundColor(android.graphics.Color.parseColor("#0d0f14"))
+                  } catch (e: Exception) { /* ignore */ }
                   // 兜底：再排一枪，防止个别 ROM 在 onWebViewCreate 之后重建页面导致注入丢失
                   _muhaiHealHandler.postDelayed({ _muhaiBind() }, 800)
               }
@@ -355,13 +361,19 @@ jobs:
                       }
                   }
                   // V3.4.4 #5：把主题背景色刷进系统导航栏（light 主题顺便把导航图标转深色）
+                  // V4.5.2 #7：同时把 window / WebView 背景设成皮肤主色——启动时 React 挂载前、
+                  // 退出时 WebView 销毁后露出的都是这个色，消除「先白屏再进画面 / 退出白屏」。
                   @android.webkit.JavascriptInterface
                   fun setNavBarColor(color: String, lightBars: Boolean) {
                       runOnUiThread {
                           try {
-                              _muhaiNavColor = android.graphics.Color.parseColor(color)
+                              val c = android.graphics.Color.parseColor(color)
+                              _muhaiNavColor = c
                               _muhaiNavLight = lightBars
                               _muhaiApplyNavBar()
+                              window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(c))
+                              val wv = _backWebView ?: findBackWebView(window.decorView as? android.view.ViewGroup)
+                              wv?.setBackgroundColor(c)
                           } catch (e: Exception) { /* ignore */ }
                       }
                   }

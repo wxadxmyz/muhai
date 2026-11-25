@@ -39,16 +39,32 @@ export function HistoryTV({
 
   return (
     <div className="tv-scroll" data-scroll>
-      <div className="tv-history-bar">
+      <div className="tv-history-bar" id="hist-bar">
         <div className="tv-history-tabs">
-          <div className={'tv-cat' + (tab === 'history' ? ' active' : '')} data-focusable="" onClick={() => switchTab('history')} role="button">观看历史</div>
-          <div className={'tv-cat' + (tab === 'fav' ? ' active' : '')} data-focusable="" onClick={() => switchTab('fav')} role="button">影视收藏</div>
+          <div
+            id="hist-tab-history"
+            className={'tv-cat' + (tab === 'history' ? ' active' : '')}
+            data-focusable="" data-nav-right="#hist-tab-fav" data-nav-down="#hist-first-card"
+            onClick={() => switchTab('history')} role="button">观看历史</div>
+          <div
+            id="hist-tab-fav"
+            className={'tv-cat' + (tab === 'fav' ? ' active' : '')}
+            data-focusable="" data-nav-left="#hist-tab-history" data-nav-right="#hist-clear-one"
+            onClick={() => switchTab('fav')} role="button">影视收藏</div>
           <span className="tv-hist-tip">{deleting ? '光标移到卡片上按 OK 即删除，点「完成」退出' : '点「删除记录」后可删除单条'}</span>
         </div>
         {list.length > 0 && (
           <div className="tv-history-actions">
-            <div className={'tv-hist-clear' + (deleting ? ' primary' : ' danger')} data-focusable="" onClick={() => setDeleting((m) => !m)} role="button">{deleting ? '完成' : '删除记录'}</div>
-            <div className="tv-hist-clear danger" data-focusable="" onClick={clearAll} role="button">一键清空</div>
+            <div
+              id="hist-clear-one"
+              className={'tv-hist-clear' + (deleting ? ' primary' : ' danger')}
+              data-focusable="" data-nav-left="#hist-tab-fav" data-nav-right="#hist-clear-all" data-nav-down="#hist-first-card"
+              onClick={() => setDeleting((m) => !m)} role="button">{deleting ? '完成' : '删除记录'}</div>
+            <div
+              id="hist-clear-all"
+              className="tv-hist-clear danger" data-focusable=""
+              data-nav-left="#hist-clear-one" data-nav-down="#hist-first-card"
+              onClick={clearAll} role="button">一键清空</div>
           </div>
         )}
       </div>
@@ -56,7 +72,7 @@ export function HistoryTV({
         <div className="tv-empty">{tab === 'history' ? '还没有观看记录，去搜部剧看吧～' : '还没有收藏，详情页点 ♡ 即可收藏。'}</div>
       ) : (
         <div className={'tv-history-grid' + (deleting ? ' deleting' : '')}>
-          {list.map((it) => {
+          {list.map((it, idx) => {
             const { cover, name } = tvItemPoster(it);
             return (
               <div key={`${it.sourceId}:${it.id}`} className="tv-hist-cell">
@@ -64,6 +80,8 @@ export function HistoryTV({
                   name={name}
                   cover={cover}
                   year={it.year}
+                  domId={idx === 0 ? 'hist-first-card' : undefined}
+                  navUp="#hist-bar"
                   onClick={() => { if (deleting) { removeOne(it); toast('已删除该记录'); } else onOpenDetail(it); }}
                   focusable
                 />

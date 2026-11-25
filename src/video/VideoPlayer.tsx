@@ -235,6 +235,14 @@ export function VideoPlayer({
   // 进度条真实镜像：直接读 <video>.currentTime/duration，不依赖 store 阈值（避免 HLS 下"假进度条"）
   const [liveCur, setLiveCur] = useState(0);
   const [liveDur, setLiveDur] = useState(0);
+  // V4.5.2 #12：方案C借用小窗 video 时，时间事件绑在隐藏的占位 video 上不会触发，
+  // liveCur/liveDur 拿不到实时值 → 进度条时间不对。改从 store（DetailTV 的 timeupdate 已写
+  // player.setProgress/setDuration）同步，保证借用模式下时间正常走动。
+  useEffect(() => {
+    if (!tvMode || !borrowedMiniRef.current) return;
+    if (typeof state.progress === 'number' && state.progress > 0) setLiveCur(state.progress);
+    if (typeof state.duration === 'number' && state.duration > 0) setLiveDur(state.duration);
+  }, [state.progress, state.duration, tvMode]);
   const [epOpen, setEpOpen] = useState(false); // ⑦ 横屏选集浮层
   // V3.3.5 A3：竖屏选集半屏浮层——集数多时（实测 115 集 ≈ 29 行）信息区被拉到三屏开外，
   // 竖屏改为「2 行预览 + 点开半屏浮层」，浮层内独立滚动、点遮罩/选完集关闭。

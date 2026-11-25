@@ -35,6 +35,15 @@ export function isFocusNavActive(): boolean {
 let installed = false;
 let currentEl: HTMLElement | null = null;
 
+const FOCUS_CLASS = 'tv-focus';
+function markFocus(el: HTMLElement | null) {
+  // V4.5.2 #4：显式 class 驱动焦点环——老电视 WebView 首帧 el.focus() 常被吞，
+  // :focus 伪类不生效导致光标不显示。用 JS 加 .tv-focus 类画环，不依赖 DOM activeElement。
+  if (currentEl && currentEl !== el) currentEl.classList.remove(FOCUS_CLASS);
+  currentEl = el;
+  if (el) el.classList.add(FOCUS_CLASS);
+}
+
 function prep(el: HTMLElement) {
   if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
 }
@@ -86,7 +95,7 @@ function focusablesIn(scope: HTMLElement): HTMLElement[] {
 
 function focusEl(el: HTMLElement) {
   if (!el) return;
-  currentEl = el;
+  markFocus(el);
   prep(el);
   try {
     el.focus({ preventScroll: true });
@@ -165,9 +174,12 @@ function scrollScope(dir: Dir, scope: HTMLElement) {
 }
 
 function activeFocusable(): HTMLElement | null {
+  // V4.5.2 #4：优先用 class 驱动的 currentEl——老 WebView 里 document.activeElement
+  // 可能是残留的 body/隐藏 video，导致方向键从错误位置起算、光标跑偏。
+  if (currentEl && currentEl.isConnected && currentEl.hasAttribute('data-focusable')) return currentEl;
   const a = document.activeElement as HTMLElement | null;
   if (a && a !== document.body && a.hasAttribute && a.hasAttribute('data-focusable')) return a;
-  return currentEl;
+  return null;
 }
 
 function onKeyDown(e: KeyboardEvent) {
@@ -286,7 +298,7 @@ function onKeyDown(e: KeyboardEvent) {
 
 function onFocusIn(e: FocusEvent) {
   const t = e.target as HTMLElement | null;
-  if (t && t.hasAttribute && t.hasAttribute('data-focusable')) currentEl = t;
+  if (t && t.hasAttribute && t.hasAttribute('data-focusable')) markFocus(t);
 }
 
 /** 安装全局焦点系统（幂等）。由 main.tsx 在启动时调用。 */

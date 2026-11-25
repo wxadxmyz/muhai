@@ -331,6 +331,8 @@ export function TVShell({
   };
 
   const openDetail = async (it: MediaItem) => {
+    // V4.5.2 #8：只要进入详情页就算看过——立即写入观看历史（原来只在点进大屏播才写）。
+    try { library.addHistory(it); } catch { /* ignore */ }
     // V4.4.0 #5：进详情「不清搜索态」——保留 searchQuery，返回时才能逐级回到结果页并还原卡片位置。
     // （旧版 V4.3.9 在此 setSearchQuery(null)，导致从结果页进详情后返回直接掉回搜索输入页。）
     // V4.5.0 #8/#9：进详情按片名续播进度定位到上次看的集（无进度则第 0 集）。
@@ -414,7 +416,9 @@ export function TVShell({
               id={`tvtab-${n.key}`}
               className={'tab' + (navTab === n.key ? ' active' : '')}
               data-focusable=""
+              data-autofocus={n.key === 'home' ? '' : undefined}
               data-nav-up={`#tvtab-${n.key}`}
+              data-nav-down={n.key === 'history' ? '#hist-tab-history' : undefined}
               data-ok-handled=""
               onClick={() => { setNavTab(n.key); if (n.key !== 'search') setSearchQuery(null); }}
               onKeyDown={(e) => {

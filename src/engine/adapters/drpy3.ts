@@ -4,10 +4,12 @@ import { devLog } from '../../lib/log';
 import { ensureProxyPort, buildProxyUrl } from '../../lib/hlsPlayer';
 import { isTauri } from '../../lib/tauriBridge';
 import { getAllNetdiskTokens, injectAliRefreshToken } from '../../lib/netdisk';
+import { isNetdiskShare, resolveNetdiskShare } from '../../lib/netdiskShare';
 import { withTimeout } from '../http';
 
-// V3.8.9：删掉 netdiskShare 依赖。网盘分享解析（V3.7.5 #4）是 V3.7.0 之后加的，
-// 不在「V3.7.0 能播」的基准里，按回退清单一并去除。
+// V4.5.4：接回网盘分享解析。玩偶/多多等 csp 源的 play() 返回的是网盘分享短链
+// （aliyundrive.com/s/、pan.quark.cn/s/），不是可播直链；用已登录 token 解析成直链再交给播放器。
+// 影视仓能播网盘正是靠这一层；V3.8.9 曾把它删掉导致「登录了也播不了」。
 
 // V3.6.5 #1：jx/parse 二次解析助手。把中间地址经本地流式代理 fetch（代理跟随上游重定向），
 // 用回传的 x-proxy-final-url 作为真直链。代理不可用时返回 null（调用方回退原始中间地址）。
@@ -557,11 +559,23 @@ export function createDrpy3Source(
           devLog(`[drpy3] jx/parse 解析失败，回退中间地址:`, e?.message ?? e);
         }
       }
+      // V4.5.4：网盘分享短链 → 直链。play() 若返回 aliyundrive.com/s/ 或 pan.quark.cn/s/，
+      // 用已登录 token 解析出可播直链（走 Rust fetchmedia 代理避开 CORS/明文限制）；
+      // 解析失败不阻断，仍回退原地址由 guardPlayable 给出「网页不可播」提示。
+      if (url && isNetdiskShare(url)) {
+        try {
+          const direct = await withTimeout(resolveNetdiskShare(url), 20000);
+          if (direct && /^https?:\/\//i.test(direct)) {
+            devLog(`[drpy3] 网盘分享解析 ${url} → 直链`);
+            url = direct;
+            headers = undefined; // 网盘直链自带鉴权，不能带源站的 Referer/Cookie
+          }
+        } catch (e: any) {
+          devLog(`[drpy3] 网盘分享解析失败，回退原地址:`, e?.message ?? e);
+        }
+      }
       // V3.7.0 B1：最终地址可播性校验（见 guardPlayable）——网页/非媒体一律明确报错，
       // 不再把 HTML 喂给 hls.js 导致永久转圈。
-      // V3.8.9：回退到 V3.7.0 的直抛行为。V3.7.4 #1 的「命中后经代理再解析一次」与
-      // V3.7.5 #4 的网盘分享解析都是 V3.7.0 之后加的，不在「V3.7.0 能播」的基准内；
-      // 前者还会为每个疑似网页的地址多加一次代理往返，故一并去除。
       if (url && /^https?:\/\//i.test(url)) {
         const guardErr = await guardPlayable(url, headers);
         if (guardErr) throw new Error(guardErr);

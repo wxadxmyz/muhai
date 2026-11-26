@@ -104,12 +104,35 @@ function focusEl(el: HTMLElement) {
   }
   // V4.5.1 #11：光标反应慢优化——先判断是否已在可视区，在视口内就不触发 scrollIntoView，
   // 避免每次方向键都强制同步布局（老电视 WebView 上这是主要卡顿源）。
+  // V4.5.4 #5：选集区是独立滚动容器（.dt-ep-scroll）。元素对整个 window 可能仍在视口内，
+  // 但已滚出选集小容器的可视范围 → 旧逻辑判 inView=true 不滚动，光标遮住集数却不动。
+  // 改为：若元素在某个 overflow 滚动容器内，按「容器可视区」判断并手动滚容器。
   try {
     const r = el.getBoundingClientRect();
-    const inView = r.top >= 0 && r.left >= 0 &&
-      r.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-      r.right <= (window.innerWidth || document.documentElement.clientWidth);
-    if (!inView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    let scrollBox: HTMLElement | null = null;
+    let parent: HTMLElement | null = el.parentElement;
+    while (parent) {
+      const st = getComputedStyle(parent);
+      if (/(auto|scroll)/.test(st.overflowY) && parent.scrollHeight > parent.clientHeight + 2) {
+        scrollBox = parent;
+        break;
+      }
+      parent = parent.parentElement;
+    }
+    if (scrollBox) {
+      const br = scrollBox.getBoundingClientRect();
+      const above = r.top < br.top;
+      const below = r.bottom > br.bottom;
+      if (above || below) {
+        const delta = above ? r.top - br.top - 8 : r.bottom - br.bottom + 8;
+        scrollBox.scrollTop += delta;
+      }
+    } else {
+      const inView = r.top >= 0 && r.left >= 0 &&
+        r.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+        r.right <= (window.innerWidth || document.documentElement.clientWidth);
+      if (!inView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   } catch {
     /* ignore */
   }

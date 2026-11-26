@@ -1,11 +1,11 @@
-// V4.5.3：TV 详情页网盘扫码授权弹窗（极简——二维码 + 打开 XX 网盘 App 扫码授权）。
-// 机制同影视仓：弹窗内展示网盘官方登录页自带的扫码二维码；手机网盘 App 扫码确认后，
-// 网页登录态建立 → 抓 cookie/refresh_token 落盘 → 关弹窗 → 自动重试当前集。
-// 真机由 openNetdiskLogin 打开原生 NetdiskLoginActivity（官方登录页 + 强制桌面 UA + 自动抓 token）。
+// V4.5.4：TV 详情页网盘扫码授权浮窗（影视仓式真二维码）。
+// 机制：本组件是「等待/触发层」——挂载后自动拉起原生 NetdiskLoginActivity（Dialog 浮窗形态），
+// 真二维码由网盘官方登录页 WebView 生成（带会话、可刷新），用户用手机网盘 App 扫真码并确认，
+// 网页登录态建立 → 原生抓 cookie/refresh_token 落盘 → 派发 netdisk-tokens-changed →
+// 本组件收到后 onAuthed() 自动重试当前集 + close() 关等待层。
 import { useEffect, useRef } from 'react';
 import { type NetdiskKey, providerOf, getNetdiskToken } from '../../lib/netdisk';
 import { openNetdiskLogin } from '../../lib/netdiskLogin';
-import { focusElement } from '../../lib/focusNav';
 import { pushBackHandler } from '../../lib/backStack';
 
 export function NetdiskAuthTV({
@@ -18,8 +18,8 @@ export function NetdiskAuthTV({
   onAuthed: () => void;
 }) {
   const p = providerOf(provider);
-  const btnRef = useRef<HTMLButtonElement | null>(null);
   const closedRef = useRef(false);
+  const authedRef = useRef(false);
 
   const close = () => {
     if (closedRef.current) return;
@@ -27,34 +27,53 @@ export function NetdiskAuthTV({
     onClose();
   };
 
-  // 授权成功 → 关弹窗 + 重试当前集
+  const authed = () => {
+    if (authedRef.current) return;
+    authedRef.current = true;
+    onAuthed();
+  };
+
+  // 授权成功 → 关浮窗 + 重试当前集
   useEffect(() => {
     const onChanged = () => {
       if (getNetdiskToken(provider)) {
-        onAuthed();
+        authed();
         close();
       }
     };
     window.addEventListener('netdisk-tokens-changed', onChanged);
-    // 若此刻已有 token（竞态：弹窗打开瞬间刚登录完），直接走成功
+    // 竞态：拉起浮窗瞬间刚登录完
     if (getNetdiskToken(provider)) {
-      onAuthed();
+      authed();
       close();
     }
     return () => window.removeEventListener('netdisk-tokens-changed', onChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
-  // 返回键关闭弹窗（不消费到详情页退出）
+  // 返回键关闭等待层（不消费到详情页退出）
   useEffect(() => pushBackHandler(() => { close(); return true; }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 焦点钉在「扫码授权」按钮，OK 即可打开登录页
+  // 进入即自动拉起原生真码浮窗（无需按 OK）。原生浮窗关闭后：
+  //  - 已拿到 token：上面的事件回调已处理（authed + close）；
+  //  - 用户取消：openNetdiskLogin 返回 null，这里兜底关闭等待层，避免卡住。
   useEffect(() => {
-    const t = [60, 200, 500].map((ms) => window.setTimeout(() => focusElement(btnRef.current), ms));
-    return () => t.forEach(clearTimeout);
+    let cancelled = false;
+    void (async () => {
+      try {
+        await openNetdiskLogin(p);
+      } catch {
+        /* 拉起失败也关闭等待层，避免卡死 */
+      }
+      if (cancelled) return;
+      if (getNetdiskToken(provider)) {
+        authed();
+      }
+      close();
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const startLogin = () => { void openNetdiskLogin(p); };
 
   return (
     <div className="tv-overlay netdisk-auth-overlay" data-focus-root>
@@ -63,44 +82,12 @@ export function NetdiskAuthTV({
           <span className="nda-logo" style={{ background: p.color }}>{p.label.slice(0, 1)}</span>
           <span className="nda-name">{p.label}</span>
         </div>
-        {/* 二维码：真机由官方登录页提供并可扫；此处图形仅作视觉引导，OK/点击即打开官方授权页 */}
-        <div className="nda-qr">
-          <canvas width={208} height={208} ref={(cv) => { if (cv) drawQr(cv); }} />
+        <div className="nda-qr nda-qr-wait">
+          <span className="vp-spinner" />
         </div>
-        <div className="nda-tip">请使用 <b>{p.label} App</b> 扫码授权</div>
-        <div className="nda-sub">打开 {p.label} App → 扫一扫 → 在手机上确认</div>
-        <button
-          ref={btnRef}
-          className="nda-btn"
-          data-focusable=""
-          data-autofocus=""
-          onClick={startLogin}
-        >
-          扫码授权（按 OK 打开）
-        </button>
+        <div className="nda-tip">正在打开 <b>{p.label}</b> 扫码授权…</div>
+        <div className="nda-sub">请用手机 {p.label} App 扫描官方二维码并在手机上确认</div>
       </div>
     </div>
   );
-}
-
-// 示意二维码（三个定位角 + 伪随机块），视觉仿真；可扫的真二维码在官方登录页里
-function drawQr(cv: HTMLCanvasElement) {
-  const ctx = cv.getContext('2d');
-  if (!ctx) return;
-  const N = 25, cell = 208 / N;
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 208, 208); ctx.fillStyle = '#111';
-  const finder = (ox: number, oy: number) => {
-    for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) {
-      const e = x === 0 || x === 6 || y === 0 || y === 6;
-      const c = x >= 2 && x <= 4 && y >= 2 && y <= 4;
-      if (e || c) ctx.fillRect((ox + x) * cell, (oy + y) * cell, cell, cell);
-    }
-  };
-  finder(0, 0); finder(18, 0); finder(0, 18);
-  let seed = 7;
-  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
-    const inF = (x < 8 && y < 8) || (x >= 17 && y < 8) || (x < 8 && y >= 17);
-    if (!inF && rnd() > 0.5) ctx.fillRect(x * cell, y * cell, cell, cell);
-  }
 }

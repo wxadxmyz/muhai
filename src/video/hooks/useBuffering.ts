@@ -7,10 +7,11 @@ export function useBuffering() {
   const [buffering, setBuffering] = useState(false);
   const [bufPct, setBufPct] = useState(0);
   const bufferingTimer = useRef<number | undefined>(undefined);
-  // T3：缓冲转圈延迟 300ms —— 快进后 200ms 内缓冲好就不显示，避免一闪而过反而像卡顿
+  // T3：缓冲转圈延迟——V4.5.4 #9 从 300ms 缩到 120ms，卡顿时更快显示「加载中」，
+  // 短促卡顿用户也能看见反馈（300ms 下大部分一闪而过，像卡死）。
   const markBuffering = useCallback(() => {
     if (bufferingTimer.current) window.clearTimeout(bufferingTimer.current);
-    bufferingTimer.current = window.setTimeout(() => setBuffering(true), 300);
+    bufferingTimer.current = window.setTimeout(() => setBuffering(true), 120);
   }, []);
   const clearBuffering = useCallback(() => {
     if (bufferingTimer.current) { window.clearTimeout(bufferingTimer.current); bufferingTimer.current = undefined; }
@@ -43,6 +44,13 @@ export function useBuffering() {
       setSeekHideControls(false);
     }
   }, []);
+  // V4.5.4 #8：无条件立即清 seek 转圈（TV 左右键快进的兜底定时器用，不受 seekGestureActive 限制）。
+  const clearSeekLoadingNow = useCallback(() => {
+    if (seekLoadingTimer.current) window.clearTimeout(seekLoadingTimer.current);
+    seekGestureActive.current = false;
+    setSeekLoading(false);
+    setSeekHideControls(false);
+  }, []);
 
   return {
     buffering,
@@ -55,5 +63,6 @@ export function useBuffering() {
     startSeekLoading,
     endSeekGesture,
     clearSeekLoadingOnSettled,
+    clearSeekLoadingNow,
   };
 }

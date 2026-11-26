@@ -172,6 +172,8 @@ export function TVShell({
   // V4.4.0 #8：进软件光标直接落首页（顶栏「首页」tab）。
   // 免责声明显示期间不抢焦点（它有自己的自动聚焦与任意键进入），故以前端是否已接受声明为准。
   const homeTabRef = useRef<HTMLButtonElement | null>(null);
+  // V4.5.4 #14：首页卡片进结果页前的焦点节点，返回时优先还原到该卡片。
+  const lastHomeCardRef = useRef<HTMLElement | null>(null);
   // V4.4.2 #2：把 disclaimerAccepted 纳入依赖。旧版空依赖数组只在挂载跑一次，
   // 若挂载时免责还没接受就 return，之后免责接受了也不再重跑 → 光标永远不落首页 tab。
   // 现在免责一接受（值变 true）立即补聚焦首页 tab。
@@ -202,7 +204,15 @@ export function TVShell({
     if (searchFromRef.current === 'home-card') {
       setSearchQuery(null);
       setNavTab('home');
-      focusHomeTab();
+      // V4.5.4 #14：返回首页时优先把光标还原到进来前那张卡片（首页 DOM 一直挂载、节点仍在）。
+      window.setTimeout(() => {
+        const card = lastHomeCardRef.current;
+        if (card && card.isConnected) {
+          focusElement(card);
+        } else {
+          focusHomeTab();
+        }
+      }, 90);
     } else {
       setSearchQuery(null);
       // 回到搜索页后，把光标还原到之前的标签
@@ -373,7 +383,10 @@ export function TVShell({
       const a = document.activeElement as HTMLElement | null;
       if (a && a.hasAttribute && a.hasAttribute('data-focusable')) lastFocusInSearchRef.current = a;
     } else {
+      // V4.5.4 #14：首页卡片进结果页——记住当前聚焦的卡片，返回时还原到它。
       lastFocusInSearchRef.current = null;
+      const a = document.activeElement as HTMLElement | null;
+      if (a && a.hasAttribute && a.hasAttribute('data-focusable')) lastHomeCardRef.current = a;
     }
     // V4.5.0 #16：任何进入结果页的方式（首页卡片 / 远程搜索 / 搜索页搜索）都写入搜索历史。
     // 搜索页 press('搜索') 里已 addSearch 一次，这里重复调用是幂等的（去重 + 置顶）。
@@ -479,7 +492,7 @@ export function TVShell({
           <SettingsTV
             onReset={onReset}
             // V4.4.1 H1：扫码添加源成功后自动回首页（源已写入单例 store，首页自动读取新源刷新）。
-            onAdded={() => { setDetail(null); setSearchQuery(null); setNavTab('home'); toast('影视源已添加，已返回首页'); }}
+            onAdded={() => { setDetail(null); setSearchQuery(null); setNavTab('home'); focusHomeTab(); toast('影视源已添加，已返回首页'); }}
           />
         )}
       </div>

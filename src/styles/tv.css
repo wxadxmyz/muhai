@@ -230,7 +230,8 @@
 /* 最左列：搜索历史（独立成列，不再压在键盘上方） */
 .tv-histcol {
   width: 300px; flex: 0 0 300px; display: flex; flex-direction: column; gap: 12px;
-  background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px;
+  /* V4.5.4 #20：去掉白色背景块和边框，与整个界面背景一致 */
+  background: transparent; border: 0; border-radius: 0; padding: 16px 0;
 }
 .tv-histbox-head { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--text); }
 .tv-histbox-clear { font-size: 15px; color: var(--danger); font-weight: 600; cursor: pointer; padding: 5px 14px; border: 1px solid rgba(255, 91, 110, .45); border-radius: 9px; }
@@ -252,6 +253,9 @@
   height: 50px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border);
   color: var(--text); font-size: 21px; font-weight: 700; cursor: pointer; display: grid; place-items: center;
 }
+/* V4.5.4 #19：字母/数字键改成正方形。键盘列宽 460、6 列 gap 8 → 每列约 70px；
+   写死 70px 宽高（不用 aspect-ratio，老电视 WebView 兼容差），grid 单元居中。 */
+.tv-kb-grid .tv-key { width: 70px; height: 70px; justify-self: center; font-size: 24px; }
 /* #15：4 个功能键 2×2 大按钮，键盘下方独立成组（影视仓式，完整落屏不被裁） */
 .tv-kb-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .tv-key.fn { font-size: 19px; height: 54px; background: var(--panel); white-space: nowrap; }
@@ -329,8 +333,10 @@
 .tv-detail {
   display: flex; flex-direction: column; gap: 14px; height: 100%; min-height: 0;
   overflow: hidden; padding-right: 8px;
-  /* V4.5.3 #9：顶部负值减小（原 -34px 完全抵消→贴屏幕边缘），留约 18px 上边距；底部保持不动 */
-  margin-top: calc(-1 * var(--tv-safe) + 18px); margin-bottom: calc(-1 * var(--tv-safe));
+  /* V4.5.3 #9：顶部负值减小（原 -34px 完全抵消→贴屏幕边缘），留约 18px 上边距。
+     V4.5.4 #4：底部空隙压到最小——安全区完全抵消后再多延伸 4px（负得更多=页面更高、
+     底部更贴边），把高度让给选集滚动区，让集数完整显示 4 行（不动行高 58px / gap 9px）。 */
+  margin-top: calc(-1 * var(--tv-safe) + 18px); margin-bottom: calc(-1 * var(--tv-safe) - 4px);
 }
 /* 上固定区：小窗 + 详情 + 线路 + 分段，不随选集滚动 */
 .dt-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 14px; }
@@ -368,6 +374,12 @@
 .tv-detail-player .dshade { position: absolute; inset: 0; background: none; } /* V4.5.0 #12：去掉灰蒙遮罩 */
 /* V4.4.2 #12：小窗去掉中央播放按钮（用户要求：小窗直接预览、不要播放图标） */
 .tv-detail-player .dplay { display: none !important; }
+/* V4.5.4 #21：大屏暂停后返回详情，小窗显示中央暂停符号（深色半透明圆底，避免压不住画面） */
+.tv-detail-player .mini-pause {
+  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none;
+  background: rgba(0, 0, 0, .28);
+}
+.tv-detail-player .mini-pause svg { color: #fff; filter: drop-shadow(0 2px 10px rgba(0,0,0,.8)); }
 /* V4.4.5 #8：dlabel「XX·立即播放」文字已移除，播放画面本身高亮 */
 /* V4.5.2 #9：右侧详情区改 flex 列，胶囊沉底与小窗底部齐平 */
 .tv-detail-body { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 325px; }
@@ -645,6 +657,25 @@
 .tv .player-root.landscape .tvp-stage { pointer-events: none; }
 .tvp-stage button, .tvp-stage .tvp-track { pointer-events: auto; }
 
+/* V4.5.4 #10/#11：TV 播放页居中「加载中」——黑底小转圈（解析/切集/缓冲/快进共用）。
+   放在控制层下方（z-index 6），控制层收起时仍可见；黑底 masking 兜住「音频先到、画面未出」的窗口期。 */
+.tvp-loading {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
+  display: flex; flex-direction: column; align-items: center; gap: 18px;
+  padding: 30px 44px; border-radius: 20px; background: rgba(0, 0, 0, .62); pointer-events: none;
+}
+.tvp-loading .vp-spinner {
+  width: 56px; height: 56px; border-width: 5px;
+  border-color: rgba(255,255,255,.22); border-top-color: var(--accent);
+}
+.tvp-loading-text { color: #fff; font-size: 20px; font-weight: 700; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+
+/* V4.5.4 #11：TV 播放页内无条件隐藏中央「播放三角」占位图标（只藏 play，保留 pause 海报）。
+   现有 V4.5.3 #8 规则只覆盖 .land-center，方案C 借 video 时走 .tvp-stage 根本不含该类 → 大三角透出。 */
+.tv .player-root .tvp-stage svg[data-icon="play"],
+.tv .player-root .tvp-stage .big-btn svg[data-icon="play"],
+.tv .player-root .tvp-stage .ctrl.main svg[data-icon="play"] { display: none !important; }
+
 /* .p-top：左上片名 + 副标题 */
 .tvp-top {
   position: absolute; left: 46px; top: 32px; z-index: 4; color: #fff;
@@ -789,6 +820,12 @@
 .netdisk-auth-card .nda-name { font-size: 30px; font-weight: 900; color: #141820; }
 .netdisk-auth-card .nda-qr { width: 340px; max-width: 100%; height: 340px; margin: 0 auto 24px; padding: 16px; background: #fff; border: 2px solid #e4e8f0; border-radius: 18px; box-sizing: border-box; }
 .netdisk-auth-card .nda-qr canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+/* V4.5.4：真码浮窗——原生 Dialog 拉起前，等待层用转圈代替假二维码 */
+.netdisk-auth-card .nda-qr-wait { display: grid; place-items: center; }
+.netdisk-auth-card .nda-qr-wait .vp-spinner {
+  width: 72px; height: 72px; border-width: 6px;
+  border-color: rgba(47,111,224,.18); border-top-color: #2f6fe0;
+}
 .netdisk-auth-card .nda-tip { font-size: 28px; font-weight: 900; color: #141820; line-height: 1.5; }
 .netdisk-auth-card .nda-tip b { color: #2f6fe0; }
 .netdisk-auth-card .nda-sub { font-size: 18px; color: #6b7488; margin-top: 12px; }

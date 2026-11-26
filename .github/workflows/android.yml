@@ -103,6 +103,61 @@ jobs:
           set -o pipefail
           pnpm tauri android init 2>&1 | tee /tmp/init.log
 
+      - name: Dark launch background (V4.5.4 #12：消除启动白屏)
+        run: |
+          set -e
+          # 首帧（React 挂载前）窗口底色设为深色。Tauri init 每次重新生成 themes.xml，
+          # 这里在 Theme.muhai 里补 windowBackground / windowLightStatusBar=false，
+          # 覆盖「WebView 尚未绘制」的空白帧。
+          python3 - <<'PYEOF'
+          import glob, os, re
+          files = glob.glob('src-tauri/gen/android/app/src/main/res/values/**/*.xml', recursive=True)
+          target = None
+          for f in files:
+              s = open(f, encoding='utf-8').read()
+              if 'Theme.muhai' in s:
+                  target = f
+                  break
+          if not target:
+              # 主题未找到则新建一个 styles.xml 兜底
+              target = 'src-tauri/gen/android/app/src/main/res/values/themes_dark.xml'
+              open(target, 'w', encoding='utf-8').write(
+                  '<?xml version="1.0" encoding="utf-8"?>\n'
+                  '<resources>\n'
+                  '  <style name="Theme.muhai" parent="Theme.MaterialComponents.DayNight.NoActionBar">\n'
+                  '  </style>\n'
+                  '</resources>\n')
+          s = open(target, encoding='utf-8').read()
+          if 'android:windowBackground' not in s:
+              # 在 Theme.muhai 的 <style> 内插入 item
+              def add_item(m):
+                  body = m.group(1)
+                  item = ('\n        <item name="android:windowBackground">@color/muhai_launch_bg</item>'
+                          '\n        <item name="android:windowLightStatusBar">false</item>\n    ')
+                  return '<style' + m.group('attrs') + '>' + body + item + '</style>'
+              # 精确匹配含 Theme.muhai 的 style 块
+              pat = re.compile(r'<style(?P<attrs>[^>]*name="Theme\.muhai"[^>]*)>(.*?)</style>', re.S)
+              if pat.search(s):
+                  s = pat.sub(lambda m: '<style' + m.group('attrs') + '>' + m.group(2) +
+                              '\n        <item name="android:windowBackground">@color/muhai_launch_bg</item>' +
+                              '\n        <item name="android:windowLightStatusBar">false</item>\n    </style>', s, count=1)
+              else:
+                  s = s.replace('</resources>', '  <style name="Theme.muhai" parent="Theme.MaterialComponents.DayNight.NoActionBar">\n'
+                                '    <item name="android:windowBackground">@color/muhai_launch_bg</item>\n'
+                                '    <item name="android:windowLightStatusBar">false</item>\n'
+                                '  </style>\n</resources>')
+              open(target, 'w', encoding='utf-8').write(s)
+              print('已在', target, '写入深色启动背景')
+          else:
+              print('windowBackground 已存在，跳过')
+          # 颜色资源
+          color_file = 'src-tauri/gen/android/app/src/main/res/values/colors.xml'
+          cs = open(color_file, encoding='utf-8').read() if os.path.exists(color_file) else '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n'
+          if 'muhai_launch_bg' not in cs:
+              cs = cs.replace('</resources>', '    <color name="muhai_launch_bg">#0d0f14</color>\n</resources>')
+              open(color_file, 'w', encoding='utf-8').write(cs)
+          PYEOF
+
       - name: Patch MainActivity (Android back-button → WebView)
         run: |
           MAIN="src-tauri/gen/android/app/src/main/java/com/muhai/app/MainActivity.kt"
@@ -543,6 +598,10 @@ jobs:
               onstart = '''
               override fun onStart() {
                   super.onStart()
+                  // V4.5.4 #12：尽早设深色窗口底（早于 onWebViewCreate），消除启动白屏
+                  try {
+                      window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.parseColor("#0d0f14")))
+                  } catch (e: Exception) { /* ignore */ }
                   _muhaiHealStart()
                   _injectNavBarInset()
               }
@@ -760,6 +819,26 @@ jobs:
           mkdir -p "$JAVA_DIR"
           cp "$SRC_PATCH" "$JAVA_DIR/NetdiskLoginActivity.kt"
           echo "已写入 $JAVA_DIR/NetdiskLoginActivity.kt"
+          # V4.5.4：网盘授权浮窗主题——继承 App 主题，仅把窗口改成浮窗（Dialog）形态，
+          # 让官方登录页（真二维码）以浮窗盖在详情页上，而不是全屏跳转。
+          RES_VALUES=$(find src-tauri/gen/android -type d -path "*app/src/main/res/values" 2>/dev/null | head -1)
+          if [ -z "$RES_VALUES" ]; then echo "::error::res/values not found — 无法写入网盘浮窗主题"; exit 1; fi
+          cat > "$RES_VALUES/netdisk_dialog.xml" << 'XMLEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.MuhaiNetdiskDialog" parent="Theme.muhai">
+                  <item name="android:windowIsFloating">true</item>
+                  <item name="android:windowNoTitle">true</item>
+                  <item name="android:windowActionBar">false</item>
+                  <item name="android:windowFullscreen">false</item>
+                  <item name="android:windowCloseOnTouchOutside">false</item>
+                  <item name="android:backgroundDimEnabled">true</item>
+                  <item name="android:backgroundDimAmount">0.55</item>
+                  <item name="android:windowBackground">@android:color/transparent</item>
+              </style>
+          </resources>
+          XMLEOF
+          echo "已写入网盘浮窗主题 netdisk_dialog.xml"
           # 在 <application> 内（</application> 之前）注册该 Activity
           MANIFEST=$(find src-tauri/gen/android -name "AndroidManifest.xml" -path "*app/src/main*" 2>/dev/null | head -1)
           if [ -z "$MANIFEST" ]; then echo "::error::AndroidManifest not found — 无法注册 NetdiskLoginActivity"; exit 1; fi
@@ -775,7 +854,7 @@ jobs:
               '        <activity\n'
               '            android:name=".NetdiskLoginActivity"\n'
               '            android:exported="false"\n'
-              '            android:theme="@style/Theme.muhai"\n'
+              '            android:theme="@style/Theme.MuhaiNetdiskDialog"\n'
               '            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />\n'
           )
           idx = src.rfind("</application>")

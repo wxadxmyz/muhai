@@ -1,15 +1,17 @@
 // TV 历史页（清单左竖导航「历史」）：观看历史 / 影视收藏 两个标签 + 海报网格。
-// V4.4.1：按 UI 定稿重写删除交互——
-//   · 顶栏同一行：左「观看历史 / 影视收藏」子标签，右「删除记录 / 一键清空」按钮靠最右；
-//   · 卡片默认无 ×；点「删除记录」进入删除模式（按钮变「完成」、卡片红框提示），
-//     光标移到卡片上按 OK（点击）即删单条、不弹确认窗；点「完成」退出删除（不删）；
-//   · 「一键清空」直接清空，不弹确认窗；正常模式点卡片 → 进详情页。
-// V4.5.3 #4：卡片上键 navUp 从整行容器 #hist-bar 改到具体 tab（跟随当前 tab），光标不再框整条按钮条。
-import { useState } from 'react';
+// V4.4.1：顶栏同一行左子标签、右删除按钮靠最右；卡片默认无 ×。
+// V4.5.4 #15-#18（删除交互重做）：
+//   · 去掉两段提示文字（tv-hist-tip）；
+//   · 点「删除记录」进入删除模式后按钮文字不变（仍是「删除记录」），不切「完成」；
+//   · 删除模式靠【返回键】退出（不再点「完成」）；光标移到卡片按 OK 即删单条；
+//   · 删完最后一张卡片后，光标落到「观看历史」标签（#hist-tab-history）。
+import { useEffect, useState } from 'react';
 import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
 import { TVPoster, tvItemPoster } from './common';
 import { toast } from '../../lib/toast';
+import { pushBackHandler } from '../../lib/backStack';
+import { focusElement } from '../../lib/focusNav';
 
 export function HistoryTV({
   library,
@@ -22,15 +24,40 @@ export function HistoryTV({
   const [deleting, setDeleting] = useState(false);
   const list = (tab === 'history' ? library.lib.history : library.lib.favorites).filter((i) => i.mediaType === 'video');
 
+  // V4.5.4 #17：删除模式下返回键退出删除模式（消费，不触发外层回首页）；非删除模式放行。
+  // deleting 作为依赖，确保 handler 始终读到最新值。
+  useEffect(
+    () => pushBackHandler(() => {
+      if (!deleting) return false;
+      setDeleting(false);
+      return true;
+    }),
+    [deleting]
+  );
+
   const removeOne = (it: MediaItem) => {
+    const wasLast = list.length <= 1; // 删的是最后一张
     if (tab === 'history') library.removeFromHistory(it);
     else library.toggleFavorite(it); // 收藏用 toggle 取消
+    toast('已删除该记录');
+    // V4.5.4 #18：删完最后一张，卡片 DOM 消失，把光标落到「观看历史」标签
+    if (wasLast) {
+      window.setTimeout(() => {
+        const t = document.getElementById('hist-tab-history');
+        if (t) focusElement(t);
+      }, 80);
+      setDeleting(false);
+    }
   };
   const clearAll = () => {
     if (tab === 'history') library.clearHistory();
     else library.lib.favorites.slice().forEach((it) => library.toggleFavorite(it));
     setDeleting(false);
     toast('已清空全部记录');
+    window.setTimeout(() => {
+      const t = document.getElementById('hist-tab-history');
+      if (t) focusElement(t);
+    }, 80);
   };
 
   const switchTab = (t: 'history' | 'fav') => {
@@ -52,7 +79,7 @@ export function HistoryTV({
             className={'tv-cat' + (tab === 'fav' ? ' active' : '')}
             data-focusable="" data-nav-left="#hist-tab-history" data-nav-right="#hist-clear-one"
             onClick={() => switchTab('fav')} role="button">影视收藏</div>
-          <span className="tv-hist-tip">{deleting ? '光标移到卡片上按 OK 即删除，点「完成」退出' : '点「删除记录」后可删除单条'}</span>
+          {/* V4.5.4 #15：删除交互两段提示文字已去掉 */}
         </div>
         {list.length > 0 && (
           <div className="tv-history-actions">
@@ -60,7 +87,7 @@ export function HistoryTV({
               id="hist-clear-one"
               className={'tv-hist-clear' + (deleting ? ' primary' : ' danger')}
               data-focusable="" data-nav-left="#hist-tab-fav" data-nav-right="#hist-clear-all" data-nav-down="#hist-first-card"
-              onClick={() => setDeleting((m) => !m)} role="button">{deleting ? '完成' : '删除记录'}</div>
+              onClick={() => setDeleting((m) => !m)} role="button">删除记录</div>
             <div
               id="hist-clear-all"
               className="tv-hist-clear danger" data-focusable=""
@@ -83,7 +110,7 @@ export function HistoryTV({
                   year={it.year}
                   domId={idx === 0 ? 'hist-first-card' : undefined}
                   navUp={tab === 'fav' ? '#hist-tab-fav' : '#hist-tab-history'}
-                  onClick={() => { if (deleting) { removeOne(it); toast('已删除该记录'); } else onOpenDetail(it); }}
+                  onClick={() => { if (deleting) { removeOne(it); } else onOpenDetail(it); }}
                   focusable
                 />
               </div>

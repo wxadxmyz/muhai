@@ -62,6 +62,9 @@ export function DetailTV({
   const miniVideoRef = useRef<HTMLVideoElement | null>(null);
   const miniSlotRef = useRef<HTMLDivElement | null>(null); // V4.5.1 方案 C：小窗 video 的原始容器（大屏归还用）
   const [miniPlaying, setMiniPlaying] = useState(false);
+  // V4.5.4 #21：大屏播放页暂停后返回详情，小窗要显示暂停符号。小窗 video 与大屏共用同一节点
+  // （方案C），video 的 pause 事件在暂停时触发、返回后节点搬回仍保持 paused，故据此显示暂停符号。
+  const [miniPaused, setMiniPaused] = useState(false);
   // V4.5.1 #7：小窗加载期间纯黑 +「正在加载中」，不再先显示封面、再突然出画/出声。
   const [miniLoading, setMiniLoading] = useState(true);
   const activeEpRef = useRef<HTMLDivElement | null>(null); // V4.5.0 #9：进入详情焦点落选中集
@@ -100,9 +103,13 @@ export function DetailTV({
         focusElement(ep || playRef.current);
         if (ep && epScrollRef.current) {
           const box = epScrollRef.current;
-          // 让当前集处于视口靠上位置（顶部留一行，即「第二行」）
-          const top = ep.offsetTop - 58 - 9; // 58=行高, 9=gap；往上让一行
-          box.scrollTop = Math.max(0, top);
+          // V4.5.4 #3：改用「相对滚动容器」的坐标。旧写法 ep.offsetTop 相对最近的定位祖先
+          // .tv-main（position:relative），把小窗+信息区+线路行+分段行高度全算进去，数值虚高约
+          // 350~400px → 新片/第1集也会被滚到「第19集」位置、前三行被顶出视口。
+          // getBoundingClientRect 差值 + 当前 scrollTop = 元素相对容器内容顶部的真实偏移。
+          const relativeTop =
+            ep.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+          box.scrollTop = Math.max(0, relativeTop - 58 - 9); // 留一行，让当前集落在第二行
         }
       };
       // 双帧：第一帧等 React 提交，第二帧等布局完成，确保 offsetTop 准确
@@ -120,6 +127,14 @@ export function DetailTV({
   useEffect(() => { onIndexChange?.(index, line); }, [index, line]);
   // 切换影片时重置倒序/分段（沿用初始集所在分段）
   useEffect(() => { setReverse(false); setSeg(Math.floor(initialIndex / SEG)); }, [item.id]);
+  // V4.5.4 #6：详情在大屏播放期间只是 display:none 保持挂载（方案C 复用 video），
+  // useState(initialIndex) 只在首次挂载生效——大屏切集/换源后外壳 detailIndex 变了，
+  // 但内部 index 仍是旧值，返回详情就落到旧集。这里让内部 state 跟随 prop 变化，
+  // 返回时续播定位与焦点（上面的 effect 依赖 index/seg）自动落到刚选的集。
+  useEffect(() => {
+    if (typeof initialIndex === 'number' && initialIndex >= 0) setIndex(initialIndex);
+    if (typeof initialLine === 'number' && initialLine >= 0) setLine(initialLine);
+  }, [initialIndex, initialLine, item.id]);
 
   // V4.4.2 #12/#17：左上角小窗「真实播放」+ 无缝续播。
   //  - 带声音：先静音保证自动播放成功，play() 成功后立即取消静音（TV WebView 通常允许有声播放）。
@@ -136,6 +151,7 @@ export function DetailTV({
     let timeUpdateHandler: (() => void) | null = null;
     let lastSave = 0;
     setMiniPlaying(false);
+    setMiniPaused(false); // V4.5.4 #21：切集/进详情清除上一集的暂停符号
     setMiniLoading(true); // V4.5.1 #7：切集/进详情先回到黑屏加载态
     (async () => {
       try {
@@ -271,6 +287,8 @@ export function DetailTV({
             ref={miniVideoRef}
             className={'tv-detail-mini-video' + (miniPlaying ? ' on' : '')}
             muted playsInline loop preload="metadata"
+            onPlay={() => setMiniPaused(false)}
+            onPause={() => { if (miniPlaying) setMiniPaused(true); }}
           />
           {/* V4.5.1 #7：加载期间纯黑遮罩盖住封面 + 转圈 +「正在加载中」，起播成功后淡出 */}
           {miniLoading && (
@@ -281,6 +299,10 @@ export function DetailTV({
           )}
           <div className="dshade" />
           <div className="dplay"><Icon name="play" size={38} /></div>
+          {/* V4.5.4 #21：暂停态符号——大屏暂停后返回详情，小窗画面定住并显示中央暂停符号 */}
+          {miniPaused && !miniLoading && (
+            <div className="mini-pause"><Icon name="pause" size={44} /></div>
+          )}
           {/* V4.4.5 #8：去掉「XX·立即播放」文字标签，让播放画面本身成为焦点高亮（文字会抢视觉焦点） */}
         </div>
 

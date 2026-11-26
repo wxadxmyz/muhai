@@ -187,6 +187,8 @@ export function VideoPlayer({
   // 横滑快进/快退时间气泡（点播播放窗口左右滑 ±10s）
   const [seekBubble, setSeekBubble] = useState<{ dir: 1 | -1; delta: number; target: number } | null>(null);
   const seekBubbleTimer = useRef<number | undefined>(undefined);
+  // V4.5.4 #8：TV 左右键快进转圈的兜底清除定时器
+  const tvSeekTimer = useRef<number | undefined>(undefined);
   // V4.4.6：TV 专属播放页——底部按钮条首个按钮（按 ↓ 焦点落到它）
   const tvpFirstBtnRef = useRef<HTMLButtonElement | null>(null);
   // V4.5.0 #4/#5/#15：keydown 闭包读取最新控制层状态；功能键显示时左右键走焦点导航而非快进。
@@ -532,18 +534,37 @@ export function VideoPlayer({
         videoRef.current = v;
         player.attachVideo(v);
         try { void v.play(); } catch { /* ignore */ }
-        setResolving(false);
+        // V4.5.4 #7/#11：借到小窗 video 后不要立刻揭开遮罩。此时 video 可能只有音频轨先到、
+        // 画面尚未解码出首帧（用户看到「有声音但中央还是播放三角占位图」）。保持 resolving=true
+        // 让黑底转圈盖住，直到真正出画面才揭开。
+        //  - 若借来的 video 已在播放且有首帧（readyState>=HAVE_CURRENT_DATA）→ 立即揭开，不闪转圈；
+        //  - 否则监听 playing 事件（真正起播）再揭开；2.5s 兜底防止某些源永不触发。
+        setResolving(true);
         setErr(null);
+        const reveal = () => { setResolving(false); };
+        let fallback = 0;
+        if (!v.paused && v.readyState >= 2) {
+          reveal();
+        } else {
+          v.addEventListener('playing', reveal, { once: true });
+          fallback = window.setTimeout(reveal, 2500);
+        }
         // 同步已播进度到 player store，进度条立即到位
         try {
           player.setProgress(v.currentTime || 0);
           if (v.duration > 0) player.setDuration(v.duration);
         } catch { /* ignore */ }
+        // 清理：解绑监听 + 清兜底定时器
+        (borrowedMiniRef.current as any)._revealOff = () => {
+          v.removeEventListener('playing', reveal);
+          window.clearTimeout(fallback);
+        };
       }
       return () => {
         // 返回详情：把同一个 video 搬回小窗原容器，继续播（不 detachHls、不 pause）
         const b = borrowedMiniRef.current;
         if (b) {
+          try { (b as any)._revealOff?.(); } catch { /* ignore */ }
           try { b.video.style.cssText = ''; b.slot.appendChild(b.video); } catch { /* ignore */ }
           borrowedMiniRef.current = null;
         }
@@ -1383,6 +1404,11 @@ export function VideoPlayer({
             : Math.min(dur > 0 ? dur : 1e9, cur + STEP);
           player.seek(target);
           setLiveCur(target);
+          // V4.5.4 #8：TV 左右键快进/快退也起「加载中」转圈（此前只有手机手势滑动会调）。
+          // seek 落地后由 onSeeked → clearSeekLoadingOnSettled 收掉；兜底 800ms 防某些源不触发 onSeeked。
+          startSeekLoading(false);
+          if (tvSeekTimer.current) window.clearTimeout(tvSeekTimer.current);
+          tvSeekTimer.current = window.setTimeout(() => { clearSeekLoadingNow(); }, 800);
           setSeekBubble({ dir: isRight ? 1 : -1, delta: STEP, target });
           if (seekBubbleTimer.current) window.clearTimeout(seekBubbleTimer.current);
           seekBubbleTimer.current = window.setTimeout(() => setSeekBubble(null), 1200);
@@ -1534,6 +1560,7 @@ export function VideoPlayer({
     startSeekLoading,
     endSeekGesture,
     clearSeekLoadingOnSettled,
+    clearSeekLoadingNow,
   } = useBuffering();
   // T5：进入播放器时读系统当前音量作为手势起点（"从系统当前音量接着调，不是回到 100"）
   const systemVolRef = useRef(1);
@@ -1894,6 +1921,16 @@ export function VideoPlayer({
             控制层默认常显（对齐 UI 原型），↑ 收起 / ↓ 调出并聚焦首钮 / OK 暂停。 */}
         {landscape && tvMode && (
           <div className={'tvp-stage' + (tvPauseOverlay ? ' paused' : '') + (controlsVisible && !seekHideControls ? ' controls' : '')}>
+            {/* V4.5.4 #10：TV 专属播放页的居中「加载中」——解析 / 切集 / 缓冲 / 快进 三种态都在这里显示。
+                旧版转圈只在手机横屏 .land-center 渲染，.tvp-stage 整块没有 → 切集黑屏中间空空无反馈。 */}
+            {(resolving || buffering || seekLoading) && !err && !tvPauseOverlay && (
+              <div className="tvp-loading">
+                <span className="vp-spinner" />
+                <span className="tvp-loading-text">
+                  {resolving ? '正在加载…' : seekLoading ? '快进中…' : '缓冲中…'}
+                </span>
+              </div>
+            )}
             {/* .p-top：左上片名 + 副标题 */}
             <div className="tvp-top">
               <div className="tvp-t1">{detail.title}</div>

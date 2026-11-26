@@ -73,6 +73,21 @@ class NetdiskLoginActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // V4.5.4：网盘授权浮窗化（影视仓式）——本 Activity 以 Dialog 主题（见 android.yml 注册的
+        // Theme.MuhaiNetdiskDialog）盖在详情页上方，直接显示官方登录页生成的真二维码，
+        // 用户用手机网盘 App 扫真码授权后，token 落盘、Activity 自动 finish，前端自动重试播放。
+        // 用代码精确控制浮窗尺寸（横屏竖长条居中），避免不同 ROM 下 Dialog 默认尺寸异常。
+        try {
+            val dm = resources.displayMetrics
+            val winW = (dm.widthPixels * 0.50).toInt().coerceAtLeast(720)
+            val winH = (dm.heightPixels * 0.86).toInt().coerceAtLeast(900)
+            window.setLayout(winW, winH)
+            window.setGravity(Gravity.CENTER)
+            window.setDimAmount(0.55f)
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setFinishOnTouchOutside(false)
+        } catch (e: Exception) { /* 某些 ROM 不支持时回退到主题默认尺寸 */ }
+
         url = intent.getStringExtra("url") ?: ""
         provider = intent.getStringExtra("provider") ?: ""
         script = intent.getStringExtra("script") ?: ""

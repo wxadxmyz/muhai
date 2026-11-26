@@ -12,6 +12,9 @@ import { resolvePlay } from '../../player';
 import { attachHlsWithBackend, detachHls } from '../../lib/hlsPlayer';
 import { player } from '../../lib/playerStore';
 import { registerMiniVideo, clearMiniVideo, getMiniVideo } from './miniVideoBus';
+import { lineDisplayName, lineNetdiskKey } from '../../lib/lineName';
+import { getNetdiskToken, type NetdiskKey } from '../../lib/netdisk';
+import { NetdiskAuthTV } from './NetdiskAuthTV';
 
 // V4.5.0：从 raw（CMS 原始字段）宽松提取影视仓详情页信息
 function rawText(...vals: any[]): string {
@@ -64,6 +67,19 @@ export function DetailTV({
   const activeEpRef = useRef<HTMLDivElement | null>(null); // V4.5.0 #9：进入详情焦点落选中集
   const epScrollRef = useRef<HTMLDivElement | null>(null); // V4.5.2 #10：选集独立滚动容器
 
+  // V4.5.3 网盘授权：当前线路若是网盘且未授权，进入详情即弹窗；用户关掉后点线路可再次弹。
+  const [authProvider, setAuthProvider] = useState<NetdiskKey | null>(null);
+  const authDismissedRef = useRef<Set<string>>(new Set());
+  const authKeyOf = (lineIdx: number) => `${item.id}:${lineIdx}`;
+  const maybeAuth = (lineIdx: number, force = false) => {
+    const k = lineNetdiskKey(item.raw, lineIdx);
+    if (!k) { setAuthProvider(null); return; }
+    if (getNetdiskToken(k)) { setAuthProvider(null); return; } // 已授权不弹
+    const key = authKeyOf(lineIdx);
+    if (!force && authDismissedRef.current.has(key)) return; // 用户已关闭该线路弹窗
+    setAuthProvider(k);
+  };
+
   const eps = groups[line] ?? groups[0] ?? [];
   const fav = library.isFavorite(item);
 
@@ -73,22 +89,32 @@ export function DetailTV({
   const SEG = epLong ? 40 : 42;
   const [seg, setSeg] = useState(() => Math.floor(initialIndex / (epLong ? 40 : 42)));
 
-  // V4.5.0 #8/#9 + V4.5.2 #10：进入详情——焦点落在选中那一集，并把它滚到选集滚动区靠上第二行
-  // （大屏切回小屏时当前集若在底部，也能显示在靠上位置）。用较长延时确保网格已渲染、弹层不抢焦点。
+  // V4.5.0 #8/#9 + V4.5.2 #10 + V4.5.3 #13：进入详情——焦点落在选中那一集（保留续播进度，选 B），
+  // 并把它滚到选集滚动区靠上第二行；切分段/从大屏返回时也重新定位，左上角「第X集」由播放页 epName 显示。
+  // 用双 rAF 确保在网格渲染完成后再滚动，避免 120ms 定时器在慢机型上网格未就绪导致定位失败。
   useEffect(() => {
+    let raf2 = 0;
     const t = window.setTimeout(() => {
-      const ep = activeEpRef.current;
-      focusElement(ep || playRef.current);
-      if (ep && epScrollRef.current) {
-        const box = epScrollRef.current;
-        // 让当前集处于视口靠上位置（顶部留一行，即「第二行」）
-        const top = ep.offsetTop - 58 - 9; // 58=行高, 9=gap；往上让一行
-        box.scrollTop = Math.max(0, top);
-      }
+      const place = () => {
+        const ep = activeEpRef.current;
+        focusElement(ep || playRef.current);
+        if (ep && epScrollRef.current) {
+          const box = epScrollRef.current;
+          // 让当前集处于视口靠上位置（顶部留一行，即「第二行」）
+          const top = ep.offsetTop - 58 - 9; // 58=行高, 9=gap；往上让一行
+          box.scrollTop = Math.max(0, top);
+        }
+      };
+      // 双帧：第一帧等 React 提交，第二帧等布局完成，确保 offsetTop 准确
+      raf2 = window.requestAnimationFrame(() => { raf2 = window.requestAnimationFrame(place); });
     }, 120);
-    return () => window.clearTimeout(t);
+    return () => { window.clearTimeout(t); if (raf2) window.cancelAnimationFrame(raf2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, initialIndex, initialLine]);
+  }, [item.id, initialIndex, initialLine, index, seg]);
+
+  // V4.5.3 网盘授权：进入详情（或详情 raw 拉全、切线路）时检测当前线路网盘是否未授权 → 弹窗。
+  // 详情是异步拉全的（lineNames 可能后到），依赖 item.raw 确保识别到网盘线路后再弹。
+  useEffect(() => { maybeAuth(line); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [item.id, item.raw, line]);
 
   // V4.5.0 #8：集数/线路变化时通知外壳记录，切集返回可直接续播+焦点还原。
   useEffect(() => { onIndexChange?.(index, line); }, [index, line]);
@@ -293,10 +319,11 @@ export function DetailTV({
                   key={i}
                   className={'tv-line-pill' + (line === i ? ' active' : '')}
                   data-focusable=""
-                  onClick={() => { setLine(i); setIndex(0); setSeg(0); }}
+                  onClick={() => { setLine(i); setIndex(0); setSeg(0); maybeAuth(i, true); }}
                   role="button"
                 >
-                  线路{i + 1}
+                  {/* V4.5.3：用站点自己的线路名（网盘站套谐音），不再写死「线路N」 */}
+                  {lineDisplayName(item.raw, i)}
                   {g.length ? `（${g.length}）` : ''}
                 </span>
               ))}
@@ -321,7 +348,8 @@ export function DetailTV({
         )}
       </div>
 
-      <div className="dt-ep-scroll" ref={epScrollRef} data-scroll>
+      {/* V4.5.3 #11：无分段行时，选集区补上间距，避免集数贴着小窗/线路行 */}
+      <div className={'dt-ep-scroll' + (eps.length > SEG ? '' : ' no-segs')} ref={epScrollRef} data-scroll>
         <div className={'tv-ep-grid' + (epLong ? ' long' : '')}>
           {eps.length === 0 ? (
             <div className="tv-empty">暂无选集</div>
@@ -332,12 +360,17 @@ export function DetailTV({
             const ids: number[] = [];
             for (let i = start; i < end; i++) ids.push(i);
             if (reverse) ids.reverse();
-            return ids.map((i) => (
+            // V4.5.3 #14：集元素补网格坐标（每行 6 个，长名 4 个），方向键按网格移动、配合 focusEl 自动滚入视口；
+            // 保持「只移光标、OK 才切集」的现有设计，不改变点击才切集的行为。
+            const COLS = epLong ? 4 : 6;
+            return ids.map((i, pos) => (
               <div
                 key={i}
                 ref={index === i ? activeEpRef : undefined}
                 className={'tv-ep' + (index === i ? ' active' : '')}
                 data-focusable=""
+                data-grid-col={pos % COLS}
+                data-grid-row={Math.floor(pos / COLS)}
                 onClick={() => { setIndex(i); onIndexChange?.(i, line); onPlay(i, line); }}
                 role="button"
               >
@@ -368,6 +401,18 @@ export function DetailTV({
             </div>
           </div>
         </div>
+      )}
+
+      {/* V4.5.3 网盘授权：当前线路网盘未授权时进入即弹；返回键/登录成功后关闭，登录后自动重试当前集 */}
+      {authProvider && !showDesc && (
+        <NetdiskAuthTV
+          provider={authProvider}
+          onClose={() => {
+            authDismissedRef.current.add(authKeyOf(line));
+            setAuthProvider(null);
+          }}
+          onAuthed={() => { authDismissedRef.current.clear(); onPlay(index, line); }}
+        />
       )}
     </div>
   );

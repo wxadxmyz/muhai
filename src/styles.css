@@ -1216,12 +1216,14 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--accent
 .disclaimer-tv-hint { font-size: 18px; color: var(--muted); margin: 26px 0 20px; }
 /* V4.5.1 #1：退出 / 同意 双按钮并排（焦点默认落「同意」） */
 .disclaimer-tv-actions { display: flex; gap: 20px; }
+/* V4.5.3 #16：按钮缩小——不再 flex:1 占满整行，改固定宽度并缩小 padding/字号，两键更收敛 */
+.disclaimer-tv-actions { justify-content: center; }
 .disclaimer-tv-btn {
-  display: block; flex: 1 1 0; box-sizing: border-box;
-  padding: 22px 28px; font-family: inherit; font-size: 26px; font-weight: 700;
+  display: block; flex: 0 0 auto; min-width: 220px; box-sizing: border-box;
+  padding: 13px 24px; font-family: inherit; font-size: 20px; font-weight: 700;
   color: #fff; cursor: pointer;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
-  border: 3px solid transparent; border-radius: 18px;
+  border: 3px solid transparent; border-radius: 14px;
   transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
 }
 /* 退出按钮：中性深灰描边，与主题色「同意」区分，避免误按 */

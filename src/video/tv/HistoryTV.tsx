@@ -4,6 +4,7 @@
 //   · 卡片默认无 ×；点「删除记录」进入删除模式（按钮变「完成」、卡片红框提示），
 //     光标移到卡片上按 OK（点击）即删单条、不弹确认窗；点「完成」退出删除（不删）；
 //   · 「一键清空」直接清空，不弹确认窗；正常模式点卡片 → 进详情页。
+// V4.5.3 #4：卡片上键 navUp 从整行容器 #hist-bar 改到具体 tab（跟随当前 tab），光标不再框整条按钮条。
 import { useState } from 'react';
 import { useLibrary } from '../../lib/library';
 import { MediaItem } from '../../engine/types';
@@ -81,7 +82,7 @@ export function HistoryTV({
                   cover={cover}
                   year={it.year}
                   domId={idx === 0 ? 'hist-first-card' : undefined}
-                  navUp="#hist-bar"
+                  navUp={tab === 'fav' ? '#hist-tab-fav' : '#hist-tab-history'}
                   onClick={() => { if (deleting) { removeOne(it); toast('已删除该记录'); } else onOpenDetail(it); }}
                   focusable
                 />

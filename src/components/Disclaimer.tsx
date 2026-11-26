@@ -26,7 +26,8 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   // 这里多点重试（60/200/500ms）把焦点「钉」在按钮上，配合 focusNav 的 OK 兜底双保险。
   useEffect(() => {
     if (!tv || settings.disclaimerAccepted) return;
-    const timers = [60, 200, 500].map((ms) =>
+    // V4.5.3 #16：增加 800/1200ms 重试，覆盖更慢的电视首帧（部分机型 500ms 仍未就位）。
+    const timers = [60, 200, 500, 800, 1200].map((ms) =>
       window.setTimeout(() => focusElement(agreeRef.current), ms)
     );
     return () => timers.forEach((t) => window.clearTimeout(t));
@@ -40,6 +41,12 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
     const tick = window.setInterval(() => {
       const left = Math.max(0, 5 - Math.floor((Date.now() - start) / 1000));
       setCountdown(left);
+      // V4.5.3 #16：倒计时每次 tick 重渲染可能把焦点冲掉（用户看到光标不在「同意」上）——
+      // 每次 tick 补一次焦点，把可移动光标钉在默认「同意」按钮；用户已手动移到「退出」时不打扰。
+      const ae = document.activeElement as HTMLElement | null;
+      if (!ae || !ae.hasAttribute || !ae.hasAttribute('data-disclaimer-btn')) {
+        focusElement(agreeRef.current);
+      }
       if (left <= 0) {
         window.clearInterval(tick);
         accept();

@@ -136,19 +136,25 @@ export function SearchTV({
       </div>
 
       <div className="tv-search-right">
-        <div className="tv-chips">
-          {CHIPS.map((c) => (
-            <div
-              key={c.key}
-              className={'tv-chip' + (chip === c.key ? ' active' : '')}
-              data-focusable=""
-              onClick={() => setChip(c.key)}
-              role="button"
-            >
-              {c.label}
-            </div>
-          ))}
-        </div>
+        {/* V4.5.3 #18：无输入保留原分类芯片行（热门推荐/电视剧/电影/综艺/动漫）；
+            一输入首字母，改为显示「热门搜索」标题（影视仓观感）。 */}
+        {text.trim() ? (
+          <div className="tv-chips-title">热门搜索</div>
+        ) : (
+          <div className="tv-chips">
+            {CHIPS.map((c) => (
+              <div
+                key={c.key}
+                className={'tv-chip' + (chip === c.key ? ' active' : '')}
+                data-focusable=""
+                onClick={() => setChip(c.key)}
+                role="button"
+              >
+                {c.label}
+              </div>
+            ))}
+          </div>
+        )}
         {/* V4.3.9：影视仓式标签墙（无输入=热门搜索，有输入=首字母联想），点标签直接出结果 */}
         <div className="tv-tagwall">
           {tags.length === 0 ? (

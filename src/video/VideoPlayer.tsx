@@ -22,6 +22,7 @@ import { crossSourceCover, cachedCrossCover, tryCoverFallback } from '../lib/cro
 import { pushBackHandler } from '../lib/backStack';
 import { useBuffering } from './hooks/useBuffering';
 import { getMiniVideo } from './tv/miniVideoBus';
+import { lineDisplayName } from '../lib/lineName';
 
 // V3.3.6 八·二：子站无 logo 时的六边形兜底图案（白色描边六边形 + 源名 hash 固定配色，同源同色）
 const SUBSITE_PALETTE: [string, string][] = [
@@ -244,6 +245,10 @@ export function VideoPlayer({
     if (typeof state.duration === 'number' && state.duration > 0) setLiveDur(state.duration);
   }, [state.progress, state.duration, tvMode]);
   const [epOpen, setEpOpen] = useState(false); // ⑦ 横屏选集浮层
+  // V4.5.3 #12：TV 键盘监听（window 捕获，先于 focusNav 的 document 捕获）需要知道浮层是否打开，
+  // 打开时放行方向键/OK 给焦点系统接管（选集浮层内移光标 + OK 切集）。
+  const epOpenRef = useRef(epOpen);
+  useEffect(() => { epOpenRef.current = epOpen; }, [epOpen]);
   // V3.3.5 A3：竖屏选集半屏浮层——集数多时（实测 115 集 ≈ 29 行）信息区被拉到三屏开外，
   // 竖屏改为「2 行预览 + 点开半屏浮层」，浮层内独立滚动、点遮罩/选完集关闭。
   const [epSheetOpen, setEpSheetOpen] = useState(false);
@@ -1339,6 +1344,11 @@ export function VideoPlayer({
       const isDown = k === 'ArrowDown' || k === 'Down' || code === 20;
       const isOk = k === 'Enter' || k === 'OK' || k === 'Select' || k === ' ' || code === 13 || code === 23 || code === 66;
 
+      // V4.5.3 #12：选集浮层打开时，方向键 + OK 全部放行给 focusNav（window 捕获先于 document 捕获，
+      // 这里若不 return 会 stopPropagation 吞掉按键，导致浮层内光标不动、OK 不切集）。
+      // 返回键不在此列——由 pushBackHandler 统一关闭浮层。
+      if (epOpenRef.current && (isUp || isDown || isLeft || isRight || isOk)) return;
+
       // V4.5.0：功能键显示态 = 控制层可见且非暂停海报态。
       const shown = controlsVisibleRef.current && !tvPauseOverlayRef.current;
       const armHide = () => {
@@ -1636,7 +1646,7 @@ export function VideoPlayer({
                 <button className="mini" onClick={retry}>重试</button>
                 {lines > 1 && (
                   <button className="mini ghost" onClick={switchSourceAndRetry}>
-                    换源（{((detail.raw as any)?.lineNames as string[] | undefined)?.[(line + 1) % lines] || LINE_NAMES[(line + 1) % lines] || `线路${((line + 1) % lines) + 1}`}）
+                    换源（{lineDisplayName(detail.raw, (line + 1) % lines)}）
                   </button>
                 )}
               </div>
@@ -1899,9 +1909,7 @@ export function VideoPlayer({
                 <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}>重播</button>
                 <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => setEpOpen(true)}>选集</button>
                 <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={cycleSpeed}>x{speedLabel(speed)}</button>
-                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={toggleDecode}>{decodeLabel()}</button>
-                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => setDecode('ijk-hard')}>ijkpro</button>
-                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { setScaleMode('默认'); localStorage.setItem('rf_scale', '默认'); }}>S渲染</button>
+                {/* V4.5.3 #15：删掉 ijkpro / 解码 / S渲染 三个假键（只改状态字符串、TV WebView 不切内核）；剩 10 键自动等分仍与进度条等宽 */}
                 <button className={'tvp-btn' + (danmaku ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={toggleDanmaku}>弹幕{danmaku ? '开' : '关'}</button>
                 <button className={'tvp-btn' + (introSec > 0 ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={() => setSkipOneTap('intro')}>片头{fmtTime(introSec)}</button>
                 <button className={'tvp-btn' + (outroSec > 0 ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={() => setSkipOneTap('outro')}>片尾{fmtTime(outroSec)}</button>
@@ -2330,27 +2338,31 @@ export function VideoPlayer({
         </div>
       )}
 
-      {/* 横屏选集浮层：对齐原型 #playerLandEp —— 右侧 74% .epsheet（eh[h4 + pill-sel + 30px X] + .eps 6 列 padding 0 14px）；点遮罩/播放窗口空白关闭 */}
+      {/* V4.5.3 #12：横屏选集浮层——影视仓视觉（半透明黑罩盖画面 + 白字6列平铺 + 当前集圆角框青字），
+          全部集数一次铺开可滚动；带 data-focus-root 让焦点系统接管：方向键移光标、OK 切集、返回键关浮层。 */}
       {epOpen && (
-        <div className="drawer-mask" onClick={() => setEpOpen(false)}>
-          <div className="epsheet open land-ep-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="eh">
-              <h4>选集·共 {detail.episodes?.length ?? 0} 集</h4>
-              <div className="pill-sel">
-                <button className={asc ? 'on' : ''} onClick={() => setAsc(true)}>正序</button>
-                <button className={!asc ? 'on' : ''} onClick={() => setAsc(false)}>倒序</button>
-              </div>
-              <button className="ic-btn" onClick={() => setEpOpen(false)} title="关闭"><Icon name="x" size={16} /></button>
-            </div>
-            <div className="ep-eps" style={{ gridTemplateColumns: 'repeat(6,1fr)', padding: '0 14px' }}>
+        <div className="tv-ep-overlay" data-focus-root onClick={() => setEpOpen(false)}>
+          <div className="tv-ep-overlay-inner" onClick={(e) => e.stopPropagation()}>
+            <div className="tv-ep-grid-land">
               {(() => {
                 const list = detail.episodes ?? [];
                 const order = asc ? list.map((_, i) => i) : list.map((_, i) => list.length - 1 - i);
-                return order.map((i) => {
+                const COLS = 6;
+                return order.map((i, pos) => {
                   const ep = list[i];
-                  // V3.3.7 五：输出 cleanEp 短集名，避免长集名在格子里挤成多行
+                  const isCur = i === episodeIndex;
                   return (
-                    <button key={i} className={(i === episodeIndex ? 'on cur' : '') + (ep?.locked ? ' locked' : '')} onClick={() => { onSelectEpisode(i); setEpOpen(false); }}>{ep?.locked ? '锁' : cleanEp(ep?.name, i)}</button>
+                    <button
+                      key={i}
+                      className={'tv-ep-cell' + (isCur ? ' cur' : '') + (ep?.locked ? ' locked' : '')}
+                      data-focusable=""
+                      data-grid-col={pos % COLS}
+                      data-grid-row={Math.floor(pos / COLS)}
+                      {...(isCur ? { 'data-autofocus': '' } : {})}
+                      onClick={() => { onSelectEpisode(i); setEpOpen(false); }}
+                    >
+                      {ep?.locked ? '锁' : cleanEp(ep?.name, i)}
+                    </button>
                   );
                 });
               })()}

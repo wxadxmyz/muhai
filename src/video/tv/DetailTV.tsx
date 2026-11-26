@@ -82,6 +82,17 @@ export function DetailTV({
     if (!force && authDismissedRef.current.has(key)) return; // 用户已关闭该线路弹窗
     setAuthProvider(k);
   };
+  // V4.5.5 #4：点播放时若当前线路是网盘且未授权，先弹授权浮窗（授权成功 onAuthed 会自动重试播放），
+  // 不再直接 onPlay 导致解析失败。已授权/非网盘线路照常播放。
+  const playOrAuth = (idx: number, lineIdx: number) => {
+    const k = lineNetdiskKey(item.raw, lineIdx);
+    if (k && !getNetdiskToken(k)) {
+      authDismissedRef.current.delete(authKeyOf(lineIdx)); // 用户主动点播放：清掉此前的"已关闭"标记
+      setAuthProvider(k);
+      return;
+    }
+    onPlay(idx, lineIdx);
+  };
 
   const eps = groups[line] ?? groups[0] ?? [];
   const fav = library.isFavorite(item);
@@ -119,9 +130,8 @@ export function DetailTV({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, initialIndex, initialLine, index, seg]);
 
-  // V4.5.3 网盘授权：进入详情（或详情 raw 拉全、切线路）时检测当前线路网盘是否未授权 → 弹窗。
-  // 详情是异步拉全的（lineNames 可能后到），依赖 item.raw 确保识别到网盘线路后再弹。
-  useEffect(() => { maybeAuth(line); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [item.id, item.raw, line]);
+  // V4.5.5 #4：取消「进入详情就自动弹网盘授权浮窗」。网盘子站点进入详情不再自动拉起原生登录页；
+  // 改为按需触发——点该网盘线路（344行 force）或点播放（playOrAuth）时才弹，避免一进子站就弹窗。
 
   // V4.5.0 #8：集数/线路变化时通知外壳记录，切集返回可直接续播+焦点还原。
   useEffect(() => { onIndexChange?.(index, line); }, [index, line]);
@@ -276,8 +286,8 @@ export function DetailTV({
           ref={miniSlotRef}
           className="tv-detail-player"
           data-focusable=""
-          onClick={() => onPlay(index, line)}
-          onKeyDown={(e) => { const c = (e as any).keyCode || 0; if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23 || c === 66) { e.preventDefault(); onPlay(index, line); } }}
+          onClick={() => playOrAuth(index, line)}
+          onKeyDown={(e) => { const c = (e as any).keyCode || 0; if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23 || c === 66) { e.preventDefault(); playOrAuth(index, line); } }}
           role="button"
           title="立即播放"
         >
@@ -393,7 +403,7 @@ export function DetailTV({
                 data-focusable=""
                 data-grid-col={pos % COLS}
                 data-grid-row={Math.floor(pos / COLS)}
-                onClick={() => { setIndex(i); onIndexChange?.(i, line); onPlay(i, line); }}
+                onClick={() => { setIndex(i); onIndexChange?.(i, line); playOrAuth(i, line); }}
                 role="button"
               >
                 {eps[i]?.name || `第${i + 1}集`}

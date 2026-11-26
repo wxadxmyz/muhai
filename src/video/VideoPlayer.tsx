@@ -189,6 +189,8 @@ export function VideoPlayer({
   const seekBubbleTimer = useRef<number | undefined>(undefined);
   // V4.5.4 #8：TV 左右键快进转圈的兜底清除定时器
   const tvSeekTimer = useRef<number | undefined>(undefined);
+  // V4.5.5 #13/#14：切集揭遮罩（等首帧）的兜底定时器
+  const firstFrameTimerRef = useRef<number | undefined>(undefined);
   // V4.4.6：TV 专属播放页——底部按钮条首个按钮（按 ↓ 焦点落到它）
   const tvpFirstBtnRef = useRef<HTMLButtonElement | null>(null);
   // V4.5.0 #4/#5/#15：keydown 闭包读取最新控制层状态；功能键显示时左右键走焦点导航而非快进。
@@ -254,6 +256,12 @@ export function VideoPlayer({
   // V3.3.5 A3：竖屏选集半屏浮层——集数多时（实测 115 集 ≈ 29 行）信息区被拉到三屏开外，
   // 竖屏改为「2 行预览 + 点开半屏浮层」，浮层内独立滚动、点遮罩/选完集关闭。
   const [epSheetOpen, setEpSheetOpen] = useState(false);
+  // V4.5.5 #17：任何切集（下集/上集按钮、片尾自动跳、浮层选集）都强制关闭选集浮层，
+  // 避免换集后浮层还开着遮住新画面。用 episodeIndex 变化作为统一触发点。
+  useEffect(() => {
+    setEpOpen(false);
+    setEpSheetOpen(false);
+  }, [episodeIndex]);
   const epSheetRef = useRef<HTMLDivElement | null>(null); // 浮层滚动容器（用于打开时定位当前集）
   // V3.3.5 A3：简介原地折叠（阅读型内容，不进浮层）
   // V3.3.5 B4：多源封面回退——本源封面被网络阻断时，用其它启用源的同名封面顶上（仅展示层）
@@ -543,9 +551,13 @@ export function VideoPlayer({
         setErr(null);
         const reveal = () => { setResolving(false); };
         let fallback = 0;
-        if (!v.paused && v.readyState >= 2) {
+        // V4.5.5 #19：影视仓式无缝切换——暂停态 video 已有定格首帧（readyState>=2），
+        // 直接揭遮罩显示那一帧，不再等 playing（暂停的 video 永远不触发 playing，
+        // 只能靠 2.5s 兜底 → 用户看到「黑屏解析中」转圈）。只有帧还没到才等 loadeddata/playing。
+        if (v.readyState >= 2) {
           reveal();
         } else {
+          v.addEventListener('loadeddata', reveal, { once: true });
           v.addEventListener('playing', reveal, { once: true });
           fallback = window.setTimeout(reveal, 2500);
         }
@@ -556,6 +568,7 @@ export function VideoPlayer({
         } catch { /* ignore */ }
         // 清理：解绑监听 + 清兜底定时器
         (borrowedMiniRef.current as any)._revealOff = () => {
+          v.removeEventListener('loadeddata', reveal);
           v.removeEventListener('playing', reveal);
           window.clearTimeout(fallback);
         };
@@ -628,12 +641,30 @@ export function VideoPlayer({
           setErr((msg || '视频加载失败') + '\n（可能是网络/防盗链/Cookie 失效；详情见「设置→播放→媒体链路诊断」）');
         },
       });
+      // V4.5.5 #13/#14：切集/换源揭遮罩要等「首帧真正解码」而不是仅 loadedmetadata。
+      // 旧版在 loadedmetadata（只有元数据/音轨到达）就 setResolving(false)，此时画面首帧未出，
+      // 黑底遮罩一揭就露出底层播放三角占位图 → 用户看到「有声音没画面 + 播放按钮图」。
+      // 新逻辑：metadata 只做续播 seek；揭遮罩等 loadeddata（readyState>=2，当前帧可绘），
+      // 并监听 playing 兜底，外加 4s 定时器兜底防某些源不触发 loadeddata。
+      let revealed = false;
+      const reveal = () => {
+        if (revealed || !alive) return;
+        revealed = true;
+        if (firstFrameTimerRef.current) window.clearTimeout(firstFrameTimerRef.current);
+        v.removeEventListener('loadeddata', reveal);
+        v.removeEventListener('playing', reveal);
+        setResolving(false);
+      };
       const onMeta = () => {
         v.removeEventListener('loadedmetadata', onMeta);
         tryApplyResume();
-        if (alive) setResolving(false);
+        // metadata 到达后立即判断当前帧是否可绘：可绘则直接揭，否则交给 loadeddata/playing/兜底。
+        if (v.readyState >= 2) reveal();
       };
       v.addEventListener('loadedmetadata', onMeta);
+      v.addEventListener('loadeddata', reveal);
+      v.addEventListener('playing', reveal);
+      firstFrameTimerRef.current = window.setTimeout(reveal, 4000);
       // A：若 loadedmetadata 在监听器挂载前就已触发（HLS 起播时序），上面的监听会漏掉，
       //    这里在 readyState>=1 时立即补一次 seek，保证续播一定生效。
       if (v.readyState >= 1) onMeta();
@@ -665,6 +696,7 @@ export function VideoPlayer({
     return () => {
       alive = false;
       if (loadTimer.current) window.clearTimeout(loadTimer.current);
+      if (firstFrameTimerRef.current) window.clearTimeout(firstFrameTimerRef.current);
       detachHls(v);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -937,6 +969,14 @@ export function VideoPlayer({
   const cycleSpeed = () => {
     const i = SPEEDS.indexOf(speed);
     setSpeed(SPEEDS[(i + 1) % SPEEDS.length]);
+  };
+  // V4.5.5 #15：「默认」键改为画面尺寸循环：默认→16:9→4:3→填充→原始→裁剪→回默认。
+  // 键名仍显示当前档位（见下方 tvp-btn），去掉原来一次重置缩放+倍速+解码的副作用。
+  const cycleScale = () => {
+    const i = SCALE_OPTS.indexOf(scaleMode);
+    const next = SCALE_OPTS[(i + 1) % SCALE_OPTS.length];
+    setScaleMode(next);
+    localStorage.setItem('rf_scale', next);
   };
   // ===== S 组：分辨率真实切换（走 HLS 多码率，不再循环假字符串） =====
   // 源本身没有清晰度维度（engine/adapters/normal.ts 只认 $$$ / # / $），
@@ -1448,10 +1488,13 @@ export function VideoPlayer({
           const a2 = document.activeElement as HTMLElement | null;
           if (a2 && a2.hasAttribute && a2.hasAttribute('data-tvp-btn')) { try { a2.blur(); } catch { /* ignore */ } }
         } else {
-          // 播放：退出暂停态，显示控制层并起 3 秒隐藏
+          // V4.5.5 #7：暂停后按 OK 恢复播放——退出暂停态，但保持控件层隐藏，
+          // 不再弹出左上标题/右上时间/功能键/进度条。需要时按 ↓ 再调出。
           setTvPauseOverlay(false);
-          setControlsVisible(true);
-          armHide();
+          setControlsVisible(false);
+          if (hideTimer.current) window.clearTimeout(hideTimer.current);
+          const a3 = document.activeElement as HTMLElement | null;
+          if (a3 && a3.hasAttribute && a3.hasAttribute('data-tvp-btn')) { try { a3.blur(); } catch { /* ignore */ } }
         }
         return;
       }
@@ -1562,6 +1605,13 @@ export function VideoPlayer({
     clearSeekLoadingOnSettled,
     clearSeekLoadingNow,
   } = useBuffering();
+  // V4.5.5 #1：把 TV 控件层的真实显隐状态广播给播放器时钟（TVShell 里的 tv-player-clock），
+  // 让右上角时间跟随标题/功能键/进度条一起显隐，不再用自己的独立 4 秒定时器 + 任意键重新亮起。
+  useEffect(() => {
+    if (!tvMode) return;
+    const visible = controlsVisible && !seekHideControls && !tvPauseOverlay;
+    window.dispatchEvent(new CustomEvent('tvp-controls-visibility', { detail: { visible } }));
+  }, [tvMode, controlsVisible, seekHideControls, tvPauseOverlay]);
   // T5：进入播放器时读系统当前音量作为手势起点（"从系统当前音量接着调，不是回到 100"）
   const systemVolRef = useRef(1);
   useEffect(() => {
@@ -1704,8 +1754,10 @@ export function VideoPlayer({
             </div>
           )}
 
-          {/* ⑨ 滑动/拖动快进：独立加载中圆圈（居中，不受控件显隐影响） */}
-          {seekLoading && (
+          {/* ⑨ 滑动/拖动快进：独立加载中圆圈（居中，不受控件显隐影响）。
+              V4.5.5 #6：TV 模式下快进加载圈由 tvp-stage 内的 tvp-loading 统一呈现（文案统一「加载中…」），
+              此处不再重复渲染，避免 TV 快进时「快进中…」与「加载中」两个圈上下叠加。 */}
+          {seekLoading && !tvMode && (
             <div className="vp-seek-loader">
               <div className="vp-seek-loader-circle"><span className="vp-spinner" /></div>
               <span className="vp-seek-loader-text">加载中</span>
@@ -1927,7 +1979,8 @@ export function VideoPlayer({
               <div className="tvp-loading">
                 <span className="vp-spinner" />
                 <span className="tvp-loading-text">
-                  {resolving ? '正在加载…' : seekLoading ? '快进中…' : '缓冲中…'}
+                  {/* V4.5.5 #6：解析/切集/缓冲/快进统一文案「加载中…」，不再出现「快进中…」叠加 */}
+                  加载中…
                 </span>
               </div>
             )}
@@ -1940,7 +1993,7 @@ export function VideoPlayer({
             {/* .p-ctrl：底部控制层（按钮条 + 进度条） */}
             <div className="tvp-ctrl">
               <div className="tvp-btns">
-                <button ref={tvpFirstBtnRef} className={'tvp-btn act' + (episodeIndex >= (detail.episodes?.length || 1) - 1 ? ' disabled' : '')} data-tvp-btn="" data-focusable="" onClick={() => episodeIndex < (detail.episodes?.length || 1) - 1 && onSelectEpisode(episodeIndex + 1)}>下集</button>
+                <button ref={tvpFirstBtnRef} className={'tvp-btn' + (episodeIndex >= (detail.episodes?.length || 1) - 1 ? ' disabled' : '')} data-tvp-btn="" data-focusable="" onClick={() => episodeIndex < (detail.episodes?.length || 1) - 1 && onSelectEpisode(episodeIndex + 1)}>下集</button>
                 <button className={'tvp-btn' + (episodeIndex <= 0 ? ' disabled' : '')} data-tvp-btn="" data-focusable="" onClick={() => episodeIndex > 0 && onSelectEpisode(episodeIndex - 1)}>上集</button>
                 <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={retry}>刷新</button>
                 <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { const v = videoRef.current; if (v) { v.currentTime = 0; v.play().catch(() => {}); } }}>重播</button>
@@ -1950,7 +2003,8 @@ export function VideoPlayer({
                 <button className={'tvp-btn' + (danmaku ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={toggleDanmaku}>弹幕{danmaku ? '开' : '关'}</button>
                 <button className={'tvp-btn' + (introSec > 0 ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={() => setSkipOneTap('intro')}>片头{fmtTime(introSec)}</button>
                 <button className={'tvp-btn' + (outroSec > 0 ? ' on' : '')} data-tvp-btn="" data-focusable="" onClick={() => setSkipOneTap('outro')}>片尾{fmtTime(outroSec)}</button>
-                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={() => { setScaleMode('默认'); localStorage.setItem('rf_scale', '默认'); setSpeed(1); setDecode('exo'); }}>默认</button>
+                {/* V4.5.5 #15：点一下循环画面尺寸，按钮文字显示当前档位（默认→16:9→4:3→填充→原始→裁剪→默认） */}
+                <button className="tvp-btn" data-tvp-btn="" data-focusable="" onClick={cycleScale}>{scaleMode}</button>
               </div>
               {/* .pbar：当前时间 + 轨道(fill+dot) + 总时间 */}
               <div className="tvp-pbar">

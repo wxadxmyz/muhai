@@ -106,7 +106,7 @@ export function SearchResultTV({
       <div className="tv-result-srcs">
         <div
           ref={allRef}
-          className="tv-result-src active" data-focusable="" data-autofocus=""
+          className="tv-result-src active" data-focusable="" data-autofocus="" data-src-pill=""
           onFocus={() => setActiveSource(ALL_KEY)}
           onClick={() => setActiveSource(ALL_KEY)} role="button"
         >
@@ -120,7 +120,7 @@ export function SearchResultTV({
               <div
                 key={s.id}
                 className={'tv-result-src' + (activeSource === s.id ? ' active' : '')}
-                data-focusable=""
+                data-focusable="" data-src-pill=""
                 onFocus={() => setActiveSource(s.id)}
                 onClick={() => setActiveSource(s.id)}
                 role="button"

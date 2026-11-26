@@ -34,6 +34,9 @@ export function isFocusNavActive(): boolean {
 
 let installed = false;
 let currentEl: HTMLElement | null = null;
+// V4.5.5 #16：记住「右键从哪个子站进入结果网格」，左键回最左列时优先回到它，
+// 而不是按几何就近挑同一行高度的子站。仅作用于含 .tv-result-srcs 的结果页作用域。
+let lastSrcPill: HTMLElement | null = null;
 
 const FOCUS_CLASS = 'tv-focus';
 function markFocus(el: HTMLElement | null) {
@@ -220,10 +223,13 @@ function onKeyDown(e: KeyboardEvent) {
 
   if (isTvConfirmKey(e)) {
     const a = activeFocusable();
-    if (a && a === document.activeElement) {
+    if (a) {
       // V4.3.9：带 data-ok-handled 的元素（顶栏 tab / 首页分类）在自身 onKeyDown 里认 OK，
       // 这里直接放行，避免全局 click + 元素 onKeyDown 双触发；也避免方向键误报 Enter 时原生 click。
       if (a.hasAttribute('data-ok-handled')) return;
+      // V4.5.5 #12：旧版要求 a === document.activeElement 才 a.click()，但老 WebView 里
+      // class 驱动的焦点节点（currentEl）常与 activeElement 错位（停在 body/隐藏 video），
+      // 导致返回详情后光标明明在选中集、按 OK 却不触发 onClick。改为以 activeFocusable() 为准直接 click。
       e.preventDefault();
       a.click();
       return;
@@ -265,6 +271,25 @@ function onKeyDown(e: KeyboardEvent) {
   if (!cur || !scope.contains(cur) || !cur.hasAttribute('data-focusable')) {
     focusEl(autoFocusEl(list) || list[0]);
     return;
+  }
+  // V4.5.5 #16：结果页「子站 ↔ 卡片」左右键来路记忆。
+  // 现状：卡片没有网格坐标，左键走纯几何就近匹配；子站栏是纵向一列，左键时所有子站到卡片的
+  // 水平距离都相同，系统只按垂直距离挑，于是跳到与卡片同一行高度的子站，而非原来选中的子站。
+  // 修法：右键从子站进入卡片区时记下来路；左键回到最左列时优先聚焦该子站。
+  const inResultScope = !!scope.querySelector('.tv-result-srcs');
+  if (inResultScope) {
+    if (dir === 'right' && cur.hasAttribute('data-src-pill')) {
+      lastSrcPill = cur;
+    } else if (dir === 'left' && lastSrcPill && lastSrcPill.isConnected && scope.contains(lastSrcPill)) {
+      // 仅当当前焦点在右侧卡片区（非子站本身）时才按来路回位，避免在子站栏内左右键被干扰
+      if (!cur.hasAttribute('data-src-pill')) {
+        focusEl(lastSrcPill);
+        lastSrcPill = null;
+        return;
+      }
+    }
+  } else {
+    lastSrcPill = null;
   }
   // V4.4.0 #9：网格导航（首页卡片 5 列多行，跨 section 构成连续网格）。
   // 当前元素带 data-grid-col 时：
@@ -369,4 +394,11 @@ export function focusFirstIn(scope?: HTMLElement | Document) {
 /** 聚焦某个具体元素（供组件在切页/开弹层后主动把焦点放到目标上）。 */
 export function focusElement(el: HTMLElement | null) {
   if (el) focusEl(el);
+}
+
+/** V4.5.5 #11：返回当前真正的焦点节点（class 驱动优先，兼容 document.activeElement）。
+ *  老 WebView 里 activeElement 常是残留 body/隐藏 video，用它记「来路卡片」会记错；
+ *  首页卡片进结果页时改用本函数记录，多级返回后还原才准。 */
+export function currentFocusEl(): HTMLElement | null {
+  return activeFocusable();
 }

@@ -10,7 +10,7 @@ import { Icon } from '../../components/Icon';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { VideoPlayer } from '../VideoPlayer';
 import { dispatchBack, pushBackHandler } from '../../lib/backStack';
-import { isTvConfirmKey, focusElement } from '../../lib/focusNav';
+import { isTvConfirmKey, focusElement, currentFocusEl } from '../../lib/focusNav';
 import { requestOrientation } from '../../lib/orientation';
 import { isTV } from '../../lib/deviceMode';
 import { downloadStore } from '../../lib/downloads';
@@ -41,24 +41,16 @@ function TVClock({ className = '' }: { className?: string }) {
     const t = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(t);
   }, []);
-  // #6：播放器时钟几秒后淡出、任意键再显示
+  // V4.5.5 #1：播放器时钟跟随控件层显隐——不再用自己的独立 4 秒定时器 + 任意键重新亮起，
+  // 而是监听 VideoPlayer 广播的 tvp-controls-visibility，与标题/功能键/进度条同步显隐。
   useEffect(() => {
     if (!isPlayer) return;
-    const arm = () => {
-      setVisible(true);
-      window.clearTimeout(hideTimer.current);
-      hideTimer.current = window.setTimeout(() => setVisible(false), 4000);
+    const onVisibility = (e: Event) => {
+      const v = (e as CustomEvent).detail?.visible;
+      if (typeof v === 'boolean') setVisible(v);
     };
-    arm();
-    const onKey = () => arm();
-    const onPointer = () => arm();
-    window.addEventListener('keydown', onKey, true);
-    window.addEventListener('pointerdown', onPointer, true);
-    return () => {
-      window.clearTimeout(hideTimer.current);
-      window.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('pointerdown', onPointer, true);
-    };
+    window.addEventListener('tvp-controls-visibility', onVisibility);
+    return () => window.removeEventListener('tvp-controls-visibility', onVisibility);
   }, [isPlayer]);
   const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const p = (n: number) => String(n).padStart(2, '0');
@@ -383,9 +375,10 @@ export function TVShell({
       const a = document.activeElement as HTMLElement | null;
       if (a && a.hasAttribute && a.hasAttribute('data-focusable')) lastFocusInSearchRef.current = a;
     } else {
-      // V4.5.4 #14：首页卡片进结果页——记住当前聚焦的卡片，返回时还原到它。
+      // V4.5.4 #14 / V4.5.5 #11：首页卡片进结果页——记住当前聚焦的卡片，返回时还原到它。
+      // 改用 currentFocusEl()（class 驱动的真实焦点节点），不再用可能停在 body 的 document.activeElement。
       lastFocusInSearchRef.current = null;
-      const a = document.activeElement as HTMLElement | null;
+      const a = currentFocusEl();
       if (a && a.hasAttribute && a.hasAttribute('data-focusable')) lastHomeCardRef.current = a;
     }
     // V4.5.0 #16：任何进入结果页的方式（首页卡片 / 远程搜索 / 搜索页搜索）都写入搜索历史。

@@ -226,7 +226,13 @@
 .tv-corridor .tv-poster:focus { transform: none; }
 
 /* ---------- 搜索 TV（V4.4.3 #11：三列布局——历史列 / 键盘列 / 联想墙，对齐设计稿） ---------- */
-.tv-search { display: flex; gap: 22px; height: 100%; min-height: 0; padding: 0; }
+/* V4.5.5 #3：搜索页顶部导航与输入区之间的缝隙缩小——负 margin-top 抵消 tv-main 的 34px 内边距，
+   高度相应加回，输入框整体上移贴近导航（顶部留约 10px）。 */
+.tv-search {
+  display: flex; gap: 22px; min-height: 0; padding: 0;
+  height: calc(100% + var(--tv-safe) - 10px);
+  margin-top: calc(-1 * var(--tv-safe) + 10px);
+}
 /* 最左列：搜索历史（独立成列，不再压在键盘上方） */
 .tv-histcol {
   width: 300px; flex: 0 0 300px; display: flex; flex-direction: column; gap: 12px;
@@ -331,15 +337,20 @@
 /* V4.5.2 #11/#10：详情页上下留白缩小（负 margin 抵消 tv-main 的 34px 上下内边距），
    整页不再滚动（overflow:hidden），改由上固定区 + 下独立滚动的选集区组成。 */
 .tv-detail {
-  display: flex; flex-direction: column; gap: 14px; height: 100%; min-height: 0;
+  display: flex; flex-direction: column; gap: 14px; min-height: 0;
   overflow: hidden; padding-right: 8px;
-  /* V4.5.3 #9：顶部负值减小（原 -34px 完全抵消→贴屏幕边缘），留约 18px 上边距。
-     V4.5.4 #4：底部空隙压到最小——安全区完全抵消后再多延伸 4px（负得更多=页面更高、
-     底部更贴边），把高度让给选集滚动区，让集数完整显示 4 行（不动行高 58px / gap 9px）。 */
-  margin-top: calc(-1 * var(--tv-safe) + 18px); margin-bottom: calc(-1 * var(--tv-safe) - 4px);
+  /* V4.5.5 #5：修正 V4.5.4 的无效写法。旧版 height:100%（相对 tv-main 减掉上下各 34px 的内容区）
+     配上 margin-top:-16px 把整块上移、高度却没补回，底部反而多空出约 16px；当时用负 margin-bottom
+     想「让页面更高」——但负 margin-bottom 对单个固定高度元素不改变其自身位置/高度，等于没改，用户才会说
+     「为什么没给我改」。现在直接把 height 加大到覆盖 tv-main 底部安全区、只留 8px 缝，底部空隙缩到最小，
+     多出的高度给选集滚动区显示更多集数（不动行高 58px / gap 9px）。 */
+  height: calc(100% + var(--tv-safe) + 8px);
+  margin-top: calc(-1 * var(--tv-safe) + 18px); margin-bottom: 0;
 }
-/* 上固定区：小窗 + 详情 + 线路 + 分段，不随选集滚动 */
-.dt-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 14px; }
+/* 上固定区：小窗 + 详情 + 线路 + 分段，不随选集滚动
+   V4.5.5 #8：小窗底部到线路标签之间加一点空隙（margin-top 写死，不动 .tv-detail 的 gap 以免影响别处）；
+   V4.5.5 #9：线路行与分段行之间间距调小（gap 14→8）。 */
+.dt-fixed { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 /* 下独立滚动区：只有选集网格滚动，上面全部固定 */
 .dt-ep-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 /* V4.5.3 #11：无分段标签行时，选集区补 16px 上间距，集数不再贴着小窗/线路行 */
@@ -420,17 +431,21 @@
 /* ===== V4.5.0 详情页影视仓化 ===== */
 /* 影视仓详情信息：来源/演员/导演/播放地址/简介 */
 /* V4.5.2 #9：信息区 flex:1 撑开片名与胶囊之间的空间，字号放大更易读 */
-.vinfo { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; margin: 4px 0; max-width: 900px; }
-.vinfo-line { display: flex; align-items: baseline; font-size: 19px; line-height: 1.7; color: var(--text); min-width: 0; }
+/* V4.5.5 #10：信息区改为逐行紧排（顶部对齐），空白统一留在简介下方；
+   行距/字号收紧，让五行信息 + 三行简介都放进标题与胶囊之间。 */
+.vinfo { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; margin: 2px 0; max-width: 1100px; }
+.vinfo-line { display: flex; align-items: baseline; font-size: 18px; line-height: 1.5; color: var(--text); min-width: 0; }
 .vinfo-line .vk { flex: 0 0 auto; color: var(--muted); }
 .vinfo-line .vv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vinfo-line .vv-ellipsis { display: block; flex: 1; } /* 播放地址过长省略号 */
+/* V4.5.5 #10：内容简介固定三行——不足三行按实际行数、不撑高；超过三行固定三行、末行省略号 */
 .vinfo-line .vv-clamp {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
 }
 /* 选集分段区间 1-40 / 41-80 */
 /* V4.5.3 #10：分段标签与小窗/线路行之间加 16px 上间距，不再贴着小窗 */
-.tv-ep-segs { display: flex; gap: 10px; margin-top: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+/* V4.5.5 #9：线路/分集标签与集数之间间距调小（上 16→10，下 12→6） */
+.tv-ep-segs { display: flex; gap: 10px; margin-top: 10px; margin-bottom: 6px; flex-wrap: wrap; }
 /* V4.5.1 #5：分段（1-40 / 41-…）去背景色，选中改用主题色描边 */
 .tv-ep-seg { padding: 7px 18px; border-radius: 8px; background: transparent; border: 2px solid var(--border); font-size: 15px; cursor: pointer; color: var(--muted); }
 .tv-ep-seg.active { background: transparent; border-color: var(--accent); border-width: 3px; color: var(--accent); font-weight: 800; }

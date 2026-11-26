@@ -851,3 +851,15 @@
 }
 .netdisk-auth-card .nda-btn.tv-focus::after,
 .netdisk-auth-card .nda-btn:focus::after { content: ""; position: absolute; inset: -4px; border: 4px solid #fff; border-radius: 999px; pointer-events: none; }
+
+/* ===== V4.5.6：彻底根治「播放按钮占位图」——任何进界面都不出现播放三角 =====
+   根因：Icon 组件此前未输出 data-icon 属性，导致下列所有 svg[data-icon="play"] 隐藏规则
+   从未命中（规则一直在，但选择器匹配不到元素）。现 Icon 已加 data-icon={name}，此处再补
+   一条无条件兜底：TV 播放页内所有 play 三角（无论处于解析/缓冲/暂停/起播窗口期）一律隐藏。
+   pause 暂停符号（data-icon="pause"）保留，那是必要反馈，不受影响。 */
+.tv .player-root svg[data-icon="play"],
+.tv .player-root .tvp-stage svg[data-icon="play"],
+.tv .player-root .land-center svg[data-icon="play"],
+.tv .player-root .big-btn svg[data-icon="play"] { display: none !important; }
+/* 加载期（解析/缓冲/快进）视频保持透明，由 tvp-stage 的纯黑加载圈统一呈现，杜绝首帧/播放图透出 */
+.tv .player-root .screen.tv-screen.is-loading video { opacity: 0 !important; }

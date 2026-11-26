@@ -1641,7 +1641,7 @@ export function VideoPlayer({
         onTouchMove={onStageTouchMove}
         onTouchEnd={onStageTouchEnd}
       >
-        <div ref={screenRef} className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && resolving ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
+        <div ref={screenRef} className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && (resolving || buffering || seekLoading) ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
           {/* V4.4.6：TV 大窗不渲染 poster 图片占位（对齐 UI 加载纯黑屏，只留转圈+加载中…） */}
           {!tvMode && <div className="poster" />}
           <video

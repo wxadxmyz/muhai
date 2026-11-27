@@ -109,7 +109,10 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
       })();
       const ch = parseM3U(text);
       if (!ch.length) { setError('该直播地址解析为空'); return; }
-      setChannels(ch); setCat(ALL_CAT); setActiveName(ch[0].name); setActiveSrc(1); headersRef.current = ch[0].headers ?? null;
+      // V4.5.7 #20：点源即进影视仓式全屏直播（不再先停在频道列表）
+      setChannels(ch); setCat(ALL_CAT); setActiveName(ch[0].name); setActiveSrc(1);
+      headersRef.current = ch[0].headers ?? null;
+      setPlaying(true);
     } catch (e: any) { setError(e?.message ?? '加载失败'); }
   };
 

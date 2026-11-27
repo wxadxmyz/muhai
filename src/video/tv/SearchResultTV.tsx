@@ -31,11 +31,15 @@ export function SearchResultTV({
   const seq = useRef(0);
   const allRef = useRef<HTMLDivElement | null>(null);
 
-  // V4.4.0 #8：进入结果页光标直接落「全部」子站
+  // V4.5.8 #2：落焦「全部」改到数据全部到位后（loading 由 true→false）再执行。
+  // 旧版挂载后固定 80ms 就落焦，而结果是通过 onPartial 分批塞入、网格多次重排，
+  // 叠加 .tv-result 四边负 margin 容器的 scrollIntoView，用户看到卡片"一秒后往左跑一点"。
+  // 现在加载期不渲染卡片、完整结果一次性到位再落焦，杜绝首屏跳动。
   useEffect(() => {
-    const t = window.setTimeout(() => focusElement(allRef.current), 80);
+    if (loading) return;
+    const t = window.setTimeout(() => focusElement(allRef.current), 40);
     return () => window.clearTimeout(t);
-  }, []);
+  }, [loading]);
 
   useEffect(() => {
     const my = ++seq.current;
@@ -46,10 +50,9 @@ export function SearchResultTV({
       let ex: SourceConfig[] = [];
       try { ex = await expandSources(sources); if (my === seq.current) setExpanded(ex); } catch { ex = sources; }
       try {
-        const r = await aggregateSearch(ex, query, {
-          timeout: 18000,
-          onPartial: (p) => { if (my === seq.current) setItems(p); },
-        });
+        // V4.5.8 #2：去掉 onPartial 分批回调——它让结果网格在中途多次重排，
+        // 是「卡片一秒后往左跑」的根因。改为等完整结果一次到位再 setItems。
+        const r = await aggregateSearch(ex, query, { timeout: 18000 });
         if (my !== seq.current) return;
         setItems(r.items);
         setErrors(r.errors);

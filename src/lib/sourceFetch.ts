@@ -6,6 +6,8 @@
 // 若不在 Tauri 环境（本地 web 调试）则回退到前端 fetch。
 
 import { invoke } from '@tauri-apps/api/core';
+// V4.5.8 #16：导入配置时把顶层 danmaku 字段存进 localStorage 供弹幕模块读取
+import { setDanmakuConfig } from '../engine/danmaku';
 
 export type FetchResult =
   | { kind: 'sources'; sources: any[] }
@@ -206,6 +208,8 @@ function parseFetched(text: string, url: string): FetchResult {
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
     try {
       const data = JSON.parse(stripJsonComments(trimmed));
+      // V4.5.8 #16：保存顶层弹幕配置（配置地址导入路径）
+      if (data && data.danmaku) setDanmakuConfig(data.danmaku);
       // 影视仓 / TVBox 聚合配置：整体作为 1 个 tvbox 源导入，
       // 由 createTvboxSource 在搜索/播放时自动展开 sites 中的 drpy 与苹果CMS 子站。
       if (isTvboxConfig(data)) {
@@ -269,6 +273,8 @@ export function parsePasted(text: string): { sources: any[]; error?: string } {
   if (!t) return { sources: [], error: '内容为空' };
   try {
     const data = JSON.parse(stripJsonComments(t));
+    // V4.5.8 #16：保存顶层弹幕配置（手动粘贴 JSON 路径）
+    if (data && data.danmaku) setDanmakuConfig(data.danmaku);
     // TVBox 聚合配置（含 sites/urls/lives）请通过「配置地址」入口导入 URL，
     // 粘贴 JSON 文本无法作为可再次拉取的聚合源使用。
     if (isTvboxConfig(data)) {

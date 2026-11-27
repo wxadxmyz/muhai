@@ -5,6 +5,8 @@ import { createTvboxSource, expandTvboxSpiders, findSubConfigById } from './adap
 import { createJsSource } from './adapters/js';
 import { createNormalSource } from './adapters/normal';
 import { withTimeout } from './http';
+// V4.5.8 #16：弹幕自动注入包装层依赖
+import { fetchDanmaku, getDanmakuConfig } from './danmaku';
 import { LiveChannelSource, MediaItem, MediaSource, SourceConfig, MediaType } from './types';
 
 export * from './types';
@@ -48,7 +50,8 @@ export function markSourceFail(id: string) {
   writeHealth(m);
 }
 
-export function createSource(cfg: SourceConfig): MediaSource {
+// V4.5.8 #16：原工厂改名为 createSourceRaw，下面包一层弹幕自动注入。
+function createSourceRaw(cfg: SourceConfig): MediaSource {
   switch (cfg.type) {
     case 'alist':
       return createAlistSource(cfg);
@@ -67,6 +70,31 @@ export function createSource(cfg: SourceConfig): MediaSource {
     default:
       throw new Error(`未知源类型: ${(cfg as any).type}`);
   }
+}
+
+// V4.5.8 #16：弹幕自动注入包装层。
+// createSource 是所有源的唯一工厂入口（搜索/详情/播放都经它），在此包装一次覆盖
+// normal/js/tvbox/alist 全部源类型。仅在详情里检测到弹幕配置开启、且详情尚未带弹幕时抓取。
+export function createSource(cfg: SourceConfig): MediaSource {
+  const src = createSourceRaw(cfg);
+  if (!src.getDetail) return src;
+  const originalGetDetail = src.getDetail.bind(src);
+  return {
+    ...src,
+    async getDetail(itemId: string): Promise<MediaItem> {
+      const detail = await originalGetDetail(itemId);
+      try {
+        const dmCfg = getDanmakuConfig();
+        if (dmCfg?.enabled && detail?.title && !detail.danmaku?.length) {
+          const items = await fetchDanmaku(detail.title, dmCfg);
+          if (items.length) return { ...detail, danmaku: items };
+        }
+      } catch {
+        /* 弹幕失败不影响详情 */
+      }
+      return detail;
+    },
+  };
 }
 
 // V3.9.0 #2：按 sourceId 查找源配置，兼容 tvbox 聚合源展开出的子站 ID。

@@ -198,15 +198,16 @@ export function TVShell({
     if (searchFromRef.current === 'home-card') {
       setSearchQuery(null);
       setNavTab('home');
-      // V4.5.4 #14：返回首页时优先把光标还原到进来前那张卡片（首页 DOM 一直挂载、节点仍在）。
-      window.setTimeout(() => {
+      // V4.5.4 #14 / V4.5.8 #7：返回首页时把光标还原到进来前那张卡片。
+      // 首页现改为 display 切换保持挂载，卡片节点仍在；多次重试确保老 WebView 上状态切换后 DOM 已就绪。
+      const tryFocusCard = () => {
         const card = lastHomeCardRef.current;
-        if (card && card.isConnected) {
-          focusElement(card);
-        } else {
-          focusHomeTab();
-        }
-      }, 90);
+        if (card && card.isConnected) { focusElement(card); return true; }
+        return false;
+      };
+      [80, 180, 360].forEach((ms) => window.setTimeout(() => {
+        if (!tryFocusCard() && ms === 360) focusHomeTab();
+      }, ms));
     } else {
       setSearchQuery(null);
       // 回到搜索页后，把光标还原到之前的标签
@@ -462,7 +463,14 @@ export function TVShell({
           </div>
         )}
 
-        {!playing && !detail && navTab === 'home' && <HomeTV onSearch={goSearch} />}
+        {/* V4.5.8 #7：首页用 display 切换保持挂载（与结果页/详情页一致），
+            否则进搜索/详情时 HomeTV 被卸载、lastHomeCardRef 保存的卡片节点失效，
+            从结果页返回首页时光标无法还原到原卡片。 */}
+        {navTab === 'home' && (
+          <div style={{ height: '100%', display: (!playing && !detail) ? 'block' : 'none' }}>
+            <HomeTV onSearch={goSearch} />
+          </div>
+        )}
         {/* V4.4.0 #5：结果页在进详情时保持挂载（仅隐藏），返回后滚动位置与卡片焦点原样还原，
             不被卸载重建。detail/playing 时用 display:none 隐藏，DOM 与内部 state 保留。 */}
         {navTab === 'search' && searchQuery && (

@@ -57,6 +57,8 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
   const [activeName, setActiveName] = useState('');
   const [activeSrc, setActiveSrc] = useState(1);
   const [playing, setPlaying] = useState(false);
+  // V4.5.8 #3：全屏画面加载态——true 时用纯黑+转圈盖住原生播放占位三角，video 真正出帧后再揭开。
+  const [stageLoading, setStageLoading] = useState(true);
   const [cat, setCat] = useState(ALL_CAT);
   const videoRef = useRef<HTMLVideoElement>(null);
   const headersRef = useRef<Record<string, string> | null>(null);
@@ -64,6 +66,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
   const [panelOpen, setPanelOpen] = useState(false); // 左侧分类/频道浮窗是否展开
   const [enterCat, setEnterCat] = useState(ALL_CAT); // 从哪个分类进的频道列表，频道左键回位（搜索页式记忆）
   const enteredSrcRef = useRef<HTMLElement | null>(null); // 点进去的源列表项，退出时还原光标
+  const enteredSrcIndexRef = useRef<number>(-1); // V4.5.8 #6：源列表在退出后会重建，节点引用失效，按索引重新定位
   const curChannelRef = useRef<Channel | null>(null); // 当前频道（供键盘监听读取最新值）
   const activeNameRef = useRef('');
   const activeSrcRef = useRef(1);
@@ -98,10 +101,12 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
   }, [channels]);
   const visible = useMemo(() => !channels ? [] : cat === ALL_CAT ? channels : channels.filter((c) => c.group === cat), [channels, cat]);
 
-  const openLive = async (live: LiveChannelSource & { sourceName: string }, srcEl?: HTMLElement) => {
+  const openLive = async (live: LiveChannelSource & { sourceName: string }, srcEl?: HTMLElement, srcIndex?: number) => {
     setError('');
     setChannels(null);
-    if (srcEl) enteredSrcRef.current = srcEl; // V4.5.7 #20：记住点进去的源项，退出时还原光标
+    // V4.5.7 #20 / V4.5.8 #6：记住点进去的源项与索引，退出时还原光标
+    if (srcEl) enteredSrcRef.current = srcEl;
+    if (typeof srcIndex === 'number') enteredSrcIndexRef.current = srcIndex;
     try {
       const text = await (async () => {
         try { return await (await import('@tauri-apps/api/core')).invoke<string>('fetchsource', { url: live.url }); }
@@ -112,6 +117,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
       // V4.5.7 #20：点源即进影视仓式全屏直播（不再先停在频道列表）
       setChannels(ch); setCat(ALL_CAT); setActiveName(ch[0].name); setActiveSrc(1);
       headersRef.current = ch[0].headers ?? null;
+      setStageLoading(true); // V4.5.8 #3：进全屏先黑屏加载
       setPlaying(true);
     } catch (e: any) { setError(e?.message ?? '加载失败'); }
   };
@@ -120,6 +126,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     const c = ch ?? channels?.find((x) => x.name === name);
     if (!c) return;
     headersRef.current = c.headers ?? null;
+    setStageLoading(true); // V4.5.8 #3：选台先黑屏加载
     setActiveName(name); setActiveSrc(1); setPlaying(true);
   };
 
@@ -137,6 +144,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     const next = ((cur < 0 ? 0 : cur + delta) + list.length) % list.length;
     const c = list[next];
     headersRef.current = c.headers ?? null;
+    setStageLoading(true); // V4.5.8 #3：换台先黑屏加载
     setActiveName(c.name);
     setActiveSrc(1);
     setCat(c.group && cats.includes(c.group) ? c.group : ALL_CAT);
@@ -145,6 +153,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     const c = curChannelRef.current;
     if (!c || c.sources.length <= 1) return; // 单线路左右键不动
     const next = ((activeSrcRef.current - 1 + delta) + c.sources.length) % c.sources.length + 1;
+    setStageLoading(true); // V4.5.8 #3：换线路先黑屏加载
     setActiveSrc(next);
   };
   const exitLive = () => {
@@ -152,8 +161,18 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     setPlaying(false);
     setChannels(null);
     setCat(ALL_CAT);
-    // 退出回源列表，光标落到点进去的那一项
-    window.setTimeout(() => { if (enteredSrcRef.current) focusElement(enteredSrcRef.current); }, 80);
+    // V4.5.8 #6：退出回源列表，光标落到点进去的那一项。
+    // 源列表在 playing=false 后重建，旧节点引用已 isConnected=false，故按索引重新定位。
+    window.setTimeout(() => {
+      let el: HTMLElement | null = null;
+      const idx = enteredSrcIndexRef.current;
+      if (idx >= 0) {
+        const nodes = document.querySelectorAll<HTMLElement>('.tv-live-src');
+        el = nodes[idx] ?? null;
+      }
+      if (!el || !el.isConnected) el = enteredSrcRef.current;
+      if (el && el.isConnected) focusElement(el);
+    }, 100);
   };
 
   useEffect(() => {
@@ -221,8 +240,22 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     return (
       <div className="tv-live-stage">
         {/* V4.5.7 #20：全屏画面铺底（盖住外壳顶栏），OK 弹左侧主题色浮窗 */}
-        <video ref={videoRef} autoPlay playsInline className="tv-live-fullvideo" />
+        {/* V4.5.8 #3：原生 video 在 WebView 会露出中央播放占位三角，故始终用黑底承载；
+            playing/loadeddata 真正出帧后才揭开转圈遮罩，避免「先播放三角、后黑屏」的错位观感。 */}
+        <video
+          ref={videoRef} autoPlay playsInline className="tv-live-fullvideo"
+          onPlaying={() => setStageLoading(false)}
+          onLoadedData={() => setStageLoading(false)}
+        />
+        {stageLoading && (
+          <div className="tv-live-stage-loading">
+            <span className="vp-spinner" />
+            <span className="tvp-loading-text">加载中…</span>
+          </div>
+        )}
         <div className="tv-live-stage-name">{activeName}</div>
+        {/* V4.5.8 #4：全屏画面底部居中的当前频道提示，上下换台/左右换线路时随 activeName 实时更新 */}
+        <div className="tv-live-stage-current">{activeName}</div>
         <div className="tv-live-stage-help">OK 选台 · ↑↓ 换台 · ←→ 换线路 · 返回退出</div>
         {panelOpen && (
           <div className="tv-live-panel" data-focus-root>
@@ -296,8 +329,9 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
   }
   return (
     <div className="tv-live-list tv-flush-top">
+      {/* V4.5.8 #6：点击源时把元素与索引传给 openLive 记录，退出直播据此还原光标到点进去的源。 */}
       {lives.map((l, i) => (
-        <div key={i} className="tv-live-src" data-focusable="" onClick={() => openLive(l)} role="button">
+        <div key={i} className="tv-live-src" data-focusable="" onClick={(e) => openLive(l, e.currentTarget, i)} role="button">
           <Icon name="tv" size={22} />
           <div>
             <div>{l.name}</div>

@@ -203,9 +203,9 @@
   background: var(--panel2);
   border-bottom: 1px solid var(--border);
 }
-/* V4.5.7 #9：仅首页推荐四栏整体变矮——在本作用域覆盖更小的卡片行高，
-   结果页/历史页仍用全局 --card-h(37.7vh)，不受影响。 */
-.tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 40px 0; --card-h: 30vh; }
+/* V4.5.8 #1：撤销 V4.5.7 的首页单独变矮覆盖——首页卡片大小必须与搜索结果页一致，
+   统一回到全局 --card-h(37.7vh)。结果页/历史页本就用全局值，三者重新统一。 */
+.tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 40px 0; }
 .tv-home-body .tv-row-title { margin: 2px 0 6px; }
 .tv-home-cats {
   display: flex; gap: 12px; flex-wrap: nowrap;
@@ -447,13 +447,17 @@
 /* V4.5.5 #10：信息区改为逐行紧排（顶部对齐），空白统一留在简介下方；
    行距/字号收紧，让五行信息 + 三行简介都放进标题与胶囊之间。 */
 .vinfo { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; margin: 2px 0; max-width: 1100px; }
-.vinfo-line { display: flex; align-items: baseline; font-size: 18px; line-height: 1.5; color: var(--text); min-width: 0; }
-.vinfo-line .vk { flex: 0 0 auto; color: var(--muted); }
-.vinfo-line .vv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vinfo-line { display: flex; align-items: flex-start; font-size: 18px; line-height: 1.5; color: var(--text); min-width: 0; }
+/* V4.5.8 #15：标签固定宽度，令「来源/演员/播放地址/简介」各行正文统一左边缘起排；
+   align-items 由 baseline 改 flex-start，避免多行 -webkit-box 在老 WebView 下按基线漂移。 */
+.vinfo-line .vk { flex: 0 0 96px; color: var(--muted); }
+.vinfo-line .vv { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .vinfo-line .vv-ellipsis { display: block; flex: 1; } /* 播放地址过长省略号 */
 /* V4.5.5 #10：内容简介固定三行——不足三行按实际行数、不撑高；超过三行固定三行、末行省略号 */
+/* V4.5.8 #15：显式 text-align:left + 左对齐盒模型，保证第一/二/三行文字都从同一左边缘开始。 */
 .vinfo-line .vv-clamp {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: normal; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  -webkit-box-align: start; text-align: left; white-space: normal; overflow: hidden; flex: 1;
 }
 /* 选集分段区间 1-40 / 41-80 */
 /* V4.5.3 #10：分段标签与小窗/线路行之间加 16px 上间距，不再贴着小窗 */
@@ -523,14 +527,39 @@
 /* 全屏舞台：fixed 盖住整个视口（含外壳顶栏），z-index 高于 topnav */
 .tv-live-stage { position: fixed; inset: 0; z-index: 500; background: #000; overflow: hidden; }
 .tv-live-fullvideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+/* V4.5.8 #3：直播全屏加载遮罩——纯黑底 + 转圈，盖住原生播放占位三角；出帧后移除。
+   z-index 高于 video / 频道名 / 当前频道框，低于左侧浮窗面板（面板 z-index 10）。 */
+.tv-live-stage-loading {
+  position: absolute; inset: 0; z-index: 8; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px; background: #000; pointer-events: none;
+}
+.tv-live-stage-loading .vp-spinner {
+  width: 64px; height: 64px; border-width: 6px;
+  border-color: rgba(255,255,255,.22); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 1s linear infinite; /* spin 动画在全局 styles.css 已定义 */
+}
+/* 隐藏原生 video 的播放占位三角（部分 WebView 会在未播放时露出中央大三角） */
+.tv-live-stage .tv-live-fullvideo::-webkit-media-controls,
+.tv-live-stage .tv-live-fullvideo::-webkit-media-controls-enclosure { display: none !important; }
 .tv-live-stage-name { position: absolute; top: 22px; left: 30px; font-size: 22px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.85); pointer-events: none; }
+/* V4.5.8 #4：全屏画面底部居中的「当前频道」框——换台时同步更新主题名。 */
+.tv-live-stage-current {
+  position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 6;
+  max-width: 70vw; padding: 14px 40px; border-radius: 999px;
+  background: rgba(0,0,0,.58); border: 2px solid var(--accent);
+  color: #fff; font-size: 30px; font-weight: 800; letter-spacing: 1px;
+  text-shadow: 0 2px 10px rgba(0,0,0,.9); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
 .tv-live-stage-help { position: absolute; bottom: 20px; right: 30px; font-size: 14px; color: rgba(255,255,255,.6); text-shadow: 0 1px 6px #000; pointer-events: none; }
 /* 左侧浮窗：主题色半透明，分类在左、频道列表在右 */
 .tv-live-panel { position: absolute; top: 0; bottom: 0; left: 0; width: min(58vw, 980px); z-index: 10; background: var(--panel); background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-right: 2px solid var(--accent); box-shadow: 8px 0 40px rgba(0,0,0,.5); }
 .tv-live-panel-inner { display: flex; height: 100%; gap: 18px; padding: 48px 24px 30px; box-sizing: border-box; }
 .tv-live-panel .tv-live-cats { width: 190px; flex: 0 0 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-.tv-live-panel .tv-live-chs { flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
-.tv-live-panel .tv-live-ch { font-size: 17px; }
+/* V4.5.8 #5：浮窗内频道列表改为单列竖条，与左侧分类一致（旧版是 auto-fill 多列网格）。
+   单列后每项铺满、上下滚动，遥控器上下键逐条移动，符合影视仓频道栏观感。 */
+.tv-live-panel .tv-live-chs { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; align-content: start; }
+.tv-live-panel .tv-live-ch { font-size: 17px; flex: 0 0 auto; }
 /* 当前播放频道：主题描边高亮 */
 .tv-live-panel .tv-live-ch.on { box-shadow: inset 0 0 0 3px rgba(255,255,255,.85); }
 
@@ -812,6 +841,12 @@
    连已解码的首帧和借用小窗 video 的内联 opacity:1 都盖过 → 声音已出画面仍黑屏 + 转圈占位。
    播放三角已由下方无条件 svg[data-icon="play"] 规则根治，无需再藏 video；让 video 始终可见，
    首帧一到立即显示，加载圈只是叠加提示。 */
+/* V4.5.8 #8/#9/#14：恢复「加载期 video 透明 + 纯黑 screen 遮盖」——
+   V4.5.7 曾因「揭遮罩太早（readyState>=2 仅音轨到）」导致透明规则把已出画面也藏住、出现有声音没画面，
+   才移除本规则；V4.5.8 已把揭遮罩时机改为「真正出帧（playing/首帧推进）」后才 setResolving(false)，
+   故加载期（is-loading）藏住 video、露出纯黑底+转圈是安全且必要的——杜绝「先黑屏→播放占位图→才出画面」。
+   借用小窗 video 的内联 opacity:1 会被这里 !important 盖住；出帧后 is-loading 移除即恢复可见。 */
+.tv .player-root .screen.tv-screen.is-loading video { opacity: 0 !important; }
 /* 更强的兜底：TV 模式任何播放三角主按钮在加载态一律隐藏 */
 .tv .player-root .screen.tv-screen.is-loading .big-btn,
 .tv .player-root .screen.tv-screen.is-loading .ctrl.main,

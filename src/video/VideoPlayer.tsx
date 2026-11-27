@@ -189,6 +189,10 @@ export function VideoPlayer({
   const seekBubbleTimer = useRef<number | undefined>(undefined);
   // V4.5.4 #8：TV 左右键快进转圈的兜底清除定时器
   const tvSeekTimer = useRef<number | undefined>(undefined);
+  // V4.5.8 #11：借用 video 的原生 seeked/playing 事件转发到这里收「加载中」圈。
+  // 定义成 ref 是因为借用 effect 在第 527 行、而 clearSeekLoadingOnSettled 要到 hook 解构处才有值，
+  // effect 回调延迟到挂载后执行，届时本 ref 已被赋值。
+  const seekClearRef = useRef<() => void>(() => {});
   // V4.5.5 #13/#14：切集揭遮罩（等首帧）的兜底定时器
   const firstFrameTimerRef = useRef<number | undefined>(undefined);
   // V4.4.6：TV 专属播放页——底部按钮条首个按钮（按 ↓ 焦点落到它）
@@ -544,23 +548,44 @@ export function VideoPlayer({
         videoRef.current = v;
         player.attachVideo(v);
         try { void v.play(); } catch { /* ignore */ }
-        // V4.5.4 #7/#11：借到小窗 video 后不要立刻揭开遮罩。此时 video 可能只有音频轨先到、
-        // 画面尚未解码出首帧（用户看到「有声音但中央还是播放三角占位图」）。保持 resolving=true
-        // 让黑底转圈盖住，直到真正出画面才揭开。
-        //  - 若借来的 video 已在播放且有首帧（readyState>=HAVE_CURRENT_DATA）→ 立即揭开，不闪转圈；
-        //  - 否则监听 playing 事件（真正起播）再揭开；2.5s 兜底防止某些源永不触发。
+        // V4.5.8 #8/#9/#10/#14：借到小窗 video 后的揭遮罩时机根治。
+        // 病根：旧版在 readyState>=2（仅音频/元数据到位、首帧尚未真正绘制）就把遮罩揭开，
+        // 加上 V4.5.7 移除了「加载期隐藏 video」规则 → 原生播放占位三角/黑屏直接露出，
+        // 出现「先黑屏→播放按钮占位图→才有画面」「有声音没画面」。
+        // 新判定：必须真正出帧才揭——
+        //  · playing（真正起播）+ timeupdate 首帧推进 二者之一确认后揭；
+        //  · 暂停态特例：video.paused 且已有定格首帧(readyState>=2) 才立即揭那一帧；
+        //  · 2.5s 兜底防止个别源事件不触发导致永久转圈。
         setResolving(true);
         setErr(null);
-        const reveal = () => { setResolving(false); };
         let fallback = 0;
-        // V4.5.5 #19：影视仓式无缝切换——暂停态 video 已有定格首帧（readyState>=2），
-        // 直接揭遮罩显示那一帧，不再等 playing（暂停的 video 永远不触发 playing，
-        // 只能靠 2.5s 兜底 → 用户看到「黑屏解析中」转圈）。只有帧还没到才等 loadeddata/playing。
-        if (v.readyState >= 2) {
+        let revealDone = false;
+        const reveal = () => {
+          if (revealDone) return;
+          revealDone = true;
+          v.removeEventListener('playing', reveal);
+          v.removeEventListener('timeupdate', onFirstFrame);
+          try { (v as any).cancelVideoFrameCallback?.(frameCbId); } catch { /* ignore */ }
+          window.clearTimeout(fallback);
+          setResolving(false);
+        };
+        // 真正出帧确认：首帧已绘且画面在推进（currentTime 前进说明解码/渲染在进行）
+        const onFirstFrame = () => {
+          try { if (v.currentTime > 0 && v.readyState >= 2 && !v.paused) reveal(); } catch { /* ignore */ }
+        };
+        let frameCbId = 0;
+        if (v.paused && v.readyState >= 2) {
+          // 暂停态：定格首帧已在，直接揭那一帧（暂停的 video 永不触发 playing）
           reveal();
         } else {
-          v.addEventListener('loadeddata', reveal, { once: true });
           v.addEventListener('playing', reveal, { once: true });
+          v.addEventListener('timeupdate', onFirstFrame);
+          // 优先用 requestVideoFrameCallback（真正每帧回调）确认首帧，老 WebView 不支持则靠上面两者
+          try {
+            if (typeof (v as any).requestVideoFrameCallback === 'function') {
+              frameCbId = (v as any).requestVideoFrameCallback(() => reveal());
+            }
+          } catch { /* ignore */ }
           fallback = window.setTimeout(reveal, 2500);
         }
         // 同步已播进度到 player store，进度条立即到位
@@ -572,23 +597,31 @@ export function VideoPlayer({
         // 绑在占位 video（display:none）上不会触发，借用模式下片头尾判定全靠这里转发。
         const onBorrowMeta = () => {
           skipFnsRef.current.armOutro();
-          skipFnsRef.current.intro();
+          // V4.5.8 #13：借用进大屏用统一的片头判定（低于片头点就跳、已过则确认），
+          // 不再用受 introSoughtRef 历史值影响的 trySkipIntro，消除"有时跳有时不跳"。
+          skipFnsRef.current.introBorrow();
           skipFnsRef.current.resume();
         };
-        const onBorrowTime = () => { skipFnsRef.current.outro(); skipFnsRef.current.intro(); };
-        const onBorrowSeeked = () => { skipFnsRef.current.resume(); };
+        const onBorrowTime = () => { skipFnsRef.current.outro(); skipFnsRef.current.introBorrow(); };
+        // V4.5.8 #11：借用的真实 video 上原生 seeked/playing 转发收圈——
+        // 快进/快退后视频真正 seek 完成、重新出帧才收「加载中」，不再靠 800ms 定时硬清。
+        const onBorrowSeeked = () => { skipFnsRef.current.resume(); seekClearRef.current(); };
+        const onBorrowPlaying = () => { seekClearRef.current(); };
         v.addEventListener('loadedmetadata', onBorrowMeta);
         v.addEventListener('timeupdate', onBorrowTime);
         v.addEventListener('seeked', onBorrowSeeked);
+        v.addEventListener('playing', onBorrowPlaying);
         // 借用时 video 可能早已元数据就绪（小窗预播过），补触发一次，避免漏判片头/续播。
         if (v.readyState >= 1) onBorrowMeta();
         // 清理：解绑监听 + 清兜底定时器
         (borrowedMiniRef.current as any)._revealOff = () => {
-          v.removeEventListener('loadeddata', reveal);
           v.removeEventListener('playing', reveal);
+          v.removeEventListener('timeupdate', onFirstFrame);
+          try { (v as any).cancelVideoFrameCallback?.(frameCbId); } catch { /* ignore */ }
           v.removeEventListener('loadedmetadata', onBorrowMeta);
           v.removeEventListener('timeupdate', onBorrowTime);
           v.removeEventListener('seeked', onBorrowSeeked);
+          v.removeEventListener('playing', onBorrowPlaying);
           window.clearTimeout(fallback);
         };
       }
@@ -597,7 +630,17 @@ export function VideoPlayer({
         const b = borrowedMiniRef.current;
         if (b) {
           try { (b as any)._revealOff?.(); } catch { /* ignore */ }
-          try { b.video.style.cssText = ''; b.slot.appendChild(b.video); } catch { /* ignore */ }
+          // V4.5.8 #10：旧版 style.cssText='' 清掉内联 opacity:1，又没恢复音量/muted，
+          // 导致返回小窗后变成播放占位图且没声音。这里显式恢复可见样式 + 音量 + 取消静音 + .on 类。
+          try {
+            b.video.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:1;';
+            b.video.classList.add('on');
+            b.video.muted = false;
+            b.video.volume = 1;
+            b.slot.appendChild(b.video);
+            // 若已被暂停（大屏暂停态返回），补一次 play 让小窗继续有声；失败也忽略（用户可点小窗）
+            if (b.video.paused) { try { void b.video.play(); } catch { /* ignore */ } }
+          } catch { /* ignore */ }
           borrowedMiniRef.current = null;
         }
         player.attachVideo(null);
@@ -666,23 +709,36 @@ export function VideoPlayer({
       // 新逻辑：metadata 只做续播 seek；揭遮罩等 loadeddata（readyState>=2，当前帧可绘），
       // 并监听 playing 兜底，外加 4s 定时器兜底防某些源不触发 loadeddata。
       let revealed = false;
+      // V4.5.8 #8/#9：TV 大屏下揭遮罩必须等「真正出帧」，不能只看 readyState>=2
+      //（那时往往只有音轨、首帧未绘 → 一揭就露播放占位图，出现"有声音没画面/先黑屏再占位图"）。
+      // 手机/桌面端保持原有 loadeddata 逻辑不变，避免回归。
+      const revealOnFrame = () => {
+        try { if (v.currentTime > 0 && v.readyState >= 2 && !v.paused) reveal(); } catch { /* ignore */ }
+      };
       const reveal = () => {
         if (revealed || !alive) return;
         revealed = true;
         if (firstFrameTimerRef.current) window.clearTimeout(firstFrameTimerRef.current);
         v.removeEventListener('loadeddata', reveal);
         v.removeEventListener('playing', reveal);
+        v.removeEventListener('timeupdate', revealOnFrame);
         setResolving(false);
       };
       const onMeta = () => {
         v.removeEventListener('loadedmetadata', onMeta);
         tryApplyResume();
-        // metadata 到达后立即判断当前帧是否可绘：可绘则直接揭，否则交给 loadeddata/playing/兜底。
-        if (v.readyState >= 2) reveal();
+        // 手机端：metadata 就绪可绘即揭；TV 端：只做续播 seek，揭遮罩交给 playing/首帧推进。
+        if (!tvMode && v.readyState >= 2) reveal();
       };
       v.addEventListener('loadedmetadata', onMeta);
-      v.addEventListener('loadeddata', reveal);
-      v.addEventListener('playing', reveal);
+      if (tvMode) {
+        // TV：playing（真正起播）+ timeupdate 首帧推进 双确认才揭，避免音频先到就揭穿。
+        v.addEventListener('playing', reveal, { once: true });
+        v.addEventListener('timeupdate', revealOnFrame);
+      } else {
+        v.addEventListener('loadeddata', reveal);
+        v.addEventListener('playing', reveal);
+      }
       firstFrameTimerRef.current = window.setTimeout(reveal, 4000);
       // A：若 loadedmetadata 在监听器挂载前就已触发（HLS 起播时序），上面的监听会漏掉，
       //    这里在 readyState>=1 时立即补一次 seek，保证续播一定生效。
@@ -815,6 +871,27 @@ export function VideoPlayer({
     }
   };
 
+  // V4.5.8 #13：借用小窗 video 进大屏时的统一片头跳过。
+  // 借用模式下小窗可能已预播到片头点之后，原 trySkipIntro 的确认依赖 introSoughtRef（挂载时为 false），
+  // 于是"已过片头点"时既不再 seek、也不确认 → 片头不跳，表现为"有时有用有时没用"。
+  // 本函数以真实 video 进度为准：低于片头点则 seek 跳过；已到/已过则直接确认置位，与进入路径无关。
+  const trySkipIntroBorrow = () => {
+    const v = videoRef.current;
+    if (!v || !introSec || introDone.current) return;
+    if (v.currentTime < introSec - 0.6) {
+      // 还没到片头点：seek 过去并确认（借用 video 上 seek 会触发 seeked/timeupdate 回调）
+      resumedRef.current = true; // 阻止后续 onBorrowSeeked→resume 把进度抢回续播点
+      introSoughtRef.current = true;
+      pendingIntro.current = true;
+      player.seek(introSec);
+      try { v.currentTime = introSec; } catch { /* ignore */ }
+    }
+    // 已到或刚 seek 到片头点：统一确认跳过（不依赖 introSoughtRef 的历史值）
+    introDone.current = true;
+    pendingIntro.current = false;
+    toast('已跳过片头');
+  };
+
   // 片尾提前连播（⑥：去掉 autoPlay 前置条件，设了片尾秒数且播到片尾即切下一集）
   // ⑮ 用户设计：进入片尾区后，继续播放 2 秒再切下一集；下一集播到片尾时间点也继续切。
   const outroDone = useRef(false);
@@ -827,8 +904,8 @@ export function VideoPlayer({
   // V4.5.7 #16：方案C 借用小窗 video 时，React 的 onLoadedMetadata/onTimeUpdate/onSeeked 都绑在
   // 占位 <video>（display:none）上不会触发，片头/片尾判定失效。借用分支会给真实 video 挂原生监听
   // 并转发到这些函数；用 ref 保存最新引用，避免闭包捕获到旧的 introSec/outroSec/settings。
-  const skipFnsRef = useRef<{ intro: () => void; outro: () => void; resume: () => void; armOutro: () => void }>({
-    intro: () => {}, outro: () => {}, resume: () => {}, armOutro: () => {},
+  const skipFnsRef = useRef<{ intro: () => void; introBorrow: () => void; outro: () => void; resume: () => void; armOutro: () => void }>({
+    intro: () => {}, introBorrow: () => {}, outro: () => {}, resume: () => {}, armOutro: () => {},
   });
 
   const trySkipOutro = () => {
@@ -875,6 +952,7 @@ export function VideoPlayer({
   // V4.5.7 #16：每次渲染都把最新的片头/片尾判定函数写进 ref，供借用 video 的原生监听调用。
   skipFnsRef.current = {
     intro: trySkipIntro,
+    introBorrow: trySkipIntroBorrow,
     outro: trySkipOutro,
     resume: tryApplyResume,
     armOutro: () => { outroArmedRef.current = true; },
@@ -1484,11 +1562,12 @@ export function VideoPlayer({
             : Math.min(dur > 0 ? dur : 1e9, cur + STEP);
           player.seek(target);
           setLiveCur(target);
-          // V4.5.4 #8：TV 左右键快进/快退也起「加载中」转圈（此前只有手机手势滑动会调）。
-          // seek 落地后由 onSeeked → clearSeekLoadingOnSettled 收掉；兜底 800ms 防某些源不触发 onSeeked。
+          // V4.5.4 #8：TV 左右键快进/快退起「加载中」转圈。
+          // V4.5.8 #11：圈改由借用 video 的原生 seeked/playing（seekClearRef）在"真正出帧"后收掉，
+          // 不再早于视频就绪就消失；兜底从 800ms 延长到 4000ms，仅防个别源完全不触发事件时卡死。
           startSeekLoading(false);
           if (tvSeekTimer.current) window.clearTimeout(tvSeekTimer.current);
-          tvSeekTimer.current = window.setTimeout(() => { clearSeekLoadingNow(); }, 800);
+          tvSeekTimer.current = window.setTimeout(() => { clearSeekLoadingNow(); }, 4000);
           setSeekBubble({ dir: isRight ? 1 : -1, delta: STEP, target });
           if (seekBubbleTimer.current) window.clearTimeout(seekBubbleTimer.current);
           seekBubbleTimer.current = window.setTimeout(() => setSeekBubble(null), 1200);
@@ -1594,8 +1673,11 @@ export function VideoPlayer({
     objectPosition: 'center', // P5-2：「原始」不放大时居中
     filter: brightness < 1 ? `brightness(${brightness})` : undefined,
   };
-  // 需要锁容器比例的两档；其余档保持容器原样（竖屏 16:9 / 横屏全屏）
-  const lockRatio = SCALE_RATIO[scaleMode] || '';
+  // 需要锁容器比例的两档；其余档保持容器原样（竖屏 16:9 / 横屏全屏）。
+  // V4.5.8 #12：TV 大屏是 fixed 全屏舞台，借用 video 以 width/height:100% 撑满，
+  // 若再给 screen 容器锁 aspect-ratio（16/9、4/3）会与全屏尺寸冲突 → 黑屏/错位。
+  // 故 TV 模式下不再锁容器比例，尺寸切换只改借用 video 的 object-fit（cycleScale/借用挂载处已处理）。
+  const lockRatio = tvMode ? '' : (SCALE_RATIO[scaleMode] || '');
   // V3.3.6 八·二：genre 标签整行删除，改由子站指示 [图标]│[子站名] 代替
   const vr = detail.raw as any;
   const filmYear = vr?.vod_year || vr?.year;
@@ -1645,6 +1727,10 @@ export function VideoPlayer({
     clearSeekLoadingOnSettled,
     clearSeekLoadingNow,
   } = useBuffering();
+  // V4.5.8 #11：把收圈函数挂到 ref，供借用 video 的原生 seeked/playing 监听在运行时调用。
+  // 用 clearSeekLoadingNow（无条件清）——键盘快进走 startSeekLoading 会把 seekGestureActive 置 true，
+  // 而 clearSeekLoadingOnSettled 有 !seekGestureActive 守卫不会清，故此处必须无条件版。
+  seekClearRef.current = clearSeekLoadingNow;
   // V4.5.5 #1：把 TV 控件层的真实显隐状态广播给播放器时钟（TVShell 里的 tv-player-clock），
   // 让右上角时间跟随标题/功能键/进度条一起显隐，不再用自己的独立 4 秒定时器 + 任意键重新亮起。
   useEffect(() => {

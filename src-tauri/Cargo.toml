@@ -1,6 +1,6 @@
 [package]
 name = "muhai"
-version = "4.5.8"
+version = "4.5.9"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
 edition = "2021"
@@ -13,7 +13,10 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # charset：drpy3 的 req 契约要求按响应头 charset 解码（gbk 等中文站点），需 encoding_rs。
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "charset", "stream"] }
+# V4.5.9 #弹幕：启用压缩解压——B站 comment XML 接口无条件返回 Content-Encoding: deflate，
+# 后端代理需能自动解压，否则回传前端的是压缩乱码，正则匹配不到 <d> 弹幕节点。
+# gzip/deflate/brotli 全开，覆盖各站点常见压缩编码；charset 保留给 gb2312 中文源。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "charset", "stream", "gzip", "deflate", "brotli"] }
 url = "2"
 # 投屏（DLNA/SSDP）：局域网设备发现 + 推送播放 URL
 tokio = { version = "1", features = ["rt", "net", "time", "sync"] }

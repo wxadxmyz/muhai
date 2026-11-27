@@ -95,7 +95,8 @@ export function SettingsTV({ onReset, onAdded }: { onReset: () => void; onAdded?
   ];
 
   return (
-    <div className="tv-scroll" data-scroll>
+    // V4.5.7 #18：负 margin 抵消 .tv-main 顶部内边距，与搜索页顶部间距一致
+    <div className="tv-scroll tv-flush-top" data-scroll>
       <div className="tv-set-grid">
         {cards.map((c) => (
           <div key={c.key} className="tv-set-card" data-focusable="" data-card-key={c.key} onClick={() => openPanel(c.key)} role="button">

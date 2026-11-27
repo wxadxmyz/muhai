@@ -36,6 +36,7 @@ export function DetailTV({
   sources,
   initialIndex = 0,
   initialLine = 0,
+  returnTick = 0,
   onIndexChange,
 }: {
   item: MediaItem;
@@ -45,6 +46,8 @@ export function DetailTV({
   sources: SourceConfig[];
   initialIndex?: number;
   initialLine?: number;
+  // V4.5.7 #13：外壳关闭大屏时递增，触发焦点回到选中集
+  returnTick?: number;
   onIndexChange?: (index: number, line: number) => void;
 }) {
   const groups = useMemo(
@@ -128,7 +131,7 @@ export function DetailTV({
     }, 120);
     return () => { window.clearTimeout(t); if (raf2) window.cancelAnimationFrame(raf2); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, initialIndex, initialLine, index, seg]);
+  }, [item.id, initialIndex, initialLine, index, seg, returnTick]);
 
   // V4.5.5 #4：取消「进入详情就自动弹网盘授权浮窗」。网盘子站点进入详情不再自动拉起原生登录页；
   // 改为按需触发——点该网盘线路（344行 force）或点播放（playOrAuth）时才弹，避免一进子站就弹窗。
@@ -145,6 +148,16 @@ export function DetailTV({
     if (typeof initialIndex === 'number' && initialIndex >= 0) setIndex(initialIndex);
     if (typeof initialLine === 'number' && initialLine >= 0) setLine(initialLine);
   }, [initialIndex, initialLine, item.id]);
+
+  // V4.5.7 #19：恢复「进详情按当前线路自动弹网盘官方扫码浮窗」。
+  // 片源当前线路若是网盘（夸克/UC/阿里/百度/迅雷）且未授权，进详情立即弹对应 provider 扫码窗；
+  // 用非 force 调用，尊重用户本次会话的「已关闭」标记——关掉后返回/切集不再反复打扰；
+  // 点线路（force）或点播放（playOrAuth）仍可主动重新拉起。
+  useEffect(() => {
+    const t = window.setTimeout(() => maybeAuth(initialLine), 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id]);
 
   // V4.4.2 #12/#17：左上角小窗「真实播放」+ 无缝续播。
   //  - 带声音：先静音保证自动播放成功，play() 成功后立即取消静音（TV WebView 通常允许有声播放）。
@@ -284,8 +297,12 @@ export function DetailTV({
         {/* 播放小窗口（封面做底 + 中央播放按钮，点整窗即播） */}
         <div
           ref={miniSlotRef}
+          id="dt-mini"
           className="tv-detail-player"
           data-focusable=""
+          data-nav-right="#dt-pill-reverse"
+          // V4.5.7 #12：小窗↓→线路（有则）→分集（有则）→集数第一行
+          data-nav-down={groups.length > 1 ? '.tv-line-pill' : eps.length > SEG ? '.tv-ep-seg' : '#dt-ep-lefttop'}
           onClick={() => playOrAuth(index, line)}
           onKeyDown={(e) => { const c = (e as any).keyCode || 0; if (['Enter', 'OK', 'Select', ' '].includes(e.key) || c === 13 || c === 23 || c === 66) { e.preventDefault(); playOrAuth(index, line); } }}
           role="button"
@@ -328,13 +345,13 @@ export function DetailTV({
           </div>
           {/* V4.5.0 #10：胶囊按影视仓 —— 快速搜索(改为倒序) / 加入收藏 / 内容简介（不要播放按钮） */}
           <div className="tv-pillrow">
-            <button ref={playRef} className="tv-pill p-play" data-focusable="" onClick={() => setReverse((v) => !v)}>
+            <button ref={playRef} id="dt-pill-reverse" className="tv-pill p-play" data-focusable="" data-nav-left="#dt-mini" data-nav-down="#dt-ep-righttop" onClick={() => setReverse((v) => !v)}>
               <Icon name="list" size={20} /> {reverse ? '顺序' : '倒序'}
             </button>
-            <button className={'tv-pill p-fav' + (fav ? ' active' : '')} data-focusable="" onClick={() => library.toggleFavorite(item)}>
+            <button id="dt-pill-fav" className={'tv-pill p-fav' + (fav ? ' active' : '')} data-focusable="" data-nav-down="#dt-ep-righttop" onClick={() => library.toggleFavorite(item)}>
               <Icon name={fav ? 'heart-filled' : 'heart'} size={20} /> {fav ? '已收藏' : '加入收藏'}
             </button>
-            <button ref={descBtnRef} className="tv-pill p-desc" data-focusable="" onClick={() => setShowDesc(true)}>
+            <button ref={descBtnRef} id="dt-pill-desc" className="tv-pill p-desc" data-focusable="" data-nav-down="#dt-ep-righttop" onClick={() => setShowDesc(true)}>
               <Icon name="file-text" size={20} /> 内容简介
             </button>
           </div>
@@ -349,8 +366,12 @@ export function DetailTV({
               {groups.map((g, i) => (
                 <span
                   key={i}
+                  id={i === 0 ? 'dt-line-first' : undefined}
                   className={'tv-line-pill' + (line === i ? ' active' : '')}
                   data-focusable=""
+                  // V4.5.7 #12：线路↑→小窗，↓→分集（有则）→集数第一行；左右在同类线路间由几何就近处理
+                  data-nav-up="#dt-mini"
+                  data-nav-down={eps.length > SEG ? '.tv-ep-seg' : '#dt-ep-lefttop'}
                   onClick={() => { setLine(i); setIndex(0); setSeg(0); maybeAuth(i, true); }}
                   role="button"
                 >
@@ -368,8 +389,12 @@ export function DetailTV({
             {Array.from({ length: Math.ceil(eps.length / SEG) }, (_, s) => (
               <span
                 key={s}
+                id={s === 0 ? 'dt-seg-first' : undefined}
                 className={'tv-ep-seg' + (seg === s ? ' active' : '')}
                 data-focusable=""
+                // V4.5.7 #12：分集↑→线路（有则）→小窗，↓→集数第一行
+                data-nav-up={groups.length > 1 ? '#dt-line-first' : '#dt-mini'}
+                data-nav-down="#dt-ep-lefttop"
                 onClick={() => setSeg(s)}
                 role="button"
               >
@@ -395,20 +420,34 @@ export function DetailTV({
             // V4.5.3 #14：集元素补网格坐标（每行 6 个，长名 4 个），方向键按网格移动、配合 focusEl 自动滚入视口；
             // 保持「只移光标、OK 才切集」的现有设计，不改变点击才切集的行为。
             const COLS = epLong ? 4 : 6;
-            return ids.map((i, pos) => (
-              <div
-                key={i}
-                ref={index === i ? activeEpRef : undefined}
-                className={'tv-ep' + (index === i ? ' active' : '')}
-                data-focusable=""
-                data-grid-col={pos % COLS}
-                data-grid-row={Math.floor(pos / COLS)}
-                onClick={() => { setIndex(i); onIndexChange?.(i, line); playOrAuth(i, line); }}
-                role="button"
-              >
-                {eps[i]?.name || `第${i + 1}集`}
-              </div>
-            ));
+            const HALF = COLS / 2;
+            return ids.map((i, pos) => {
+              const row = Math.floor(pos / COLS);
+              const col = pos % COLS;
+              const topLeft = row === 0 && col === 0;
+              const topRight = row === 0 && col === HALF;
+              // V4.5.7 #12：顶行左半↑→分集→线路→小窗；顶行右半↑→胶囊（倒序/收藏/简介）
+              const upTarget = row !== 0 ? undefined
+                : col < HALF
+                  ? (eps.length > SEG ? '#dt-seg-first' : groups.length > 1 ? '#dt-line-first' : '#dt-mini')
+                  : '#dt-pill-reverse';
+              return (
+                <div
+                  key={i}
+                  id={topLeft ? 'dt-ep-lefttop' : topRight ? 'dt-ep-righttop' : undefined}
+                  ref={index === i ? activeEpRef : undefined}
+                  className={'tv-ep' + (index === i ? ' active' : '')}
+                  data-focusable=""
+                  data-grid-col={col}
+                  data-grid-row={row}
+                  data-nav-up={upTarget}
+                  onClick={() => { setIndex(i); onIndexChange?.(i, line); playOrAuth(i, line); }}
+                  role="button"
+                >
+                  {eps[i]?.name || `第${i + 1}集`}
+                </div>
+              );
+            });
           })()}
         </div>
       </div>

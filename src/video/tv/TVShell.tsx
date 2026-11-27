@@ -105,6 +105,8 @@ export function TVShell({
   // playEpisode 会写入；openDetail（从结果/历史/首页进详情）时重置为 0。
   const [detailIndex, setDetailIndex] = useState(0);
   const [detailLine, setDetailLine] = useState(0);
+  // V4.5.7 #13：关闭大屏时递增，作为「返回信号」让 DetailTV 焦点 effect 重跑，把光标落回选中集。
+  const [detailReturnTick, setDetailReturnTick] = useState(0);
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const [remotePush, setRemotePush] = useState<'source' | 'search' | null>(null);
 
@@ -367,6 +369,7 @@ export function TVShell({
   const closeVideo = () => {
     player.clearQueue();
     setPlaying(false);
+    setDetailReturnTick((t) => t + 1); // V4.5.7 #13：触发 DetailTV 焦点落回选中集
   };
 
   const goSearch = (q: string, from: 'home-card' | 'search' = 'search') => {
@@ -453,6 +456,7 @@ export function TVShell({
               sources={sources}
               initialIndex={detailIndex}
               initialLine={detailLine}
+              returnTick={detailReturnTick}
               onIndexChange={(i, l) => { setDetailIndex(i); setDetailLine(l); }}
             />
           </div>

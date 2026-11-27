@@ -536,7 +536,9 @@ export function VideoPlayer({
         // 搬进大屏舞台：原生 appendChild，不经过 React，播放/缓冲/HLS 实例全部保留
         borrowedMiniRef.current = { video: v, slot: shared.slot };
         screen.appendChild(v);
-        v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1;z-index:1;background:#000;';
+        // V4.5.7 #6：借用时就套用当前画面尺寸档位，避免切集重挂后 object-fit 被写死回 contain。
+        const curFit = scaleMode !== '默认' ? (SCALE_FIT[scaleMode] ?? 'contain') : objectFitFromSettings;
+        v.style.cssText = `position:absolute;inset:0;width:100%;height:100%;object-fit:${curFit};opacity:1;z-index:1;background:#000;`;
         v.muted = false;
         v.volume = 1;
         videoRef.current = v;
@@ -566,10 +568,27 @@ export function VideoPlayer({
           player.setProgress(v.currentTime || 0);
           if (v.duration > 0) player.setDuration(v.duration);
         } catch { /* ignore */ }
+        // V4.5.7 #16：借用 video 上挂原生片头/片尾监听——React 的 onLoadedMetadata/onTimeUpdate
+        // 绑在占位 video（display:none）上不会触发，借用模式下片头尾判定全靠这里转发。
+        const onBorrowMeta = () => {
+          skipFnsRef.current.armOutro();
+          skipFnsRef.current.intro();
+          skipFnsRef.current.resume();
+        };
+        const onBorrowTime = () => { skipFnsRef.current.outro(); skipFnsRef.current.intro(); };
+        const onBorrowSeeked = () => { skipFnsRef.current.resume(); };
+        v.addEventListener('loadedmetadata', onBorrowMeta);
+        v.addEventListener('timeupdate', onBorrowTime);
+        v.addEventListener('seeked', onBorrowSeeked);
+        // 借用时 video 可能早已元数据就绪（小窗预播过），补触发一次，避免漏判片头/续播。
+        if (v.readyState >= 1) onBorrowMeta();
         // 清理：解绑监听 + 清兜底定时器
         (borrowedMiniRef.current as any)._revealOff = () => {
           v.removeEventListener('loadeddata', reveal);
           v.removeEventListener('playing', reveal);
+          v.removeEventListener('loadedmetadata', onBorrowMeta);
+          v.removeEventListener('timeupdate', onBorrowTime);
+          v.removeEventListener('seeked', onBorrowSeeked);
           window.clearTimeout(fallback);
         };
       }
@@ -805,6 +824,13 @@ export function VideoPlayer({
   const outroEpisodeRef = useRef(episodeIndex); // V3.4.3 #3：timer 创建时的集序号，回调比对不符即丢弃，双保险防连环跳
   const clearOutroTimer = () => { if (outroTimer.current) { window.clearTimeout(outroTimer.current); outroTimer.current = undefined; } };
 
+  // V4.5.7 #16：方案C 借用小窗 video 时，React 的 onLoadedMetadata/onTimeUpdate/onSeeked 都绑在
+  // 占位 <video>（display:none）上不会触发，片头/片尾判定失效。借用分支会给真实 video 挂原生监听
+  // 并转发到这些函数；用 ref 保存最新引用，避免闭包捕获到旧的 introSec/outroSec/settings。
+  const skipFnsRef = useRef<{ intro: () => void; outro: () => void; resume: () => void; armOutro: () => void }>({
+    intro: () => {}, outro: () => {}, resume: () => {}, armOutro: () => {},
+  });
+
   const trySkipOutro = () => {
     const v = videoRef.current;
     // V3.4.2 #4：本集元数据尚未就绪（刚切集、<video> 仍是旧集 currentTime/duration）时不判定片尾，
@@ -844,6 +870,14 @@ export function VideoPlayer({
       // 离开片尾区（用户手动往回拖）→ 取消延迟，避免误切
       clearOutroTimer();
     }
+  };
+
+  // V4.5.7 #16：每次渲染都把最新的片头/片尾判定函数写进 ref，供借用 video 的原生监听调用。
+  skipFnsRef.current = {
+    intro: trySkipIntro,
+    outro: trySkipOutro,
+    resume: tryApplyResume,
+    armOutro: () => { outroArmedRef.current = true; },
   };
 
   // ⑧ 片头/片尾「一键设定」：点一下用当前播放进度设定、再点清空；长按(500ms)打开分:秒手动输入面板
@@ -977,6 +1011,12 @@ export function VideoPlayer({
     const next = SCALE_OPTS[(i + 1) % SCALE_OPTS.length];
     setScaleMode(next);
     localStorage.setItem('rf_scale', next);
+    // V4.5.7 #6：方案C 借用小窗 video 时，videoRef 指向借用的 DOM，其内联 object-fit 写死 contain，
+    // React 的 videoStyle 作用不到它（占位 video 被 display:none）。这里直接把新档位的 objectFit
+    // 写到实际显示的 video 上，保证「默认/16:9/…/裁剪」切换时画面真的变化。
+    const fit = next !== '默认' ? (SCALE_FIT[next] ?? 'contain') : objectFitFromSettings;
+    const v = videoRef.current;
+    if (v) v.style.objectFit = fit;
   };
   // ===== S 组：分辨率真实切换（走 HLS 多码率，不再循环假字符串） =====
   // 源本身没有清晰度维度（engine/adapters/normal.ts 只认 $$$ / # / $），
@@ -1641,7 +1681,7 @@ export function VideoPlayer({
         onTouchMove={onStageTouchMove}
         onTouchEnd={onStageTouchEnd}
       >
-        <div ref={screenRef} className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && (resolving || buffering || seekLoading) ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
+        <div ref={screenRef} className={'screen' + (landscape && lockRatio ? ' locked-ratio' : '') + (tvMode ? ' tv-screen' : '') + (tvMode && resolving ? ' is-loading' : '')} style={landscape && lockRatio ? { aspectRatio: lockRatio } : undefined}>
           {/* V4.4.6：TV 大窗不渲染 poster 图片占位（对齐 UI 加载纯黑屏，只留转圈+加载中…） */}
           {!tvMode && <div className="poster" />}
           <video
@@ -1976,7 +2016,7 @@ export function VideoPlayer({
             {/* V4.5.4 #10：TV 专属播放页的居中「加载中」——解析 / 切集 / 缓冲 / 快进 三种态都在这里显示。
                 旧版转圈只在手机横屏 .land-center 渲染，.tvp-stage 整块没有 → 切集黑屏中间空空无反馈。 */}
             {(resolving || buffering || seekLoading) && !err && !tvPauseOverlay && (
-              <div className="tvp-loading">
+              <div className={'tvp-loading' + (!resolving ? ' tvp-loading-overlay' : '')}>
                 <span className="vp-spinner" />
                 <span className="tvp-loading-text">
                   {/* V4.5.5 #6：解析/切集/缓冲/快进统一文案「加载中…」，不再出现「快进中…」叠加 */}

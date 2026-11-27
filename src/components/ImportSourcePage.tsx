@@ -111,7 +111,7 @@ export function ImportSourcePage({
     else setStatus({ type: 'err', msg: r.error || '无法解析，请检查内容格式' });
   };
 
-  // 影视端统一叫「影视源」；音乐模式（历史分支）仍保留「音源」说法
+  // V4.5.7 #21：软件已无音乐模式；'music' 字面量仅为兼容历史类型定义保留，实际不会传入
   const title = mediaType === 'video' ? '导入 json 影视源' : '导入 json 音源';
 
   return (

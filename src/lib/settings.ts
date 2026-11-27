@@ -9,7 +9,6 @@ export interface AppSettings {
   skipOutro: number; // 片尾提前结束秒数（影视）
   enableDanmaku: boolean; // 弹幕
   enableSubtitle: boolean; // 字幕
-  showDesktopLyric: boolean; // 桌面歌词浮窗（音乐）
   notifyDownload: boolean; // 下载完成系统通知（桌面端 Tauri 通知插件）
   playbackRate: number; // 倍速记忆（0.5~2.0）
   skipByItem: Record<string, { intro: number; outro: number }>; // 按影视记忆的跳过片头/片尾（秒）
@@ -57,7 +56,6 @@ const DEFAULTS: AppSettings = {
   skipOutro: 0,
   enableDanmaku: true,
   enableSubtitle: true,
-  showDesktopLyric: false,
   notifyDownload: true,
   playbackRate: 1,
   skipByItem: {},

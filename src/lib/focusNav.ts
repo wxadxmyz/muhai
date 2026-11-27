@@ -129,6 +129,17 @@ function focusEl(el: HTMLElement) {
       if (above || below) {
         const delta = above ? r.top - br.top - 8 : r.bottom - br.bottom + 8;
         scrollBox.scrollTop += delta;
+        // V4.5.7 #10：焦点回到滚动容器最顶行卡片时，上方分区标题（.tv-row-title）会被顶出可视区。
+        // 判断焦点所在 section 是容器的第一个 section、且焦点在该 section 的前一行 → 滚到容器顶部让标题露出。
+        // 用 DOM 关系判断而非 offsetTop（后者参考系随定位父元素变化，不可靠）。
+        if (above && el.closest('section')) {
+          const sec = el.closest('section')!;
+          const grid = el.closest('.tv-grid');
+          const firstRow = grid && Array.from(grid.children).indexOf(el) < (parseInt(el.getAttribute('data-grid-col') || '0', 10) + 1);
+          if (sec === scrollBox.querySelector('section') && firstRow) {
+            scrollBox.scrollTop = 0;
+          }
+        }
       }
     } else {
       const inView = r.top >= 0 && r.left >= 0 &&

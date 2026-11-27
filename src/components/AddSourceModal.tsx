@@ -13,13 +13,12 @@ export function AddSourceModal({
   initial?: Partial<SourceForm>;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
-  const [type, setType] = useState<SourceType>(initial?.type ?? 'music-json');
+  const [type, setType] = useState<SourceType>(initial?.type ?? 'tvbox');
   const [baseUrl, setBaseUrl] = useState(initial?.baseUrl ?? '');
   const [token, setToken] = useState(initial?.token ?? '');
   const [mountPath, setMountPath] = useState(initial?.mountPath ?? '/');
 
   const PLACEHOLDER: Partial<Record<SourceType, string>> = {
-    'music-json': 'https://your-music-api.com',
     alist: 'https://your-alist.com',
     tvbox: 'http://www.饭太硬.cc/tv',
     mock: '',

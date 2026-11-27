@@ -35,7 +35,6 @@ export interface LibraryState {
   watchProgress: Record<string, number>; // 影视观看进度（秒）
   resumeEp: Record<string, number>; // 每部剧最近观看的集序号（续播定位）
   titleProgress: Record<string, TitleProgressEntry>; // 片名级进度（跨子站同片续播）
-  localMusic: MediaItem[]; // 本地导入
 }
 
 function uid() {
@@ -47,7 +46,7 @@ function keyOf(it: MediaItem) {
 }
 
 function load(appKey: string): LibraryState {
-  const empty: LibraryState = { history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, titleProgress: {}, localMusic: [] };
+  const empty: LibraryState = { history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, titleProgress: {} };
   try {
     const raw = localStorage.getItem(PREFIX + appKey);
     if (raw) return { ...empty, ...JSON.parse(raw) };
@@ -169,17 +168,13 @@ export function useLibrary(appKey: string) {
 
   // 重置 APP：清空全部观看记录/收藏/进度（内存 + 持久化）
   const clearAll = useCallback(() => {
-    setLib({ history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, titleProgress: {}, localMusic: [] });
+    setLib({ history: [], favorites: [], playlists: [], searchHistory: [], watchProgress: {}, resumeEp: {}, titleProgress: {} });
   }, []);
 
   const clearHistory = useCallback(() => setLib((l) => ({ ...l, history: [] })), []);
 
   const removeFromHistory = useCallback((item: MediaItem) => {
     setLib((l) => ({ ...l, history: l.history.filter((x) => keyOf(x) !== keyOf(item)) }));
-  }, []);
-
-  const addLocalMusic = useCallback((items: MediaItem[]) => {
-    setLib((l) => ({ ...l, localMusic: [...items, ...l.localMusic] }));
   }, []);
 
   return {
@@ -201,6 +196,5 @@ export function useLibrary(appKey: string) {
     clearAll,
     clearHistory,
     removeFromHistory,
-    addLocalMusic,
   };
 }

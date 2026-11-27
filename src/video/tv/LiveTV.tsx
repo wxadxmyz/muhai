@@ -7,6 +7,8 @@ import { aggregateLives, SourceConfig, LiveChannelSource } from '../../engine';
 import { createBackendLoader, streamHeaders, peekIsHls } from '../../lib/hlsPlayer';
 import { Icon } from '../../components/Icon';
 import { toast } from '../../lib/toast';
+import { focusElement, isTvConfirmKey } from '../../lib/focusNav';
+import { pushBackHandler } from '../../lib/backStack';
 
 interface Channel { name: string; sources: string[]; group?: string; headers?: Record<string, string>; }
 
@@ -58,6 +60,23 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
   const [cat, setCat] = useState(ALL_CAT);
   const videoRef = useRef<HTMLVideoElement>(null);
   const headersRef = useRef<Record<string, string> | null>(null);
+  // V4.5.7 #20：影视仓式全屏直播 + 左侧浮窗面板
+  const [panelOpen, setPanelOpen] = useState(false); // 左侧分类/频道浮窗是否展开
+  const [enterCat, setEnterCat] = useState(ALL_CAT); // 从哪个分类进的频道列表，频道左键回位（搜索页式记忆）
+  const enteredSrcRef = useRef<HTMLElement | null>(null); // 点进去的源列表项，退出时还原光标
+  const curChannelRef = useRef<Channel | null>(null); // 当前频道（供键盘监听读取最新值）
+  const activeNameRef = useRef('');
+  const activeSrcRef = useRef(1);
+  const playingRef = useRef(false);
+  const catRef = useRef(ALL_CAT);
+  const panelOpenRef = useRef(false);
+  // 同步 ref 镜像，供 window 捕获监听（闭包只建一次）读取最新状态
+  curChannelRef.current = channels?.find((c) => c.name === activeName) ?? null;
+  activeNameRef.current = activeName;
+  activeSrcRef.current = activeSrc;
+  playingRef.current = playing;
+  catRef.current = cat;
+  panelOpenRef.current = panelOpen;
 
   useEffect(() => {
     setLoading(true);
@@ -79,9 +98,10 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
   }, [channels]);
   const visible = useMemo(() => !channels ? [] : cat === ALL_CAT ? channels : channels.filter((c) => c.group === cat), [channels, cat]);
 
-  const openLive = async (live: LiveChannelSource & { sourceName: string }) => {
+  const openLive = async (live: LiveChannelSource & { sourceName: string }, srcEl?: HTMLElement) => {
     setError('');
     setChannels(null);
+    if (srcEl) enteredSrcRef.current = srcEl; // V4.5.7 #20：记住点进去的源项，退出时还原光标
     try {
       const text = await (async () => {
         try { return await (await import('@tauri-apps/api/core')).invoke<string>('fetchsource', { url: live.url }); }
@@ -105,6 +125,33 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     if (!curChannel) return '';
     return curChannel.sources[Math.min(activeSrc, curChannel.sources.length) - 1] ?? curChannel.sources[0];
   }, [curChannel, activeSrc]);
+
+  // V4.5.7 #20：全屏时换台（上下）/换线路（左右）
+  const stepChannel = (delta: number) => {
+    const list = channels ?? [];
+    if (!list.length) return;
+    const cur = list.findIndex((c) => c.name === activeNameRef.current);
+    const next = ((cur < 0 ? 0 : cur + delta) + list.length) % list.length;
+    const c = list[next];
+    headersRef.current = c.headers ?? null;
+    setActiveName(c.name);
+    setActiveSrc(1);
+    setCat(c.group && cats.includes(c.group) ? c.group : ALL_CAT);
+  };
+  const stepSource = (delta: number) => {
+    const c = curChannelRef.current;
+    if (!c || c.sources.length <= 1) return; // 单线路左右键不动
+    const next = ((activeSrcRef.current - 1 + delta) + c.sources.length) % c.sources.length + 1;
+    setActiveSrc(next);
+  };
+  const exitLive = () => {
+    setPanelOpen(false);
+    setPlaying(false);
+    setChannels(null);
+    setCat(ALL_CAT);
+    // 退出回源列表，光标落到点进去的那一项
+    window.setTimeout(() => { if (enteredSrcRef.current) focusElement(enteredSrcRef.current); }, 80);
+  };
 
   useEffect(() => {
     if (!curUrl || !playing || !videoRef.current) return;
@@ -133,40 +180,91 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     return () => { cancelled = true; if (hls) hls.destroy(); el.removeAttribute('src'); el.load(); };
   }, [curUrl, playing]);
 
+  // V4.5.7 #20：全屏画面时的遥控器接管（window 捕获，早于全局焦点导航）。
+  //  - 面板关闭：OK 弹面板；上下换台；左右换线路（单线路不动）。拦截事件不让焦点导航/快捷键再处理。
+  //  - 面板打开：方向键/OK 全部交给焦点导航在浮窗内移动，不做换台换源。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!playingRef.current) return; // 非全屏播放态完全不接管
+      const tag = (document.activeElement as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (panelOpenRef.current) return; // 面板内交给焦点导航
+      if (isTvConfirmKey(e)) {
+        e.preventDefault(); e.stopPropagation();
+        setPanelOpen(true);
+        return;
+      }
+      const k = e.key;
+      if (k === 'ArrowUp' || k === 'Up') { e.preventDefault(); e.stopPropagation(); stepChannel(-1); }
+      else if (k === 'ArrowDown' || k === 'Down') { e.preventDefault(); e.stopPropagation(); stepChannel(1); }
+      else if (k === 'ArrowLeft' || k === 'Left') { e.preventDefault(); e.stopPropagation(); stepSource(-1); }
+      else if (k === 'ArrowRight' || k === 'Right') { e.preventDefault(); e.stopPropagation(); stepSource(1); }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels]);
+
+  // V4.5.7 #20：全屏播放态的返回键——面板开着先关面板，否则退出回源列表
+  useEffect(() => pushBackHandler(() => {
+    if (!playingRef.current) return false;
+    if (panelOpenRef.current) { setPanelOpen(false); return true; }
+    exitLive();
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
+
   if (channels && playing) {
     return (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ position: 'relative', flex: '1 1 auto', background: '#000', borderRadius: 12, overflow: 'hidden' }}>
-          <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          <div style={{ position: 'absolute', top: 14, left: 16, fontSize: 20, fontWeight: 700, textShadow: '0 2px 6px #000' }}>{activeName}</div>
-          <button className="tv-action-btn" data-focusable="" style={{ position: 'absolute', top: 12, right: 12 }} onClick={() => { setPlaying(false); setChannels(null); setActiveName(''); }}>
-            退出
-          </button>
-          <button className="tv-action-btn" data-focusable="" style={{ position: 'absolute', bottom: 14, right: 14 }} onClick={() => setPlaying(false)}>
-            <Icon name="list" size={18} /> 选台
-          </button>
-        </div>
-        <div style={{ height: 200, marginTop: 14, display: 'flex', gap: 16 }}>
-          <div className="tv-live-cats">
-            {cats.map((c) => (
-              <div key={c} className={'tv-cat' + (cat === c ? ' active' : '')} data-focusable="" onClick={() => setCat(c)} role="button">{c}</div>
-            ))}
-          </div>
-          <div className="tv-live-chs">
-            {visible.map((c) => (
-              <div key={c.name} className={'tv-live-ch' + (c.name === activeName ? ' on' : '')} data-focusable="" onClick={() => pick(c.name, c)} role="button">
-                {c.name}
+      <div className="tv-live-stage">
+        {/* V4.5.7 #20：全屏画面铺底（盖住外壳顶栏），OK 弹左侧主题色浮窗 */}
+        <video ref={videoRef} autoPlay playsInline className="tv-live-fullvideo" />
+        <div className="tv-live-stage-name">{activeName}</div>
+        <div className="tv-live-stage-help">OK 选台 · ↑↓ 换台 · ←→ 换线路 · 返回退出</div>
+        {panelOpen && (
+          <div className="tv-live-panel" data-focus-root>
+            <div className="tv-live-panel-inner">
+              <div className="tv-live-cats">
+                {cats.map((c) => (
+                  <div
+                    key={c}
+                    id={`live-cat-${cats.indexOf(c)}`}
+                    className={'tv-cat' + (cat === c ? ' active' : '')}
+                    data-focusable=""
+                    data-nav-right=".tv-live-panel .tv-live-chs .tv-live-ch"
+                    onFocus={() => { setCat(c); setEnterCat(c); }}
+                    onClick={() => { setCat(c); setEnterCat(c); }}
+                    role="button"
+                  >{c}</div>
+                ))}
               </div>
-            ))}
+              <div className="tv-live-chs">
+                {visible.map((c) => (
+                  <div
+                    key={c.name}
+                    className={'tv-live-ch' + (c.name === activeName ? ' on' : '')}
+                    data-focusable=""
+                    // 当前频道设为面板打开后的初始焦点；左键回到进来的分类
+                    data-autofocus={c.name === activeName ? '' : undefined}
+                    data-nav-left={`#live-cat-${Math.max(0, cats.indexOf(enterCat))}`}
+                    onFocus={() => { if (c.group && cats.includes(c.group) && c.group !== cat) setCat(c.group); }}
+                    onClick={() => { pick(c.name, c); setPanelOpen(false); }}
+                    role="button"
+                  >
+                    {c.name}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
 
   if (channels && !playing) {
     return (
-      <div className="tv-live-body">
+      <div className="tv-live-body tv-flush-top">
         <div className="tv-live-cats">
           {cats.map((c) => (
             <div key={c} className={'tv-cat' + (cat === c ? ' active' : '')} data-focusable="" onClick={() => setCat(c)} role="button">{c}</div>
@@ -194,7 +292,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
     );
   }
   return (
-    <div className="tv-live-list">
+    <div className="tv-live-list tv-flush-top">
       {lives.map((l, i) => (
         <div key={i} className="tv-live-src" data-focusable="" onClick={() => openLive(l)} role="button">
           <Icon name="tv" size={22} />

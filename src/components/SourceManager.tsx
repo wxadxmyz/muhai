@@ -7,7 +7,6 @@ import { Icon } from './Icon';
 import { showPrompt } from '../lib/dialog';
 
 const TYPE_LABEL: Record<string, string> = {
-  'music-json': '音乐 API',
   alist: '云盘',
   tvbox: '影视仓',
   mock: '演示',

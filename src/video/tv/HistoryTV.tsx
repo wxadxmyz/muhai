@@ -30,23 +30,36 @@ export function HistoryTV({
     () => pushBackHandler(() => {
       if (!deleting) return false;
       setDeleting(false);
+      // V4.5.7 #1：退出删除模式后主动把光标落到第一张卡片（或删除按钮），避免停留在已消失节点
+      window.setTimeout(() => {
+        const c = document.getElementById('hist-card-0') || document.getElementById('hist-clear-one');
+        if (c) focusElement(c);
+      }, 80);
       return true;
     }),
     [deleting]
   );
 
-  const removeOne = (it: MediaItem) => {
-    const wasLast = list.length <= 1; // 删的是最后一张
+  const removeOne = (it: MediaItem, idx: number) => {
+    const newLen = list.length - 1; // 删后剩余数量
     if (tab === 'history') library.removeFromHistory(it);
     else library.toggleFavorite(it); // 收藏用 toggle 取消
     toast('已删除该记录');
-    // V4.5.4 #18：删完最后一张，卡片 DOM 消失，把光标落到「观看历史」标签
-    if (wasLast) {
+    // V4.5.7 #1：删中间卡片后光标不得丢失。
+    //  - 删完还有卡片：聚焦顶上来的同位置卡片（idx 超出则最后一张），保证光标连续；
+    //  - 删光了：回「观看历史」标签。
+    if (newLen <= 0) {
       window.setTimeout(() => {
         const t = document.getElementById('hist-tab-history');
         if (t) focusElement(t);
       }, 80);
       setDeleting(false);
+    } else {
+      const target = Math.min(idx, newLen - 1);
+      window.setTimeout(() => {
+        const el = document.getElementById(`hist-card-${target}`);
+        if (el) focusElement(el);
+      }, 80);
     }
   };
   const clearAll = () => {
@@ -66,13 +79,14 @@ export function HistoryTV({
   };
 
   return (
-    <div className="tv-scroll" data-scroll>
+    // V4.5.7 #18：负 margin 抵消 .tv-main 顶部内边距，与搜索页顶部间距一致
+    <div className="tv-scroll tv-flush-top" data-scroll>
       <div className="tv-history-bar" id="hist-bar">
         <div className="tv-history-tabs">
           <div
             id="hist-tab-history"
             className={'tv-cat' + (tab === 'history' ? ' active' : '')}
-            data-focusable="" data-nav-right="#hist-tab-fav" data-nav-down="#hist-first-card"
+            data-focusable="" data-nav-right="#hist-tab-fav" data-nav-down="#hist-card-0"
             onClick={() => switchTab('history')} role="button">观看历史</div>
           <div
             id="hist-tab-fav"
@@ -86,12 +100,12 @@ export function HistoryTV({
             <div
               id="hist-clear-one"
               className={'tv-hist-clear' + (deleting ? ' primary' : ' danger')}
-              data-focusable="" data-nav-left="#hist-tab-fav" data-nav-right="#hist-clear-all" data-nav-down="#hist-first-card"
+              data-focusable="" data-nav-left="#hist-tab-fav" data-nav-right="#hist-clear-all" data-nav-down="#hist-card-0"
               onClick={() => setDeleting((m) => !m)} role="button">删除记录</div>
             <div
               id="hist-clear-all"
               className="tv-hist-clear danger" data-focusable=""
-              data-nav-left="#hist-clear-one" data-nav-down="#hist-first-card"
+              data-nav-left="#hist-clear-one" data-nav-down="#hist-card-0"
               onClick={clearAll} role="button">一键清空</div>
           </div>
         )}
@@ -108,9 +122,9 @@ export function HistoryTV({
                   name={name}
                   cover={cover}
                   year={it.year}
-                  domId={idx === 0 ? 'hist-first-card' : undefined}
+                  domId={`hist-card-${idx}`}
                   navUp={tab === 'fav' ? '#hist-tab-fav' : '#hist-tab-history'}
-                  onClick={() => { if (deleting) { removeOne(it); } else onOpenDetail(it); }}
+                  onClick={() => { if (deleting) { removeOne(it, idx); } else onOpenDetail(it); }}
                   focusable
                 />
               </div>

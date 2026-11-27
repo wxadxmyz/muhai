@@ -20,15 +20,26 @@ export function useGlobalShortcuts() {
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       const s = player.getState();
+      // V4.5.7 #15：焦点浮层（选集/设置/简介等带 data-focus-root）打开时，方向键交给焦点导航，
+      // 本监听不得再 seek —— 否则选集浮窗按左右键会同时快进/快退画面。
+      // 注意：外壳根容器 .tv 也带 data-focus-root，必须排除，否则会被误判成浮层导致快进永久失效。
+      const focusOverlayOpen = !!Array.from(document.querySelectorAll<HTMLElement>('[data-focus-root]')).some((el) => {
+        if (el.classList.contains('tv')) return false; // 外壳根，不是浮层
+        const cs = getComputedStyle(el);
+        return cs.position === 'fixed' || cs.display !== 'none';
+      });
       switch (e.key) {
         case ' ':
+          if (focusOverlayOpen) break;
           e.preventDefault();
           player.toggle();
           break;
         case 'ArrowLeft':
+          if (focusOverlayOpen) break;
           if (s.current) player.seek(Math.max(0, s.progress - 5));
           break;
         case 'ArrowRight':
+          if (focusOverlayOpen) break;
           if (s.current) player.seek(Math.min(s.duration || 1e9, s.progress + 5));
           break;
         case 'ArrowUp':

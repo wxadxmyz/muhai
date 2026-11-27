@@ -97,7 +97,7 @@ export function Disclaimer({ onAccept }: { onAccept: () => void }) {
   const body = (
     <>
       <p>
-        本软件是一款开源的<strong>本地媒体聚合播放工具</strong>，自身不提供、存储或分发任何影视、音乐等内容资源。
+        本软件是一款开源的<strong>本地影视聚合播放工具</strong>，自身不提供、存储或分发任何影视内容资源。
       </p>
       <p>
         软件内所有可播放内容，均来自<strong>用户自行添加</strong>的第三方接口配置地址（源）。

@@ -71,6 +71,12 @@
   overflow: hidden;
   display: flex; flex-direction: column;
 }
+/* V4.5.7 #18：直播/历史/设置页负 margin 抵消 .tv-main 顶部内边距，顶部间距缩到与搜索页一致。
+   与 .tv-search 的写法相同：负 margin-top 上提 + 高度补回，只影响顶部，不改左右。 */
+.tv-flush-top {
+  margin-top: calc(-1 * var(--tv-safe) + 10px);
+  height: calc(100% + var(--tv-safe) - 10px);
+}
 .tv-scroll {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   box-sizing: border-box;
@@ -197,7 +203,10 @@
   background: var(--panel2);
   border-bottom: 1px solid var(--border);
 }
-.tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 40px 0; }
+/* V4.5.7 #9：仅首页推荐四栏整体变矮——在本作用域覆盖更小的卡片行高，
+   结果页/历史页仍用全局 --card-h(37.7vh)，不受影响。 */
+.tv-home-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 10px 40px 0; --card-h: 30vh; }
+.tv-home-body .tv-row-title { margin: 2px 0 6px; }
 .tv-home-cats {
   display: flex; gap: 12px; flex-wrap: nowrap;
 }
@@ -236,16 +245,20 @@
 /* 最左列：搜索历史（独立成列，不再压在键盘上方） */
 .tv-histcol {
   width: 300px; flex: 0 0 300px; display: flex; flex-direction: column; gap: 12px;
-  /* V4.5.4 #20：去掉白色背景块和边框，与整个界面背景一致 */
-  background: transparent; border: 0; border-radius: 0; padding: 16px 0;
+  /* V4.5.4 #20：去掉白色背景块和边框，与整个界面背景一致
+     V4.5.7 #8：去掉顶部 padding，让「搜索历史」标题与中间列输入框顶部平齐 */
+  background: transparent; border: 0; border-radius: 0; padding: 0;
 }
-.tv-histbox-head { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; color: var(--text); }
-.tv-histbox-clear { font-size: 15px; color: var(--danger); font-weight: 600; cursor: pointer; padding: 5px 14px; border: 1px solid rgba(255, 91, 110, .45); border-radius: 9px; }
+/* V4.5.7 #8：标题与输入框顶部平齐、字号加大；清空框与输入框同高、框内字加大。 */
+.tv-histbox-head { display: flex; align-items: center; justify-content: space-between; font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.3; min-height: 54px; }
+.tv-histbox-clear { font-size: 19px; color: var(--danger); font-weight: 600; cursor: pointer; padding: 10px 18px; min-height: 54px; border: 1px solid rgba(255, 91, 110, .45); border-radius: 12px; background: var(--panel2); }
 .tv-histwrap { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
 .tv-keyboard-wrap { width: 460px; flex: 0 0 460px; display: flex; flex-direction: column; gap: 12px; }
+/* V4.5.7 #7：历史词框尺寸对齐右侧推荐标签墙 .tv-wall-tag（字号17 / padding11×18 / 圆角12），
+   仍保持 flex-wrap 自然排布，词多自动换行、超出上滚，不按每行固定个数。 */
 .tv-histag {
-  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
-  background: var(--panel2); border: 1px solid var(--border); font-size: 14px; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px; padding: 11px 18px; border-radius: 12px;
+  background: var(--panel2); border: 1px solid var(--border); font-size: 17px; cursor: pointer; white-space: nowrap;
 }
 .tv-tag-x { color: var(--muted); font-size: 15px; line-height: 1; }
 .tv-kb-text {
@@ -506,6 +519,21 @@
 .tv-live-ch { padding: 16px 18px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border); font-size: 16px; cursor: pointer; }
 .tv-live-ch.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
 
+/* ===== V4.5.7 #20：影视仓式全屏直播 —— 全屏画面 + 左侧主题色半透明浮窗 ===== */
+/* 全屏舞台：fixed 盖住整个视口（含外壳顶栏），z-index 高于 topnav */
+.tv-live-stage { position: fixed; inset: 0; z-index: 500; background: #000; overflow: hidden; }
+.tv-live-fullvideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+.tv-live-stage-name { position: absolute; top: 22px; left: 30px; font-size: 22px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.85); pointer-events: none; }
+.tv-live-stage-help { position: absolute; bottom: 20px; right: 30px; font-size: 14px; color: rgba(255,255,255,.6); text-shadow: 0 1px 6px #000; pointer-events: none; }
+/* 左侧浮窗：主题色半透明，分类在左、频道列表在右 */
+.tv-live-panel { position: absolute; top: 0; bottom: 0; left: 0; width: min(58vw, 980px); z-index: 10; background: var(--panel); background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-right: 2px solid var(--accent); box-shadow: 8px 0 40px rgba(0,0,0,.5); }
+.tv-live-panel-inner { display: flex; height: 100%; gap: 18px; padding: 48px 24px 30px; box-sizing: border-box; }
+.tv-live-panel .tv-live-cats { width: 190px; flex: 0 0 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.tv-live-panel .tv-live-chs { flex: 1; min-width: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
+.tv-live-panel .tv-live-ch { font-size: 17px; }
+/* 当前播放频道：主题描边高亮 */
+.tv-live-panel .tv-live-ch.on { box-shadow: inset 0 0 0 3px rgba(255,255,255,.85); }
+
 /* ---------- 扫码推送 TV ---------- */
 .tv-push { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 22px; text-align: center; }
 .tv-push h2 { font-size: 26px; margin: 0; }
@@ -684,6 +712,11 @@
   border-color: rgba(255,255,255,.22); border-top-color: var(--accent);
 }
 .tvp-loading-text { color: #fff; font-size: 20px; font-weight: 700; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+/* V4.5.7 #3：快进/快退/缓冲时保留画面——去掉半透明黑底遮罩，只留一个轻量「加载中」提示浮在画面上。
+   resolving（解析/切集首帧未出）仍用上面的黑底转圈；此变体仅在 buffering/seekLoading 时挂。 */
+.tvp-loading.tvp-loading-overlay { background: transparent !important; padding: 12px 20px; gap: 8px; }
+.tvp-loading.tvp-loading-overlay .vp-spinner { width: 34px; height: 34px; border-width: 3px; }
+.tvp-loading.tvp-loading-overlay .tvp-loading-text { font-size: 16px; }
 
 /* V4.5.4 #11：TV 播放页内无条件隐藏中央「播放三角」占位图标（只藏 play，保留 pause 海报）。
    现有 V4.5.3 #8 规则只覆盖 .land-center，方案C 借 video 时走 .tvp-stage 根本不含该类 → 大三角透出。 */
@@ -775,8 +808,10 @@
 }
 
 /* ===== V4.5.0 #3/#7：TV 加载态彻底纯黑——隐藏首帧透出 + 任何播放三角图标 ===== */
-/* 加载中(resolving / buffering / seekLoading)期间：视频元素透明，避免浅色首帧透出 */
-.tv .player-root .screen.tv-screen.is-loading video { opacity: 0 !important; }
+/* V4.5.7 #4/#5：移除旧的「加载期 video 透明」规则。它用 !important 把 video 整个藏掉，
+   连已解码的首帧和借用小窗 video 的内联 opacity:1 都盖过 → 声音已出画面仍黑屏 + 转圈占位。
+   播放三角已由下方无条件 svg[data-icon="play"] 规则根治，无需再藏 video；让 video 始终可见，
+   首帧一到立即显示，加载圈只是叠加提示。 */
 /* 更强的兜底：TV 模式任何播放三角主按钮在加载态一律隐藏 */
 .tv .player-root .screen.tv-screen.is-loading .big-btn,
 .tv .player-root .screen.tv-screen.is-loading .ctrl.main,
@@ -794,7 +829,9 @@
   position: absolute; inset: 0; z-index: 120; background: rgba(0, 0, 0, .52);
   display: flex; align-items: center; justify-content: center; padding: 60px 90px; box-sizing: border-box;
 }
-.tv-ep-overlay-inner { width: 100%; max-height: 100%; overflow-y: auto; overflow-x: hidden; }
+/* V4.5.7 #14：选集浮窗右侧不要显示上下滑动轨道 */
+.tv-ep-overlay-inner { width: 100%; max-height: 100%; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; -ms-overflow-style: none; }
+.tv-ep-overlay-inner::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .tv-ep-grid-land {
   display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px 24px;
   align-content: start; justify-items: stretch; padding: 10px 0;
@@ -861,5 +898,4 @@
 .tv .player-root .tvp-stage svg[data-icon="play"],
 .tv .player-root .land-center svg[data-icon="play"],
 .tv .player-root .big-btn svg[data-icon="play"] { display: none !important; }
-/* 加载期（解析/缓冲/快进）视频保持透明，由 tvp-stage 的纯黑加载圈统一呈现，杜绝首帧/播放图透出 */
-.tv .player-root .screen.tv-screen.is-loading video { opacity: 0 !important; }
+/* V4.5.7 #4/#5：同上——不再让加载期 video 透明，保证切集/返回后画面可见、无播放图占位。 */

@@ -1,7 +1,8 @@
 // 统一媒体源引擎 —— 核心类型定义
 // 与《媒体源引擎接口规范 v1》保持一致
 
-export type SourceType = 'music-json' | 'alist' | 'mock' | 'tvbox' | 'js' | 'normal' | 'csp' | 'lives-direct';
+// V4.5.7 #21：移除 'music-json'（影视软件不需要音乐音源类型）
+export type SourceType = 'alist' | 'mock' | 'tvbox' | 'js' | 'normal' | 'csp' | 'lives-direct';
 
 export type MediaType = 'music' | 'video';
 
@@ -99,7 +100,6 @@ export interface LiveChannelSource {
 }
 
 export const SOURCE_TYPES: { value: SourceType; label: string; desc: string }[] = [
-  { value: 'music-json', label: '音乐 JSON API', desc: '自定义音乐接口，填 URL 即可' },
   { value: 'alist', label: '云盘(alist)', desc: '阿里云盘/夸克/UC/115 等统一网关' },
   { value: 'tvbox', label: '影视仓聚合', desc: '粘贴影视仓/饭太硬式配置地址，自动解析多站点（蜘蛛源走 JS 引擎）' },
   { value: 'js', label: 'JS 脚本源', desc: '粘贴 spider 脚本或远程脚本地址，引擎执行（支持蜘蛛源/加密源）' },

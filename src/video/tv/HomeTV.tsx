@@ -83,13 +83,17 @@ export function HomeTV({ onSearch }: { onSearch: (q: string, from?: 'home-card' 
     <div className="tv-home">
       <div className="tv-home-head">
         <div className="tv-home-cats">
-          {CATS.map((c) => (
+          {CATS.map((c, idx) => (
             <div
               key={c.key}
+              id={`tvcat-${c.key}`}
               className={'tv-cat' + (cat === c.key ? ' active' : '')}
               data-focusable=""
               data-nav-up="#tvtab-home"
               data-nav-down=".tv-grid .tv-poster"
+              // V4.5.7 #11：左右只在本行分类内移动，到头自指封边，不再跑到 TAB 或别处
+              data-nav-left={idx > 0 ? `#tvcat-${CATS[idx - 1].key}` : `#tvcat-${c.key}`}
+              data-nav-right={idx < CATS.length - 1 ? `#tvcat-${CATS[idx + 1].key}` : `#tvcat-${c.key}`}
               data-ok-handled=""
               onClick={() => setCat(c.key)}
               onKeyDown={(e) => { if (isTvConfirmKey(e)) { e.preventDefault(); e.stopPropagation(); setCat(c.key); } }}

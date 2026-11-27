@@ -1,5 +1,4 @@
 // 引擎入口：工厂 + 跨源搜索聚合 + 源管理器
-import { createMusicJsonSource } from './adapters/musicJson';
 import { createAlistSource } from './adapters/alist';
 import { createMockSource } from './adapters/mock';
 import { createTvboxSource, expandTvboxSpiders, findSubConfigById } from './adapters/tvbox';
@@ -51,8 +50,6 @@ export function markSourceFail(id: string) {
 
 export function createSource(cfg: SourceConfig): MediaSource {
   switch (cfg.type) {
-    case 'music-json':
-      return createMusicJsonSource(cfg);
     case 'alist':
       return createAlistSource(cfg);
     case 'tvbox':

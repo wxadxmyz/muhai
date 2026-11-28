@@ -447,18 +447,17 @@
 /* V4.5.5 #10：信息区改为逐行紧排（顶部对齐），空白统一留在简介下方；
    行距/字号收紧，让五行信息 + 三行简介都放进标题与胶囊之间。 */
 .vinfo { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; margin: 2px 0; max-width: 1100px; }
-.vinfo-line { display: flex; align-items: flex-start; font-size: 18px; line-height: 1.5; color: var(--text); min-width: 0; }
-/* V4.5.8 #15：标签固定宽度，令「来源/演员/播放地址/简介」各行正文统一左边缘起排；
-   align-items 由 baseline 改 flex-start，避免多行 -webkit-box 在老 WebView 下按基线漂移。 */
-.vinfo-line .vk { flex: 0 0 96px; color: var(--muted); }
-.vinfo-line .vv { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+/* V4.5.10 #7：其余四行（来源/演员/导演/播放地址）回退 V4.5.7 写法——baseline 对齐、标签自适应宽度。
+   V4.5.8 #15 曾把标签固定成 96px、align-items 改 flex-start，用户反馈信息排版不对，故回退。 */
+.vinfo-line { display: flex; align-items: baseline; font-size: 18px; line-height: 1.5; color: var(--text); min-width: 0; }
+.vinfo-line .vk { flex: 0 0 auto; color: var(--muted); }
+.vinfo-line .vv { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vinfo-line .vv-ellipsis { display: block; flex: 1; } /* 播放地址过长省略号 */
-/* V4.5.5 #10：内容简介固定三行——不足三行按实际行数、不撑高；超过三行固定三行、末行省略号 */
-/* V4.5.8 #15：显式 text-align:left + 左对齐盒模型，保证第一/二/三行文字都从同一左边缘开始。 */
-.vinfo-line .vv-clamp {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  -webkit-box-align: start; text-align: left; white-space: normal; overflow: hidden; flex: 1;
-}
+/* V4.5.10 #8：简介整段顶格——标签与正文放在同一个内联流里，第一行紧跟「内容简介：」，
+   第二/三行自然换行后顶格到容器最左边缘（与「内容简介」左对齐）。
+   三行截断用 max-height + overflow：原 -webkit-line-clamp 要求 display:-webkit-box 会拆散内联流，故弃用。 */
+.vinfo-desc-inline { font-size: 18px; line-height: 27px; color: var(--text); max-height: 81px; overflow: hidden; }
+.vinfo-desc-inline .vk { color: var(--muted); }
 /* 选集分段区间 1-40 / 41-80 */
 /* V4.5.3 #10：分段标签与小窗/线路行之间加 16px 上间距，不再贴着小窗 */
 /* V4.5.5 #9：线路/分集标签与集数之间间距调小（上 16→10，下 12→6） */
@@ -542,26 +541,24 @@
 .tv-live-stage .tv-live-fullvideo::-webkit-media-controls,
 .tv-live-stage .tv-live-fullvideo::-webkit-media-controls-enclosure { display: none !important; }
 .tv-live-stage-name { position: absolute; top: 22px; left: 30px; font-size: 22px; font-weight: 700; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.85); pointer-events: none; }
-/* V4.5.8 #4：全屏画面底部居中的「当前频道」框——换台时同步更新主题名。 */
-.tv-live-stage-current {
-  position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 6;
-  max-width: 70vw; padding: 14px 40px; border-radius: 999px;
-  background: rgba(0,0,0,.58); border: 2px solid var(--accent);
-  color: #fff; font-size: 30px; font-weight: 800; letter-spacing: 1px;
-  text-shadow: 0 2px 10px rgba(0,0,0,.9); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; pointer-events: none;
-}
+/* V4.5.10 #7：删除 tv-live-stage-current（当前频道文字框），顶部 tv-live-stage-name 已足够 */
 .tv-live-stage-help { position: absolute; bottom: 20px; right: 30px; font-size: 14px; color: rgba(255,255,255,.6); text-shadow: 0 1px 6px #000; pointer-events: none; }
-/* 左侧浮窗：主题色半透明，分类在左、频道列表在右 */
-.tv-live-panel { position: absolute; top: 0; bottom: 0; left: 0; width: min(58vw, 980px); z-index: 10; background: var(--panel); background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-right: 2px solid var(--accent); box-shadow: 8px 0 40px rgba(0,0,0,.5); }
-.tv-live-panel-inner { display: flex; height: 100%; gap: 18px; padding: 48px 24px 30px; box-sizing: border-box; }
-.tv-live-panel .tv-live-cats { width: 190px; flex: 0 0 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-/* V4.5.8 #5：浮窗内频道列表改为单列竖条，与左侧分类一致（旧版是 auto-fill 多列网格）。
-   单列后每项铺满、上下滚动，遥控器上下键逐条移动，符合影视仓频道栏观感。 */
-.tv-live-panel .tv-live-chs { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; align-content: start; }
-.tv-live-panel .tv-live-ch { font-size: 17px; flex: 0 0 auto; }
-/* 当前播放频道：主题描边高亮 */
-.tv-live-panel .tv-live-ch.on { box-shadow: inset 0 0 0 3px rgba(255,255,255,.85); }
+/* V4.5.10 #1/#5：影视仓式左侧浮窗——紧凑深蓝半透明、无毛玻璃大圆角、宽度约 40vw。
+   分类在左（窄）、频道在右（窄），两列等宽近似，遥控器左右/上下逐项移动。 */
+.tv-live-panel { position: absolute; top: 0; bottom: 0; left: 0; width: 40vw; z-index: 10; background: rgba(12, 20, 40, .86); border-right: 2px solid var(--accent); box-shadow: 8px 0 40px rgba(0,0,0,.5); }
+.tv-live-panel-inner { display: flex; height: 100%; gap: 12px; padding: 40px 18px 24px; box-sizing: border-box; }
+.tv-live-panel .tv-live-cats { width: 34%; flex: 0 0 34%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+/* V4.5.10 #2：频道列不再 flex:1 铺满，改为固定 46% 宽度，与分类列接近，影视仓窄栏观感 */
+.tv-live-panel .tv-live-chs { width: 46%; flex: 0 0 46%; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; align-content: start; }
+.tv-live-panel .tv-live-ch { font-size: 17px; flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); color: #dfe7f5; }
+/* V4.5.10 #3：影视仓式数字序号 */
+.tv-live-ch-no { flex: 0 0 auto; min-width: 26px; font-size: 15px; font-weight: 700; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
+.tv-live-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* V4.5.10 #4：当前播放频道——影视仓亮蓝实心圆角胶囊 */
+.tv-live-panel .tv-live-ch.on { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+.tv-live-panel .tv-live-ch.on .tv-live-ch-no { color: rgba(255,255,255,.85); }
+/* V4.5.10 #4：分类选中态同样用亮蓝实心胶囊 */
+.tv-live-panel .tv-live-cats .tv-cat.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-color: transparent; }
 
 /* ---------- 扫码推送 TV ---------- */
 .tv-push { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 22px; text-align: center; }

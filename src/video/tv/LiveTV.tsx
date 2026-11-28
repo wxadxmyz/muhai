@@ -254,8 +254,7 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
           </div>
         )}
         <div className="tv-live-stage-name">{activeName}</div>
-        {/* V4.5.8 #4：全屏画面底部居中的当前频道提示，上下换台/左右换线路时随 activeName 实时更新 */}
-        <div className="tv-live-stage-current">{activeName}</div>
+        {/* V4.5.10 #7：删除大屏底部居中的当前频道文字框（顶部已有 tv-live-stage-name） */}
         <div className="tv-live-stage-help">OK 选台 · ↑↓ 换台 · ←→ 换线路 · 返回退出</div>
         {panelOpen && (
           <div className="tv-live-panel" data-focus-root>
@@ -287,7 +286,9 @@ export function LiveTV({ sources }: { sources: SourceConfig[] }) {
                     onClick={() => { pick(c.name, c); setPanelOpen(false); }}
                     role="button"
                   >
-                    {c.name}
+                    {/* V4.5.10 #3：影视仓式频道数字序号 */}
+                    <span className="tv-live-ch-no">{String(visible.indexOf(c) + 1).padStart(2, '0')}</span>
+                    <span className="tv-live-ch-name">{c.name}</span>
                   </div>
                 ))}
               </div>

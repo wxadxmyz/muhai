@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { usePlayer, fmtTime, player } from '../lib/playerStore';
 import { useMediaResolver } from '../lib/playback';
 import { useLibrary } from '../lib/library';
@@ -527,6 +527,14 @@ export function VideoPlayer({
     };
   }, []);
 
+  // V4.5.10 #10：切集/换线路的那一帧，新 <video key> 已经挂载但加载 effect（useEffect，绘制后）
+  // 还没来得及 setResolving(true) → is-loading 未加 → 原生播放三角占位图露出一帧。
+  // 用 useLayoutEffect（绘制前同步执行）先把 resolving 置 true，让 is-loading 遮罩在该帧就位，
+  // 从根上杜绝「选集后 0:00 播放三角」「返回小窗占位图」。揭遮罩时机仍由各加载分支的出帧判定控制。
+  useLayoutEffect(() => {
+    if (tvMode) setResolving(true);
+  }, [episodeIndex, line, retryNonce, detail.id, tvMode]);
+
   // 切换剧集/线路：解析并加载
   useEffect(() => {
     if (!state.current) return;
@@ -545,6 +553,9 @@ export function VideoPlayer({
         v.style.cssText = `position:absolute;inset:0;width:100%;height:100%;object-fit:${curFit};opacity:1;z-index:1;background:#000;`;
         v.muted = false;
         v.volume = 1;
+        // V4.5.10 #9：小窗 video 自带 loop（详情页预览循环），借到大屏必须关掉，
+        // 否则播完自动循环重头播、永不触发 ended → 表现为「第1集播完不切下一集反而重播第1集」。
+        v.loop = false;
         videoRef.current = v;
         player.attachVideo(v);
         try { void v.play(); } catch { /* ignore */ }
@@ -607,10 +618,13 @@ export function VideoPlayer({
         // 快进/快退后视频真正 seek 完成、重新出帧才收「加载中」，不再靠 800ms 定时硬清。
         const onBorrowSeeked = () => { skipFnsRef.current.resume(); seekClearRef.current(); };
         const onBorrowPlaying = () => { seekClearRef.current(); };
+        // V4.5.10 #9：借用 video 播完走统一切集/末集逻辑（loop 已在上面关掉，ended 可正常触发）
+        const onBorrowEnded = () => endedRef.current();
         v.addEventListener('loadedmetadata', onBorrowMeta);
         v.addEventListener('timeupdate', onBorrowTime);
         v.addEventListener('seeked', onBorrowSeeked);
         v.addEventListener('playing', onBorrowPlaying);
+        v.addEventListener('ended', onBorrowEnded);
         // 借用时 video 可能早已元数据就绪（小窗预播过），补触发一次，避免漏判片头/续播。
         if (v.readyState >= 1) onBorrowMeta();
         // 清理：解绑监听 + 清兜底定时器
@@ -622,6 +636,7 @@ export function VideoPlayer({
           v.removeEventListener('timeupdate', onBorrowTime);
           v.removeEventListener('seeked', onBorrowSeeked);
           v.removeEventListener('playing', onBorrowPlaying);
+          v.removeEventListener('ended', onBorrowEnded);
           window.clearTimeout(fallback);
         };
       }
@@ -637,6 +652,8 @@ export function VideoPlayer({
             b.video.classList.add('on');
             b.video.muted = false;
             b.video.volume = 1;
+            // V4.5.10 #9：归还小窗恢复循环预览（大屏时被设为 false）
+            b.video.loop = true;
             b.slot.appendChild(b.video);
             // 若已被暂停（大屏暂停态返回），补一次 play 让小窗继续有声；失败也忽略（用户可点小窗）
             if (b.video.paused) { try { void b.video.play(); } catch { /* ignore */ } }
@@ -907,6 +924,17 @@ export function VideoPlayer({
   const skipFnsRef = useRef<{ intro: () => void; introBorrow: () => void; outro: () => void; resume: () => void; armOutro: () => void }>({
     intro: () => {}, introBorrow: () => {}, outro: () => {}, resume: () => {}, armOutro: () => {},
   });
+  // V4.5.10 #9：播完一集的统一处理——React 的 onEnded 绑在占位 video（借用模式下收不到），
+  // 借用的真实 video 上挂原生 ended 监听转发到这里。用 ref 保存最新引用避免闭包捕获旧的集序号。
+  const endedRef = useRef<() => void>(() => {});
+  const handleEnded = () => {
+    if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
+    else {
+      setEnded(true); // 单集/末集播完 → 重播浮层
+      if (landscape) toggleLandscape();
+    }
+  };
+  endedRef.current = handleEnded;
 
   const trySkipOutro = () => {
     const v = videoRef.current;
@@ -1823,13 +1851,7 @@ export function VideoPlayer({
               setResolving(false);
               setErr('视频解码失败或地址无效，换个线路试试。');
             }}
-            onEnded={() => {
-              if (detail.episodes && episodeIndex < detail.episodes.length - 1) onSelectEpisode(episodeIndex + 1);
-              else {
-                setEnded(true); // ⑪ B 方案：单集/末集播完 → 重播浮层（不再调音乐 store 的 onEnded）
-                if (landscape) toggleLandscape(); // 横屏则自动退回竖屏播放页
-              }
-            }}
+            onEnded={() => endedRef.current()}
           />
 
           {!state.current?.playUrl && !err && (

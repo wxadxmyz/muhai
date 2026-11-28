@@ -794,6 +794,7 @@ pub fn run() {
             fetchsource,
             fetchimage,
             fetchmedia,
+            fetchtext,
             media_proxy_port,
             // V3.6.8：媒体代理运行时诊断（真机排障，设置 → 开发者调试）
             proxy_probe_snapshot,
@@ -1177,6 +1178,86 @@ async fn fetchmedia(
     let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(serde_json::json!({ "data": b64, "url": final_url }).to_string())
+}
+
+// V4.5.10 #弹幕：专用文本代理——decode 掉 B站 raw deflate 后回传 UTF-8 文本。
+// 背景：B站 search/view/comment 接口无条件返回 Content-Encoding: deflate，但内容是
+// **raw deflate**（无 zlib 头 0x78）。reqwest 的 deflate feature 用 ZlibDecoder（要带头），
+// 解压失败 → fetchmedia 拿到的字节要么报错要么乱码 → 前端正则匹配不到 <d> 弹幕节点。
+// 这里用一个「禁用自动解压」的 client 拿原始字节，再按 Content-Encoding 手动解压：
+//   gzip   → GzDecoder
+//   deflate→ 先试 raw DeflateDecoder（B站），失败再试 ZlibDecoder（标准站点兜底）
+//   其余   → 原样按 UTF-8 解码
+#[tauri::command]
+async fn fetchtext(
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
+    use flate2::read::{DeflateDecoder, GzDecoder, ZlibDecoder};
+    use std::io::Read;
+
+    // 禁用 reqwest 自动解压的专用 client（单例），保证拿到的是原始压缩字节
+    static RAW_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    let client = RAW_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .no_gzip()
+            .no_deflate()
+            .no_brotli()
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    });
+
+    let mut req = client.get(&url).timeout(std::time::Duration::from_secs(20));
+    let mut has_ua = false;
+    if let Some(hs) = &headers {
+        for (k, v) in hs {
+            if k.eq_ignore_ascii_case("user-agent") { has_ua = true; }
+            req = req.header(k.as_str(), v.as_str());
+        }
+    }
+    if !has_ua {
+        req = req.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36");
+    }
+    // 明确告诉上游不要压缩；即便 B站无视仍返回 deflate，下面按响应头手动解
+    req = req.header("Accept-Encoding", "identity");
+
+    let resp = req.send().await.map_err(friendly_net_err)?;
+    if !resp.status().is_success() {
+        return Err(format!("源返回错误：HTTP {}", resp.status().as_u16()));
+    }
+    let encoding = resp.headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let raw = resp.bytes().await.map_err(|e| e.to_string())?;
+
+    let text: String = if encoding.contains("gzip") {
+        let mut d = GzDecoder::new(raw.as_ref());
+        let mut out = Vec::new();
+        d.read_to_end(&mut out).map_err(|e| format!("gzip 解压失败：{}", e))?;
+        String::from_utf8_lossy(&out).into_owned()
+    } else if encoding.contains("deflate") {
+        // 优先 raw deflate（B站）：DeflateDecoder 就是无头 raw 流
+        let mut d = DeflateDecoder::new(raw.as_ref());
+        let mut out = Vec::new();
+        match d.read_to_end(&mut out) {
+            Ok(_) if !out.is_empty() => String::from_utf8_lossy(&out).into_owned(),
+            _ => {
+                // 兜底：标准 zlib deflate（部分站点带头）
+                let mut d2 = ZlibDecoder::new(raw.as_ref());
+                let mut out2 = Vec::new();
+                d2.read_to_end(&mut out2).map_err(|e| format!("deflate 解压失败：{}", e))?;
+                String::from_utf8_lossy(&out2).into_owned()
+            }
+        }
+    } else if encoding.contains("br") {
+        // brotli：reqwest 关了自动解压，这里没有 brotli 解码器；B站不会返回 br，原样 UTF-8 兜底
+        String::from_utf8_lossy(raw.as_ref()).into_owned()
+    } else {
+        String::from_utf8_lossy(raw.as_ref()).into_owned()
+    };
+    Ok(text)
 }
 
 // ─────────────────────────────────────────────────────────────

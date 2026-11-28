@@ -1,6 +1,6 @@
 [package]
 name = "muhai"
-version = "4.5.9"
+version = "4.5.10"
 description = "幕海 - 可自定义 API 源与云盘的影视播放器"
 authors = ["MuHai Contributors"]
 edition = "2021"
@@ -17,6 +17,9 @@ serde_json = "1"
 # 后端代理需能自动解压，否则回传前端的是压缩乱码，正则匹配不到 <d> 弹幕节点。
 # gzip/deflate/brotli 全开，覆盖各站点常见压缩编码；charset 保留给 gb2312 中文源。
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "charset", "stream", "gzip", "deflate", "brotli"] }
+# V4.5.10 #弹幕：手动解压 B站 raw deflate（reqwest 的 ZlibDecoder 只认带 zlib 头的标准 deflate，
+# 解不开 B站无头 raw deflate）。flate2 用 miniz_oxide 纯 Rust 后端，DeflateDecoder 即 raw deflate。
+flate2 = "1"
 url = "2"
 # 投屏（DLNA/SSDP）：局域网设备发现 + 推送播放 URL
 tokio = { version = "1", features = ["rt", "net", "time", "sync"] }

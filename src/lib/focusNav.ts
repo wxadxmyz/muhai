@@ -145,7 +145,12 @@ function focusEl(el: HTMLElement) {
       const inView = r.top >= 0 && r.left >= 0 &&
         r.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
         r.right <= (window.innerWidth || document.documentElement.clientWidth);
-      if (!inView) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (!inView) {
+        // V4.5.10 #12：结果页卡片禁止横向 scrollIntoView——负 margin 容器被 inline:'nearest'
+        // 横向滚动会让「一行5个」整体往左跑。结果页只做垂直对齐，横向靠 grid 均分固定，不滚动。
+        if (el.closest('.tv-result')) el.scrollIntoView({ block: 'nearest', inline: 'start' });
+        else el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
     }
   } catch {
     /* ignore */
@@ -291,13 +296,14 @@ function onKeyDown(e: KeyboardEvent) {
   if (inResultScope) {
     if (dir === 'right' && cur.hasAttribute('data-src-pill')) {
       lastSrcPill = cur;
-    } else if (dir === 'left' && lastSrcPill && lastSrcPill.isConnected && scope.contains(lastSrcPill)) {
-      // 仅当当前焦点在右侧卡片区（非子站本身）时才按来路回位，避免在子站栏内左右键被干扰
-      if (!cur.hasAttribute('data-src-pill')) {
-        focusEl(lastSrcPill);
-        lastSrcPill = null;
-        return;
-      }
+    }
+    // V4.5.10 #13：左键回子站只在「最左列卡片」上发生。
+    // 旧逻辑：任意卡片按左键都直接 focus lastSrcPill，覆盖了网格逐列回退 →
+    // 「从子站右键进卡片，按左键应回上一张卡片，却直接回到子站」。
+    // 新逻辑：这里不做无条件回位；交给下方 data-grid-col 的逐列回退，
+    // 只有当焦点已在 col=0 且找不到更左卡片时，才在最左列封边处回 lastSrcPill。
+    if (dir === 'right' && cur.hasAttribute('data-src-pill')) {
+      // 已记录来路（上方），继续走原生网格逻辑进入卡片
     }
   } else {
     lastSrcPill = null;
@@ -322,7 +328,14 @@ function onKeyDown(e: KeyboardEvent) {
         });
         if (cand) { focusEl(cand); return; }
       }
-      // 到最左/最右：封边不动
+      // V4.5.10 #13：结果页卡片已到最左列（col=0）→ 回进来时的子站 pill。
+      // 只有最左列才回，避免「任意卡片左键都跳回子站」。
+      if (dir === 'left' && col === 0 && inResultScope && lastSrcPill && lastSrcPill.isConnected && scope.contains(lastSrcPill)) {
+        focusEl(lastSrcPill);
+        lastSrcPill = null;
+        return;
+      }
+      // 其余到最左/最右：封边不动
       return;
     }
     if ((dir === 'up' || dir === 'down') && row !== null) {
@@ -335,6 +348,9 @@ function onKeyDown(e: KeyboardEvent) {
         return c2 === String(col) && r2 !== null && parseInt(r2, 10) === targetRow;
       });
       if (cand) { focusEl(cand); return; }
+      // V4.5.10 #14：结果页卡片上下到底/到顶 → 原地封底，不走 bestCandidate 跨区几何匹配
+      // （旧逻辑会跳到别的子站卡片/别的区域）。只有非结果页才交给 data-nav / 几何匹配。
+      if (inResultScope) return;
       // 到最顶/最底：交给下方显式 data-nav 处理（分类标签 / 封底）
     }
   }

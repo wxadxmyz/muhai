@@ -341,7 +341,8 @@ export function DetailTV({
             {infoActor && <div className="vinfo-line"><span className="vk">演员：</span><span className="vv">{infoActor}</span></div>}
             {infoDirector && <div className="vinfo-line"><span className="vk">导演：</span><span className="vv">{infoDirector}</span></div>}
             {infoPlayUrl && <div className="vinfo-line"><span className="vk">播放地址：</span><span className="vv vv-ellipsis">{infoPlayUrl}</span></div>}
-            {infoDesc && <div className="vinfo-line"><span className="vk">内容简介：</span><span className="vv vv-clamp">{infoDesc}</span></div>}
+            {/* V4.5.10 #8：简介整段顶格——标签与正文同一内联流，第一行跟标签，第二/三行顶格与「内容简介」左对齐 */}
+            {infoDesc && <div className="vinfo-desc-inline"><span className="vk">内容简介：</span>{infoDesc}</div>}
           </div>
           {/* V4.5.0 #10：胶囊按影视仓 —— 快速搜索(改为倒序) / 加入收藏 / 内容简介（不要播放按钮） */}
           <div className="tv-pillrow">

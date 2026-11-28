@@ -50,9 +50,13 @@ export function SearchResultTV({
       let ex: SourceConfig[] = [];
       try { ex = await expandSources(sources); if (my === seq.current) setExpanded(ex); } catch { ex = sources; }
       try {
-        // V4.5.8 #2：去掉 onPartial 分批回调——它让结果网格在中途多次重排，
-        // 是「卡片一秒后往左跑」的根因。改为等完整结果一次到位再 setItems。
-        const r = await aggregateSearch(ex, query, { timeout: 18000 });
+        // V4.5.10 #11：恢复 onPartial 分批显示——哪个子站先加载先显示，不再白屏等全部源。
+        // 关键：分批期间不落焦（落焦统一延到 loading 完成后的 effect，见上），
+        // 且只 setItems 不触发横向滚动，避免「卡片一秒后往左跑」。
+        const r = await aggregateSearch(ex, query, {
+          timeout: 18000,
+          onPartial: (p) => { if (my === seq.current) setItems(p); },
+        });
         if (my !== seq.current) return;
         setItems(r.items);
         setErrors(r.errors);
@@ -138,7 +142,7 @@ export function SearchResultTV({
         {visibleItems.length === 0 && !loading ? (
           <div className="tv-empty">没有找到结果，换个关键词或检查影视源。</div>
         ) : (
-          visibleItems.map((it) => {
+          visibleItems.map((it, idx) => {
             const { cover, name } = tvItemPoster(it);
             return (
               <TVPoster
@@ -147,6 +151,9 @@ export function SearchResultTV({
                 cover={cover}
                 year={it.year}
                 rating={it.score ? Number(it.score) : undefined}
+                // V4.5.10 #13/#14：给结果卡片补网格坐标，左右键按列逐张移动、上下键同列逐行移动。
+                gridCol={idx % 5}
+                gridRow={Math.floor(idx / 5)}
                 onClick={() => onOpenDetail(it)}
               />
             );

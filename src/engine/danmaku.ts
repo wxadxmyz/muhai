@@ -134,7 +134,18 @@ function decodeFetchmediaResult(r: unknown): string {
  * 非 Tauri 环境降级原生 fetch）。
  */
 async function fetchText(url: string, headers: Record<string, string>, timeout = 12000): Promise<string> {
-  // 优先走 Rust 后端代理（真机 WebView 裸 fetch 会踩跨域，且 B站需自定义头）
+  // V4.5.10 #弹幕：优先走后端专用 fetchtext——它禁用 reqwest 自动解压、手动解 B站 raw deflate。
+  // （旧 fetchmedia 走 reqwest ZlibDecoder 解不开 raw deflate，弹幕一直为空）
+  try {
+    const text = await Promise.race([
+      invoke<string>('fetchtext', { url, headers }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('proxy timeout')), timeout)),
+    ]);
+    if (text) return text;
+  } catch {
+    /* fetchtext 不可用（旧版后端）→ 继续降级 */
+  }
+  // 兜底：旧版 fetchmedia 代理（真机 WebView 裸 fetch 会踩跨域，且 B站需自定义头）
   try {
     const r = await Promise.race([
       invoke<unknown>('fetchmedia', { url, headers, body: null }),
